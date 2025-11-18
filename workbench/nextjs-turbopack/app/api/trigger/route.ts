@@ -1,44 +1,25 @@
-import { getRun, start } from 'workflow/api';
+import { getRun, start } from "workflow/api";
 import {
   WorkflowRunFailedError,
   WorkflowRunNotCompletedError,
-} from 'workflow/internal/errors';
-import { hydrateWorkflowArguments } from 'workflow/internal/serialization';
-import { allWorkflows } from '@/_workflows';
+} from "workflow/internal/errors";
+import { hydrateWorkflowArguments } from "workflow/internal/serialization";
+import { allWorkflows } from "@/_workflows";
 
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const workflowFile =
-    url.searchParams.get('workflowFile') || 'workflows/99_e2e.ts';
-  if (!workflowFile) {
-    return new Response('No workflowFile query parameter provided', {
-      status: 400,
-    });
-  }
-  const workflows = allWorkflows[workflowFile as keyof typeof allWorkflows];
-  if (!workflows) {
-    return new Response(`Workflow file "${workflowFile}" not found`, {
-      status: 400,
-    });
-  }
+    url.searchParams.get("workflowFile") || "workflows/99_e2e.ts";
+  const workflowFn = url.searchParams.get("workflowFn") || "simple";
 
-  const workflowFn = url.searchParams.get('workflowFn') || 'simple';
-  if (!workflowFn) {
-    return new Response('No workflow query parameter provided', {
-      status: 400,
-    });
-  }
-  const workflow = workflows[workflowFn as keyof typeof workflows];
-  if (!workflow) {
-    return new Response(`Workflow "${workflowFn}" not found`, { status: 400 });
-  }
+  console.log("calling workflow", { workflowFile, workflowFn });
 
   let args: any[] = [];
 
   // Args from query string
-  const argsParam = url.searchParams.get('args');
+  const argsParam = url.searchParams.get("args");
   if (argsParam) {
-    args = argsParam.split(',').map((arg) => {
+    args = argsParam.split(",").map((arg) => {
       const num = parseFloat(arg);
       return Number.isNaN(num) ? arg.trim() : num;
     });
@@ -51,15 +32,29 @@ export async function POST(req: Request) {
       args = [42];
     }
   }
-  console.log(`Starting "${workflowFn}" workflow with args: ${args}`);
+  console.log(
+    `Starting "${workflowFile}/${workflowFn}" workflow with args: ${args}`,
+  );
 
   try {
-    const run = await start(workflow as any, args as any);
-<<<<<<< HEAD
-    console.log('Run', run.runId);
-=======
-    console.log('Run:', run);
->>>>>>> fa712d6d (revert)
+    const workflows = allWorkflows[workflowFile as keyof typeof allWorkflows];
+    if (!workflows) {
+      return Response.json(
+        { error: `Workflow file "${workflowFile}" not found` },
+        { status: 404 },
+      );
+    }
+
+    const workflow = workflows[workflowFn as keyof typeof workflows];
+    if (!workflow) {
+      return Response.json(
+        { error: `Function "${workflowFn}" not found in ${workflowFile}` },
+        { status: 400 },
+      );
+    }
+
+    const run = await start(workflow as any, args);
+    console.log("Run:", run.runId);
     return Response.json(run);
   } catch (err) {
     console.error(`Failed to start!!`, err);
@@ -69,14 +64,14 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const runId = url.searchParams.get('runId');
+  const runId = url.searchParams.get("runId");
   if (!runId) {
-    return new Response('No runId provided', { status: 400 });
+    return new Response("No runId provided", { status: 400 });
   }
 
-  const outputStreamParam = url.searchParams.get('output-stream');
+  const outputStreamParam = url.searchParams.get("output-stream");
   if (outputStreamParam) {
-    const namespace = outputStreamParam === '1' ? undefined : outputStreamParam;
+    const namespace = outputStreamParam === "1" ? undefined : outputStreamParam;
     const run = getRun(runId);
     const stream = run.getReadable({
       namespace,
@@ -86,14 +81,14 @@ export async function GET(req: Request) {
       transform(chunk, controller) {
         const data =
           chunk instanceof Uint8Array
-            ? { data: Buffer.from(chunk).toString('base64') }
+            ? { data: Buffer.from(chunk).toString("base64") }
             : chunk;
         controller.enqueue(`${JSON.stringify(data)}\n`);
       },
     });
     return new Response(stream.pipeThrough(streamWithFraming), {
       headers: {
-        'Content-Type': 'application/octet-stream',
+        "Content-Type": "application/octet-stream",
       },
     });
   }
@@ -101,41 +96,14 @@ export async function GET(req: Request) {
   try {
     const run = getRun(runId);
     const returnValue = await run.returnValue;
-<<<<<<< HEAD
-<<<<<<< HEAD
-    console.log('Return value:', returnValue);
-
-    // Include run metadata in headers
-    const [createdAt, startedAt, completedAt] = await Promise.all([
-      run.createdAt,
-      run.startedAt,
-      run.completedAt,
-    ]);
-    const headers: HeadersInit =
-      returnValue instanceof ReadableStream
-        ? { 'Content-Type': 'application/octet-stream' }
-        : {};
-
-    headers['X-Workflow-Run-Created-At'] = createdAt?.toISOString() || '';
-    headers['X-Workflow-Run-Started-At'] = startedAt?.toISOString() || '';
-    headers['X-Workflow-Run-Completed-At'] = completedAt?.toISOString() || '';
-
-    return returnValue instanceof ReadableStream
-      ? new Response(returnValue, { headers })
-      : Response.json(returnValue, { headers });
-=======
     console.log("Return value:", returnValue);
-=======
-    console.log('Return value:', returnValue);
->>>>>>> fa712d6d (revert)
     return returnValue instanceof ReadableStream
       ? new Response(returnValue, {
           headers: {
-            'Content-Type': 'application/octet-stream',
+            "Content-Type": "application/octet-stream",
           },
         })
       : Response.json(returnValue);
->>>>>>> a11339e8 (Normalize Workbenches)
   } catch (error) {
     if (error instanceof Error) {
       if (WorkflowRunNotCompletedError.is(error)) {
@@ -145,7 +113,7 @@ export async function GET(req: Request) {
             name: error.name,
             message: error.message,
           },
-          { status: 202 }
+          { status: 202 },
         );
       }
 
@@ -162,20 +130,20 @@ export async function GET(req: Request) {
               code: cause.code,
             },
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
 
     console.error(
-      'Unexpected error while getting workflow return value:',
-      error
+      "Unexpected error while getting workflow return value:",
+      error,
     );
     return Response.json(
       {
-        error: 'Internal server error',
+        error: "Internal server error",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
