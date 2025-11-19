@@ -62,7 +62,7 @@ const DEV_TEST_CONFIGS = {
     apiFileImportPath: '../..',
     workflowsDir: 'src/workflows',
   },
-  tanstack: {
+  'tanstack-start': {
     generatedStepPath: 'src/routes/[.]well-known/workflow/v1/step.ts',
     generatedWorkflowPath: 'src/routes/[.]well-known/workflow/v1/flow.ts',
     apiFilePath: 'src/routes/api/chat.ts',
@@ -144,9 +144,9 @@ matrix.app.push({
 });
 
 matrix.app.push({
-  name: 'tanstack',
+  name: 'tanstack-start',
   project: 'workbench-tanstack-workflow',
-  ...DEV_TEST_CONFIGS.tanstack,
+  ...DEV_TEST_CONFIGS['tanstack-start'],
 });
 
 console.log(JSON.stringify(matrix));
