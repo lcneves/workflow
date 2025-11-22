@@ -143,7 +143,7 @@ export function SettingsSidebar() {
                         }
                       />
                       {getFieldError('port') && (
-                        <p className="text-sm text-destructive">
+                        <p className="text-sm text-destructive break-words">
                           {getFieldError('port')}
                         </p>
                       )}
@@ -162,11 +162,6 @@ export function SettingsSidebar() {
                           getFieldError('dataDir') ? 'border-destructive' : ''
                         }
                       />
-                      {getFieldError('dataDir') && (
-                        <p className="text-sm text-destructive">
-                          {getFieldError('dataDir')}
-                        </p>
-                      )}
                       <p className="text-xs text-muted-foreground">
                         Path to the workflow data directory. Can be relative or
                         absolute.
@@ -229,13 +224,16 @@ export function SettingsSidebar() {
                 )}
 
                 {errors.length > 0 && (
-                  <Alert variant="destructive">
+                  <Alert
+                    variant="destructive"
+                    className="!bg-destructive/10 !border-destructive"
+                  >
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Configuration Error</AlertTitle>
                     <AlertDescription>
                       <ul className="list-disc list-inside space-y-1">
                         {errors.map((error, idx) => (
-                          <li key={`error-${idx}`}>
+                          <li key={`error-${idx}`} className="break-words">
                             {error.field !== 'general' && (
                               <strong>{error.field}:</strong>
                             )}{' '}
