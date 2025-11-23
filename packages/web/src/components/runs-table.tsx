@@ -56,15 +56,198 @@ const statusMap: Record<WorkflowRunStatus, { label: string; color: string }> = {
   cancelled: { label: 'Cancelled', color: 'bg-gray-600 dark:bg-gray-400' },
 };
 
+// Helper: Handle workflow filter changes
+function useWorkflowFilter() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  return useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (value === 'all') {
+        params.delete('workflow');
+        params.delete('status');
+      } else {
+        params.set('workflow', value);
+      }
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [router, pathname, searchParams]
+  );
+}
+
+// Helper: Handle status filter changes
+function useStatusFilter() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  return useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (value === 'all') {
+        params.delete('status');
+      } else {
+        params.set('status', value);
+      }
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [router, pathname, searchParams]
+  );
+}
+
+// Filter controls component
+interface FilterControlsProps {
+  workflowNameFilter: string | 'all';
+  status: WorkflowRunStatus | 'all' | undefined;
+  seenWorkflowNames: Set<string>;
+  sortOrder: 'asc' | 'desc';
+  loading: boolean;
+  statusFilterRequiresWorkflowNameFilter: boolean;
+  onWorkflowChange: (value: string) => void;
+  onStatusChange: (value: string) => void;
+  onSortToggle: () => void;
+  onRefresh: () => void;
+  lastRefreshTime: Date | null;
+}
+
+function FilterControls({
+  workflowNameFilter,
+  status,
+  seenWorkflowNames,
+  sortOrder,
+  loading,
+  statusFilterRequiresWorkflowNameFilter,
+  onWorkflowChange,
+  onStatusChange,
+  onSortToggle,
+  onRefresh,
+  lastRefreshTime,
+}: FilterControlsProps) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-end gap-2">
+        <p className="text-sm text-muted-foreground">Last refreshed</p>
+        {lastRefreshTime && (
+          <RelativeTime
+            date={lastRefreshTime}
+            className="text-sm text-muted-foreground"
+            type="distance"
+          />
+        )}
+      </div>
+      <div className="flex items-center gap-4">
+        <Select
+          value={workflowNameFilter ?? 'all'}
+          onValueChange={onWorkflowChange}
+          disabled={loading}
+        >
+          <SelectTrigger className="w-[180px] h-9">
+            <SelectValue placeholder="Filter by workflow" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Workflows</SelectItem>
+            {Array.from(seenWorkflowNames)
+              .sort()
+              .map((name) => (
+                <SelectItem key={name} value={name}>
+                  {parseWorkflowName(name)?.shortName || name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <Select
+                value={status || 'all'}
+                onValueChange={onStatusChange}
+                disabled={
+                  loading ||
+                  (statusFilterRequiresWorkflowNameFilter &&
+                    !workflowNameFilter)
+                }
+              >
+                <SelectTrigger className="w-[140px] h-9">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any status</SelectItem>
+                  {Object.entries(statusMap).map(
+                    ([status, { label, color }]) => (
+                      <SelectItem key={status} value={status}>
+                        <div className="flex items-center">
+                          <span
+                            className={`${color} size-1.5 rounded-full mr-2`}
+                          />
+                          {label}
+                        </div>
+                      </SelectItem>
+                    )
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            {statusFilterRequiresWorkflowNameFilter &&
+            workflowNameFilter === 'all'
+              ? 'Select a workflow first to filter by status'
+              : 'Filter runs by status'}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onSortToggle}
+              disabled={loading}
+            >
+              {sortOrder === 'desc' ? (
+                <ArrowDownAZ className="h-4 w-4" />
+              ) : (
+                <ArrowUpAZ className="h-4 w-4" />
+              )}
+              {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {sortOrder === 'desc'
+              ? 'Showing newest first'
+              : 'Showing oldest first'}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={loading}
+            >
+              <RefreshCw className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Note that this resets pages</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  );
+}
+
 /**
  * RunsTable - Displays workflow runs with server-side pagination.
  * Uses the PaginatingTable pattern: fetches data for each page as needed from the server.
  * The table and fetching behavior are intertwined - pagination controls trigger new API calls.
  */
 export function RunsTable({ config, onRunClick }: RunsTableProps) {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const handleWorkflowFilter = useWorkflowFilter();
+  const handleStatusFilter = useStatusFilter();
+
   // Validate status parameter - only allow known valid statuses or 'all'
   const rawStatus = searchParams.get('status');
   const validStatuses = Object.keys(statusMap) as WorkflowRunStatus[];
@@ -82,7 +265,7 @@ export function RunsTable({ config, onRunClick }: RunsTableProps) {
 
   // TODO: World-vercel doesn't support filtering by status without a workflow name filter
   const statusFilterRequiresWorkflowNameFilter =
-    config.backend?.includes('vercel');
+    config.backend?.includes('vercel') || false;
   // TODO: This is a workaround. We should be getting a list of valid workflow names
   // from the manifest, which we need to put on the World interface.
   const [seenWorkflowNames, setSeenWorkflowNames] = useState<Set<string>>(
@@ -129,154 +312,23 @@ export function RunsTable({ config, onRunClick }: RunsTableProps) {
     setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
   };
 
-  const createQueryString = useCallback(
-    (name: string, value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set(name, value);
-
-      return params.toString();
-    },
-    [searchParams]
-  );
-
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-end gap-2">
-          <p className="text-sm text-muted-foreground">Last refreshed</p>
-          {lastRefreshTime && (
-            <RelativeTime
-              date={lastRefreshTime}
-              className="text-sm text-muted-foreground"
-              type="distance"
-            />
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          {
-            <>
-              <Select
-                value={workflowNameFilter ?? 'all'}
-                onValueChange={(value) => {
-                  if (value === 'all') {
-                    const params = new URLSearchParams(searchParams.toString());
-                    params.delete('workflow');
-                    params.delete('status');
-                    router.push(`${pathname}?${params.toString()}`);
-                  } else {
-                    router.push(
-                      `${pathname}?${createQueryString('workflow', value)}`
-                    );
-                  }
-                }}
-                disabled={loading}
-              >
-                <SelectTrigger className="w-[180px] h-9">
-                  <SelectValue placeholder="Filter by workflow" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Workflows</SelectItem>
-                  {Array.from(seenWorkflowNames)
-                    .sort()
-                    .map((name) => (
-                      <SelectItem key={name} value={name}>
-                        {parseWorkflowName(name)?.shortName || name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <Select
-                      value={status || 'all'}
-                      onValueChange={(value) => {
-                        if (value === 'all') {
-                          const params = new URLSearchParams(
-                            searchParams.toString()
-                          );
-                          params.delete('status');
-                          router.push(`${pathname}?${params.toString()}`);
-                        } else {
-                          router.push(
-                            `${pathname}?${createQueryString('status', value)}`
-                          );
-                        }
-                      }}
-                      disabled={
-                        loading ||
-                        (statusFilterRequiresWorkflowNameFilter &&
-                          !workflowNameFilter)
-                      }
-                    >
-                      <SelectTrigger className="w-[140px] h-9">
-                        <SelectValue placeholder="Filter by status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Any status</SelectItem>
-                        {Object.entries(statusMap).map(
-                          ([status, { label, color }]) => (
-                            <SelectItem key={status} value={status}>
-                              <div className="flex items-center">
-                                <span
-                                  className={`${color} size-1.5 rounded-full mr-2`}
-                                />
-                                {label}
-                              </div>
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {statusFilterRequiresWorkflowNameFilter &&
-                  workflowNameFilter === 'all'
-                    ? 'Select a workflow first to filter by status'
-                    : 'Filter runs by status'}
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleSortOrder}
-                    disabled={loading}
-                  >
-                    {sortOrder === 'desc' ? (
-                      <ArrowDownAZ className="h-4 w-4" />
-                    ) : (
-                      <ArrowUpAZ className="h-4 w-4" />
-                    )}
-                    {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {sortOrder === 'desc'
-                    ? 'Showing newest first'
-                    : 'Showing oldest first'}
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onReload}
-                    disabled={loading}
-                  >
-                    <RefreshCw className={loading ? 'animate-spin' : ''} />
-                    Refresh
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Note that this resets pages</TooltipContent>
-              </Tooltip>
-            </>
-          }
-        </div>
-      </div>
+      <FilterControls
+        workflowNameFilter={workflowNameFilter}
+        status={status}
+        seenWorkflowNames={seenWorkflowNames}
+        sortOrder={sortOrder}
+        loading={loading}
+        statusFilterRequiresWorkflowNameFilter={
+          statusFilterRequiresWorkflowNameFilter
+        }
+        onWorkflowChange={handleWorkflowFilter}
+        onStatusChange={handleStatusFilter}
+        onSortToggle={toggleSortOrder}
+        onRefresh={onReload}
+        lastRefreshTime={lastRefreshTime}
+      />
       {error ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
