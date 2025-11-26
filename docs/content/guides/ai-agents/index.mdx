@@ -283,27 +283,16 @@ export const searchWeb = tool({
 
 <Tab value="Client">
 
-Handle the `data-search-web` chunks in your client to display progress:
+Handle the `data-search-web` chunks in your client to display progress. Data parts are stored in the message, so you can find the latest status directly:
 
 ```typescript title="app/chat.tsx" lineNumbers
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import type { DataUIPart } from 'ai';
-
-type DataPart =
-  | { type: 'data-search-web'; data: { url: string; status: string } };
 
 export function Chat() {
-  const [toolStatus, setToolStatus] = useState<Record<string, DataPart['data']>>({});
-
   const { messages, input, handleInputChange, handleSubmit } = useChat({
     api: '/api/chat',
-    onData: (part: DataUIPart<DataPart>) => { // [!code highlight]
-      if (part.type === 'data-search-web') { // [!code highlight]
-        setToolStatus((prev) => ({ ...prev, [part.id]: part.data })); // [!code highlight]
-      } // [!code highlight]
-    }, // [!code highlight]
   });
 
   return (
@@ -316,7 +305,11 @@ export function Chat() {
               return <span key={i}>{part.text}</span>;
             }
             if (part.type === 'tool-invocation') {
-              const status = toolStatus[part.toolInvocation.toolCallId]; // [!code highlight]
+              // Find the latest data part for this tool call // [!code highlight]
+              const dataPart = m.parts.findLast( // [!code highlight]
+                (p) => p.type === 'data' && p.id === part.toolInvocation.toolCallId // [!code highlight]
+              ); // [!code highlight]
+              const status = dataPart?.type === 'data' ? dataPart.data : null; // [!code highlight]
               return (
                 <div key={i}>
                   {status?.status === 'fetching' // [!code highlight]
@@ -497,22 +490,10 @@ export const tools = {
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { useState } from 'react';
-import type { DataUIPart } from 'ai';
-
-type DataPart =
-  | { type: 'data-search-web'; data: { url: string; status: string } };
 
 export function Chat() {
-  const [toolStatus, setToolStatus] = useState<Record<string, DataPart['data']>>({});
-
   const { messages, input, handleInputChange, handleSubmit } = useChat({
     api: '/api/chat',
-    onData: (part: DataUIPart<DataPart>) => {
-      if (part.type === 'data-search-web') {
-        setToolStatus((prev) => ({ ...prev, [part.id]: part.data }));
-      }
-    },
   });
 
   return (
@@ -525,7 +506,11 @@ export function Chat() {
               return <span key={i}>{part.text}</span>;
             }
             if (part.type === 'tool-invocation') {
-              const status = toolStatus[part.toolInvocation.toolCallId];
+              // Find the latest data part for this tool call
+              const dataPart = m.parts.findLast(
+                (p) => p.type === 'data' && p.id === part.toolInvocation.toolCallId
+              );
+              const status = dataPart?.type === 'data' ? dataPart.data : null;
               return (
                 <div key={i}>
                   {status?.status === 'fetching'
