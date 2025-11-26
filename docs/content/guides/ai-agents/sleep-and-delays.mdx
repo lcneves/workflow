@@ -211,6 +211,58 @@ async function checkJobStatus(jobId: string) {
 }
 ```
 
+## Complete Example
+
+A sleep tool that pauses the agent for a specified duration:
+
+```typescript title="ai/tools/sleep.ts" lineNumbers
+import { tool } from 'ai';
+import { getWritable, sleep } from 'workflow';
+import { z } from 'zod';
+import type { UIMessageChunk } from 'ai';
+
+const inputSchema = z.object({
+  durationMs: z.number().describe('Duration to sleep in milliseconds'),
+});
+
+async function reportSleep(
+  { durationMs }: { durationMs: number },
+  { toolCallId }: { toolCallId: string }
+) {
+  'use step';
+
+  const writable = getWritable<UIMessageChunk>();
+  const writer = writable.getWriter();
+
+  const seconds = Math.ceil(durationMs / 1000);
+
+  await writer.write({
+    id: toolCallId,
+    type: 'data-wait',
+    data: { text: `Sleeping for ${seconds} seconds` },
+  });
+
+  writer.releaseLock();
+}
+
+async function executeSleep(
+  { durationMs }: z.infer<typeof inputSchema>,
+  { toolCallId }: { toolCallId: string }
+) {
+  // No "use step" - sleep is a workflow-level function
+  await reportSleep({ durationMs }, { toolCallId });
+  await sleep(durationMs);
+
+  return `Slept for ${durationMs}ms`;
+}
+
+export const sleepTool = tool({
+  description: 'Pause execution for a specified duration',
+  inputSchema,
+  execute: executeSleep,
+});
+```
+
 ## Related Documentation
 
 - [`sleep()` API Reference](/docs/api-reference/workflow/sleep) - Full API documentation

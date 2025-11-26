@@ -299,6 +299,109 @@ export async function criticalActionWorkflow(action: string) {
 }
 ```
 
+## Complete Example
+
+A human approval tool with UI component:
+
+<Tabs items={['Tool', 'UI Component']}>
+
+<Tab value="Tool">
+
+```typescript title="ai/tools/human-approval.ts" lineNumbers
+import { tool } from 'ai';
+import { createWebhook, getWritable } from 'workflow';
+import { z } from 'zod';
+import type { UIMessageChunk } from 'ai';
+
+async function emitApprovalRequest(
+  { url, message }: { url: string; message: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  'use step';
+
+  const writable = getWritable<UIMessageChunk>();
+  const writer = writable.getWriter();
+
+  await writer.write({
+    id: toolCallId,
+    type: 'data-approval-required',
+    data: { url, message },
+  });
+
+  writer.releaseLock();
+}
+
+async function executeHumanApproval(
+  { message }: { message: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  // No "use step" - webhooks are workflow-level primitives
+  const webhook = createWebhook();
+
+  await emitApprovalRequest({ url: webhook.url, message }, { toolCallId });
+
+  const request = await webhook;
+  const { approved, comment } = await request.json();
+
+  if (!approved) {
+    return `Action rejected: ${comment}`;
+  }
+
+  return `Approved with comment: ${comment}`;
+}
+
+export const humanApproval = tool({
+  description: 'Request human approval before proceeding with an action',
+  inputSchema: z.object({
+    message: z.string().describe('Description of what needs approval'),
+  }),
+  execute: executeHumanApproval,
+});
+```
+
+</Tab>
+
+<Tab value="UI Component">
+
+```typescript title="components/approval-button.tsx" lineNumbers
+'use client';
+
+interface ApprovalData {
+  url: string;
+  message: string;
+}
+
+export function ApprovalButton({ data }: { data: ApprovalData }) {
+  const handleApprove = async () => {
+    await fetch(data.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: true, comment: 'Approved' }),
+    });
+  };
+
+  const handleReject = async () => {
+    await fetch(data.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: false, comment: 'Rejected' }),
+    });
+  };
+
+  return (
+    <div>
+      <p>{data.message}</p>
+      <button onClick={handleApprove}>Approve</button>
+      <button onClick={handleReject}>Reject</button>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+</Tabs>
+
 ## Related Documentation
 
 - [Hooks & Webhooks](/docs/foundations/hooks) - Complete guide to hooks and webhooks

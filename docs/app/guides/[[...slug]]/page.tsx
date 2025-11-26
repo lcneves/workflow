@@ -1,15 +1,16 @@
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import {
+  DocsBody as FumadocsDocsBody,
+  DocsDescription as FumadocsDocsDescription,
+  DocsPage as FumadocsDocsPage,
+  DocsTitle as FumadocsDocsTitle,
+} from 'fumadocs-ui/page';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
+import type { CSSProperties } from 'react';
 import { AskAI } from '@/components/geistdocs/ask-ai';
 import { CopyPage } from '@/components/geistdocs/copy-page';
-import {
-  DocsBody,
-  DocsDescription,
-  DocsPage,
-  DocsTitle,
-} from '@/components/geistdocs/docs-page';
 import { EditSource } from '@/components/geistdocs/edit-source';
 import { Feedback } from '@/components/geistdocs/feedback';
 import { getMDXComponents } from '@/components/geistdocs/mdx-components';
@@ -24,10 +25,20 @@ import {
   guidesSource,
 } from '@/lib/geistdocs/source';
 import { TSDoc } from '@/lib/tsdoc';
+import { cn } from '@/lib/utils';
 import type { Metadata } from 'next';
+
+const containerStyle = {
+  '--fd-nav-height': '4rem',
+} as CSSProperties;
 
 const Page = async (props: PageProps<'/guides/[[...slug]]'>) => {
   const params = await props.params;
+
+  // Redirect /guides to /guides/ai-agents
+  if (!params.slug || params.slug.length === 0) {
+    redirect('/guides/ai-agents');
+  }
 
   const page = guidesSource.getPage(params.slug);
 
@@ -39,8 +50,14 @@ const Page = async (props: PageProps<'/guides/[[...slug]]'>) => {
   const MDX = page.data.body;
 
   return (
-    <DocsPage
-      slug={params.slug}
+    <FumadocsDocsPage
+      full={page.data.full}
+      toc={page.data.toc}
+      article={{ className: 'max-w-[754px]' }}
+      container={{
+        style: containerStyle,
+        className: 'col-span-2',
+      }}
       tableOfContent={{
         component: (
           <TableOfContents>
@@ -53,11 +70,12 @@ const Page = async (props: PageProps<'/guides/[[...slug]]'>) => {
           </TableOfContents>
         ),
       }}
-      toc={page.data.toc}
     >
-      <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription>{page.data.description}</DocsDescription>
-      <DocsBody>
+      <FumadocsDocsTitle className={cn('text-4xl tracking-tight')}>
+        {page.data.title}
+      </FumadocsDocsTitle>
+      <FumadocsDocsDescription>{page.data.description}</FumadocsDocsDescription>
+      <FumadocsDocsBody className={cn('mx-auto w-full')}>
         <MDX
           components={getMDXComponents({
             a: createRelativeLink(guidesSource, page),
@@ -72,20 +90,28 @@ const Page = async (props: PageProps<'/guides/[[...slug]]'>) => {
             Tab,
           })}
         />
-      </DocsBody>
-    </DocsPage>
+      </FumadocsDocsBody>
+    </FumadocsDocsPage>
   );
 };
 
-export const generateStaticParams = () =>
-  guidesSource.generateParams().map((params) => ({
+export const generateStaticParams = () => [
+  { slug: [] }, // Root redirect
+  ...guidesSource.generateParams().map((params) => ({
     slug: params.slug,
-  }));
+  })),
+];
 
 export const generateMetadata = async (
   props: PageProps<'/guides/[[...slug]]'>
 ): Promise<Metadata> => {
   const params = await props.params;
+
+  // Root path redirects, no metadata needed
+  if (!params.slug || params.slug.length === 0) {
+    return { title: 'Guides' };
+  }
+
   const page = guidesSource.getPage(params.slug);
 
   if (!page) {

@@ -24,7 +24,10 @@ With a standard chat implementation, users must resend their message and wait fo
 
 ## Implementation
 
-### Step 1: Return the Run ID from Your API
+<Steps>
+
+<Step>
+### Return the Run ID from Your API
 
 Modify your chat endpoint to include the workflow run ID in a response header:
 
@@ -48,7 +51,10 @@ export async function POST(req: Request) {
 }
 ```
 
-### Step 2: Add a Stream Reconnection Endpoint
+</Step>
+
+<Step>
+### Add a Stream Reconnection Endpoint
 
 Create an endpoint that returns the stream for an existing run:
 
@@ -78,7 +84,10 @@ export async function GET(
 
 The `startIndex` parameter ensures the client only receives chunks it missed, avoiding duplicate data.
 
-### Step 3: Use WorkflowChatTransport in the Client
+</Step>
+
+<Step>
+### Use `WorkflowChatTransport` in the Client
 
 Replace the default transport in `useChat` with `WorkflowChatTransport`:
 
@@ -155,6 +164,10 @@ export function Chat() {
 }
 ```
 
+</Step>
+
+</Steps>
+
 ## How It Works
 
 1. When the user sends a message, `WorkflowChatTransport` makes a POST to `/api/chat`
@@ -200,6 +213,132 @@ new WorkflowChatTransport({
 ```
 
 The transport automatically retries reconnection on network errors. After reaching the limit, it stops attempting and surfaces the error.
+
+## Complete Example
+
+<Tabs items={['API Route', 'Reconnect Endpoint', 'Client']}>
+
+<Tab value="API Route">
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+import { createUIMessageStreamResponse, convertToModelMessages } from 'ai';
+import { start } from 'workflow/api';
+import { chatWorkflow } from './workflow';
+
+export async function POST(req: Request) {
+  const { messages, modelId } = await req.json();
+  const modelMessages = convertToModelMessages(messages);
+
+  const run = await start(chatWorkflow, [{ messages: modelMessages, modelId }]);
+
+  return createUIMessageStreamResponse({
+    stream: run.readable,
+    headers: {
+      'x-workflow-run-id': run.runId,
+    },
+  });
+}
+```
+
+</Tab>
+
+<Tab value="Reconnect Endpoint">
+
+```typescript title="app/api/chat/[id]/stream/route.ts" lineNumbers
+import { createUIMessageStreamResponse } from 'ai';
+import { getRun } from 'workflow/api';
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+
+  const startIndexParam = searchParams.get('startIndex');
+  const startIndex = startIndexParam
+    ? parseInt(startIndexParam, 10)
+    : undefined;
+
+  const run = getRun(id);
+  const stream = run.getReadable({ startIndex });
+
+  return createUIMessageStreamResponse({ stream });
+}
+```
+
+</Tab>
+
+<Tab value="Client">
+
+```typescript title="app/chat.tsx" lineNumbers
+'use client';
+
+import { useChat } from '@ai-sdk/react';
+import { WorkflowChatTransport } from '@workflow/ai';
+import { useMemo, useState } from 'react';
+
+export function Chat() {
+  const [input, setInput] = useState('');
+
+  const activeRunId = useMemo(() => {
+    if (typeof window === 'undefined') return;
+    return localStorage.getItem('active-workflow-run-id') ?? undefined;
+  }, []);
+
+  const { messages, sendMessage, status } = useChat({
+    resume: Boolean(activeRunId),
+    transport: new WorkflowChatTransport({
+      api: '/api/chat',
+      onChatSendMessage: (response) => {
+        const workflowRunId = response.headers.get('x-workflow-run-id');
+        if (workflowRunId) {
+          localStorage.setItem('active-workflow-run-id', workflowRunId);
+        }
+      },
+      onChatEnd: () => {
+        localStorage.removeItem('active-workflow-run-id');
+      },
+      prepareReconnectToStreamRequest: ({ api, ...rest }) => {
+        const runId = localStorage.getItem('active-workflow-run-id');
+        if (!runId) throw new Error('No active workflow run ID found');
+        return {
+          ...rest,
+          api: `/api/chat/${encodeURIComponent(runId)}/stream`,
+        };
+      },
+      maxConsecutiveErrors: 5,
+    }),
+  });
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          <strong>{m.role}:</strong> {m.content}
+        </div>
+      ))}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput('');
+        }}
+      >
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type a message..."
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+</Tabs>
 
 ## Related Documentation
 
