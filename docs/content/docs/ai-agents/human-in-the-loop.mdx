@@ -1,0 +1,307 @@
+---
+title: Human-in-the-Loop
+---
+
+Some agent actions require human approval before proceeding - deploying to production, sending emails to customers, or making financial transactions. Workflow DevKit's webhook and hook primitives enable "human-in-the-loop" patterns where workflows pause until a human takes action.
+
+## Creating an Approval Tool
+
+Add a tool that pauses the agent until a human approves or rejects:
+
+```typescript title="ai/tools/human-approval.ts" lineNumbers
+import { tool } from 'ai';
+import { createWebhook, getWritable } from 'workflow'; // [!code highlight]
+import { z } from 'zod';
+import type { UIMessageChunk } from 'ai';
+
+async function emitApprovalRequest(
+  { url, message }: { url: string; message: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  'use step';
+
+  const writable = getWritable<UIMessageChunk>();
+  const writer = writable.getWriter();
+
+  await writer.write({
+    id: toolCallId,
+    type: 'data-approval-required',
+    data: { url, message },
+  });
+
+  writer.releaseLock();
+}
+
+async function executeHumanApproval(
+  { message }: { message: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  // Note: No "use step" - webhooks are workflow-level primitives // [!code highlight]
+
+  const webhook = createWebhook(); // [!code highlight]
+
+  // Emit the approval URL to the UI
+  await emitApprovalRequest(
+    { url: webhook.url, message },
+    { toolCallId }
+  );
+
+  // Workflow pauses here until the webhook is called // [!code highlight]
+  await webhook; // [!code highlight]
+
+  return 'Approval received. Proceeding with action.';
+}
+
+export const humanApproval = tool({
+  description: 'Request human approval before proceeding with an action',
+  inputSchema: z.object({
+    message: z.string().describe('Description of what needs approval'),
+  }),
+  execute: executeHumanApproval,
+});
+```
+
+<Callout type="info">
+The `createWebhook()` function must be called from within a workflow context, not from a step. This is why `executeHumanApproval` does not have `"use step"`.
+</Callout>
+
+## How It Works
+
+1. The agent calls the `humanApproval` tool with a message describing what needs approval
+2. `createWebhook()` generates a unique URL that can resume the workflow
+3. The tool emits a data chunk containing the approval URL to the UI
+4. The workflow pauses at `await webhook` - no compute resources are consumed
+5. When a human visits the webhook URL, the workflow resumes
+6. The tool returns and the agent continues with the approved action
+
+## Handling the Approval UI
+
+The UI receives a data chunk with type `data-approval-required`. Display an approval button that triggers the webhook:
+
+```typescript title="components/approval-button.tsx" lineNumbers
+'use client';
+
+interface ApprovalData {
+  url: string;
+  message: string;
+}
+
+export function ApprovalButton({ data }: { data: ApprovalData }) {
+  const handleApprove = async () => {
+    await fetch(data.url, { method: 'POST' });
+  };
+
+  return (
+    <div>
+      <p>{data.message}</p>
+      <button onClick={handleApprove}>Approve</button>
+    </div>
+  );
+}
+```
+
+## Receiving Approval Data
+
+To receive data from the approval action (such as approve/reject status or comments), read the webhook request body:
+
+```typescript title="ai/tools/human-approval.ts" lineNumbers
+async function executeHumanApproval(
+  { message }: { message: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  const webhook = createWebhook();
+
+  await emitApprovalRequest({ url: webhook.url, message }, { toolCallId });
+
+  const request = await webhook; // [!code highlight]
+  const { approved, comment } = await request.json(); // [!code highlight]
+
+  if (!approved) {
+    return `Action rejected: ${comment}`;
+  }
+
+  return `Approved with comment: ${comment}`;
+}
+```
+
+The UI sends the approval data in the request body:
+
+```typescript lineNumbers
+const handleApprove = async () => {
+  await fetch(data.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved: true, comment: 'Looks good!' }),
+  });
+};
+
+const handleReject = async () => {
+  await fetch(data.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved: false, comment: 'Not ready yet' }),
+  });
+};
+```
+
+## Using Hooks for Type-Safe Approvals
+
+For stronger type safety, use [`defineHook()`](/docs/api-reference/workflow/define-hook) with a schema:
+
+```typescript title="ai/tools/deployment-approval.ts" lineNumbers
+import { tool } from 'ai';
+import { defineHook, getWritable } from 'workflow';
+import { z } from 'zod';
+import type { UIMessageChunk } from 'ai';
+
+// Define a typed hook for deployment approvals
+const deploymentApprovalHook = defineHook({ // [!code highlight]
+  schema: z.object({ // [!code highlight]
+    approved: z.boolean(), // [!code highlight]
+    approvedBy: z.string(), // [!code highlight]
+    environment: z.enum(['staging', 'production']), // [!code highlight]
+  }), // [!code highlight]
+}); // [!code highlight]
+
+async function emitDeploymentApproval(
+  token: string,
+  environment: string,
+  toolCallId: string
+) {
+  'use step';
+
+  const writable = getWritable<UIMessageChunk>();
+  const writer = writable.getWriter();
+
+  await writer.write({
+    id: toolCallId,
+    type: 'data-deployment-approval',
+    data: { token, environment },
+  });
+
+  writer.releaseLock();
+}
+
+async function executeDeploymentApproval(
+  { environment }: { environment: 'staging' | 'production' },
+  { toolCallId }: { toolCallId: string }
+) {
+  const hook = deploymentApprovalHook.create(); // [!code highlight]
+
+  await emitDeploymentApproval(hook.token, environment, toolCallId);
+
+  const approval = await hook; // [!code highlight]
+
+  if (!approval.approved) {
+    return `Deployment to ${environment} rejected by ${approval.approvedBy}`;
+  }
+
+  return `Deployment to ${environment} approved by ${approval.approvedBy}`;
+}
+
+export const deploymentApproval = tool({
+  description: 'Request approval for a deployment',
+  inputSchema: z.object({
+    environment: z.enum(['staging', 'production']),
+  }),
+  execute: executeDeploymentApproval,
+});
+```
+
+Resume the hook from your approval API:
+
+```typescript title="app/api/approve-deployment/route.ts" lineNumbers
+import { deploymentApprovalHook } from '@/ai/tools/deployment-approval';
+
+export async function POST(request: Request) {
+  const { token, approved, approvedBy, environment } = await request.json();
+
+  try {
+    // Schema validation happens automatically // [!code highlight]
+    await deploymentApprovalHook.resume(token, { // [!code highlight]
+      approved, // [!code highlight]
+      approvedBy, // [!code highlight]
+      environment, // [!code highlight]
+    }); // [!code highlight]
+
+    return Response.json({ success: true });
+  } catch (error) {
+    return Response.json(
+      { error: 'Invalid token or validation failed' },
+      { status: 400 }
+    );
+  }
+}
+```
+
+## Use Cases
+
+### Email Approval
+
+Wait for approval before sending an email to customers:
+
+```typescript lineNumbers
+async function executeSendEmail(
+  { recipients, subject, body }: EmailParams,
+  { toolCallId }: { toolCallId: string }
+) {
+  const webhook = createWebhook();
+
+  await emitEmailApproval({
+    url: webhook.url,
+    recipients,
+    subject,
+    preview: body.substring(0, 200),
+  }, toolCallId);
+
+  const request = await webhook;
+  const { approved } = await request.json();
+
+  if (!approved) {
+    return 'Email cancelled by user';
+  }
+
+  await sendEmail({ recipients, subject, body });
+  return `Email sent to ${recipients.length} recipients`;
+}
+```
+
+### Multi-Step Approval
+
+Chain multiple approvals for high-risk actions:
+
+```typescript lineNumbers
+export async function criticalActionWorkflow(action: string) {
+  'use workflow';
+
+  // First approval: Team lead
+  const leadApproval = await requestApproval({
+    role: 'team-lead',
+    action,
+  });
+
+  if (!leadApproval.approved) {
+    return { status: 'rejected', stage: 'team-lead' };
+  }
+
+  // Second approval: Manager
+  const managerApproval = await requestApproval({
+    role: 'manager',
+    action,
+  });
+
+  if (!managerApproval.approved) {
+    return { status: 'rejected', stage: 'manager' };
+  }
+
+  await executeCriticalAction(action);
+  return { status: 'completed' };
+}
+```
+
+## Related Documentation
+
+- [Hooks & Webhooks](/docs/foundations/hooks) - Complete guide to hooks and webhooks
+- [`createWebhook()` API Reference](/docs/api-reference/workflow/create-webhook) - Webhook configuration options
+- [`defineHook()` API Reference](/docs/api-reference/workflow/define-hook) - Type-safe hook definitions
+

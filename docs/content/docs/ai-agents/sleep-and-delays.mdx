@@ -1,0 +1,219 @@
+---
+title: Sleep and Delays
+---
+
+AI agents sometimes need to pause execution - waiting before retrying an operation, implementing rate limiting, or scheduling future actions. Workflow DevKit's [`sleep()`](/docs/api-reference/workflow/sleep) function enables time-based delays without consuming compute resources.
+
+## Adding a Sleep Tool
+
+Create a tool that allows the agent to pause for a specified duration:
+
+```typescript title="ai/tools/sleep.ts" lineNumbers
+import { tool } from 'ai';
+import { getWritable, sleep } from 'workflow'; // [!code highlight]
+import { z } from 'zod';
+import type { UIMessageChunk } from 'ai';
+
+const inputSchema = z.object({
+  durationMs: z.number().describe('Duration to sleep in milliseconds'),
+});
+
+async function reportSleep(
+  { durationMs }: { durationMs: number },
+  { toolCallId }: { toolCallId: string }
+) {
+  'use step';
+
+  const writable = getWritable<UIMessageChunk>();
+  const writer = writable.getWriter();
+
+  const seconds = Math.ceil(durationMs / 1000);
+
+  await writer.write({
+    id: toolCallId,
+    type: 'data-wait',
+    data: { text: `Sleeping for ${seconds} seconds` },
+  });
+
+  writer.releaseLock();
+}
+
+async function executeSleep(
+  { durationMs }: z.infer<typeof inputSchema>,
+  { toolCallId }: { toolCallId: string }
+) {
+  // Note: No "use step" here - sleep is a workflow-level function // [!code highlight]
+
+  await reportSleep({ durationMs }, { toolCallId });
+  await sleep(durationMs); // [!code highlight]
+
+  return `Slept for ${durationMs}ms`;
+}
+
+export const sleepTool = tool({
+  description: 'Pause execution for a specified duration',
+  inputSchema,
+  execute: executeSleep,
+});
+```
+
+<Callout type="info">
+The `sleep()` function must be called from within a workflow context, not from within a step. This is why `executeSleep` does not have `"use step"` - it runs in the workflow context where `sleep()` is available.
+</Callout>
+
+## How Sleep Works
+
+When `sleep()` is called:
+
+1. The workflow records the wake-up time in the event log
+2. The workflow suspends, releasing all compute resources
+3. At the specified time, the workflow resumes execution
+
+This differs from `setTimeout` or `await new Promise(resolve => setTimeout(resolve, ms))`:
+- No compute resources are consumed during the sleep
+- The workflow survives restarts, deploys, and infrastructure changes
+- Sleep durations can span hours, days, or months
+
+## Duration Formats
+
+The `sleep()` function accepts multiple duration formats:
+
+```typescript lineNumbers
+// Milliseconds (number)
+await sleep(5000);
+
+// Duration strings
+await sleep('30s');      // 30 seconds
+await sleep('5m');       // 5 minutes
+await sleep('2h');       // 2 hours
+await sleep('1d');       // 1 day
+await sleep('1 month');  // 1 month
+
+// Date instance
+await sleep(new Date('2025-12-31T23:59:59Z'));
+```
+
+## Emitting Progress Updates
+
+When sleeping for long durations, emit a progress update so the UI can display the waiting state:
+
+```typescript title="ai/tools/schedule-task.ts" lineNumbers
+import { tool } from 'ai';
+import { getWritable, sleep } from 'workflow';
+import { z } from 'zod';
+import type { UIMessageChunk } from 'ai';
+
+async function emitWaitingStatus(message: string, toolCallId: string) {
+  'use step';
+
+  const writable = getWritable<UIMessageChunk>();
+  const writer = writable.getWriter();
+
+  await writer.write({
+    id: toolCallId,
+    type: 'data-wait',
+    data: { text: message },
+  });
+
+  writer.releaseLock();
+}
+
+async function executeScheduleTask(
+  { delayMinutes, taskName }: { delayMinutes: number; taskName: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  await emitWaitingStatus(
+    `Scheduled "${taskName}" to run in ${delayMinutes} minutes`,
+    toolCallId
+  );
+
+  await sleep(`${delayMinutes}m`); // [!code highlight]
+
+  return `Task "${taskName}" is now ready to execute`;
+}
+
+export const scheduleTask = tool({
+  description: 'Schedule a task to run after a delay',
+  inputSchema: z.object({
+    delayMinutes: z.number(),
+    taskName: z.string(),
+  }),
+  execute: executeScheduleTask,
+});
+```
+
+## Use Cases
+
+### Rate Limiting
+
+When hitting API rate limits, sleep before retrying:
+
+```typescript lineNumbers
+async function callRateLimitedAPI(endpoint: string) {
+  'use step';
+
+  const response = await fetch(endpoint);
+
+  if (response.status === 429) {
+    const retryAfter = response.headers.get('Retry-After');
+    throw new RetryableError('Rate limited', {
+      retryAfter: retryAfter ? parseInt(retryAfter) * 1000 : '1m',
+    });
+  }
+
+  return response.json();
+}
+```
+
+### Scheduled Notifications
+
+Send a reminder after a delay:
+
+```typescript lineNumbers
+async function executeReminder(
+  { message, delayHours }: { message: string; delayHours: number }
+) {
+  await sleep(`${delayHours}h`);
+  await sendNotification(message);
+
+  return `Reminder sent: ${message}`;
+}
+```
+
+### Polling with Backoff
+
+Poll for a result with increasing delays:
+
+```typescript lineNumbers
+export async function pollForResult(jobId: string) {
+  'use workflow';
+
+  let attempt = 0;
+  const maxAttempts = 10;
+
+  while (attempt < maxAttempts) {
+    const result = await checkJobStatus(jobId);
+
+    if (result.status === 'complete') {
+      return result.data;
+    }
+
+    attempt++;
+    await sleep(Math.min(1000 * 2 ** attempt, 60000)); // Exponential backoff, max 1 minute
+  }
+
+  throw new Error('Job did not complete in time');
+}
+
+async function checkJobStatus(jobId: string) {
+  'use step';
+  // Check job status...
+}
+```
+
+## Related Documentation
+
+- [`sleep()` API Reference](/docs/api-reference/workflow/sleep) - Full API documentation
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - Understanding workflow context
+- [Errors and Retries](/docs/foundations/errors-and-retries) - Using `RetryableError` with delays
+

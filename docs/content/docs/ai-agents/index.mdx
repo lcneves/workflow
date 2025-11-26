@@ -1,0 +1,237 @@
+---
+title: Building Durable AI Agents
+---
+
+<Callout type="warn">
+`@workflow/ai` is in public beta and should be considered experimental.
+</Callout>
+
+AI agents are built on the primitive of LLM and tool-call loops, often with additional processes for data fetching, resource provisioning, or reacting to external events. Workflow DevKit allows you to designate these loops as stateful, resumable workflows, with LLM calls, tool calls, and other async operations as individual, retryable, observable steps.
+
+This guide walks through converting a basic AI SDK agent into a durable agent using Workflow DevKit.
+
+## Why Durable Agents?
+
+Building production-ready AI agents typically requires solving several challenges:
+
+- **Durability**: Queue management, tracking sub-jobs, and handling task execution across failures
+- **Reliability**: Error handling, retries, and recovery from partial failures
+- **Observability**: Storing messages, emitting traces, and debugging agent behavior
+- **Resumability**: Persisting state to a database, managing stream providers for reconnection
+- **Long-running operations**: Sleep, delays, and month-long workflows without idle costs
+- **Human approval loops**: Queues, async workers, and database-backed state management
+
+Workflow DevKit provides these capabilities out of the box. Your agent becomes a workflow, your tools become steps, and the framework handles interplay with your existing infrastructure.
+
+## Getting Started
+
+Start with a Next.js application using the AI SDK's `Agent` class:
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+import { createUIMessageStreamResponse, Agent, stepCountIs } from 'ai';
+import { tools } from '@/ai/tools';
+
+export async function POST(req: Request) {
+  const { messages, modelId } = await req.json();
+
+  const agent = new Agent({
+    model: modelId,
+    system: 'You are a helpful assistant.',
+    tools: tools(),
+    stopWhen: stepCountIs(20),
+  });
+
+  const stream = agent.stream({ messages });
+
+  return createUIMessageStreamResponse({
+    stream: stream.toUIMessageStream(),
+  });
+}
+```
+
+### Step 1: Install Dependencies
+
+Add the Workflow DevKit packages to your project:
+
+```bash
+npm install workflow @workflow/ai
+```
+
+### Step 2: Create a Workflow Function
+
+Move the agent logic into a separate workflow function:
+
+```typescript title="app/api/chat/workflow.ts" lineNumbers
+import { DurableAgent } from '@workflow/ai/agent'; // [!code highlight]
+import { getWritable } from 'workflow'; // [!code highlight]
+import { stepCountIs } from 'ai';
+import { tools } from '@/ai/tools';
+import type { ModelMessage, UIMessageChunk } from 'ai';
+
+export async function chatWorkflow({
+  messages,
+  modelId,
+}: {
+  messages: ModelMessage[];
+  modelId: string;
+}) {
+  'use workflow'; // [!code highlight]
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+
+  const agent = new DurableAgent({ // [!code highlight]
+    model: modelId,
+    system: 'You are a helpful assistant.',
+    tools: tools(),
+  });
+
+  await agent.stream({ // [!code highlight]
+    messages,
+    writable,
+    stopWhen: stepCountIs(20),
+  });
+}
+```
+
+Key changes:
+
+- Replace `Agent` with [`DurableAgent`](/docs/api-reference/workflow-ai/durable-agent) from `@workflow/ai/agent`
+- Add the `"use workflow"` directive to mark this as a workflow function
+- Use [`getWritable()`](/docs/api-reference/workflow/get-writable) to get a stream for agent output
+- Pass the `writable` to `agent.stream()` instead of returning a stream directly
+
+### Step 3: Update the API Route
+
+Replace the agent call with [`start()`](/docs/api-reference/workflow-api/start) to run the workflow:
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+import { createUIMessageStreamResponse, convertToModelMessages } from 'ai';
+import { start } from 'workflow/api'; // [!code highlight]
+import { chatWorkflow } from './workflow'; // [!code highlight]
+
+export async function POST(req: Request) {
+  const { messages, modelId } = await req.json();
+  const modelMessages = convertToModelMessages(messages);
+
+  const run = await start(chatWorkflow, [{ messages: modelMessages, modelId }]); // [!code highlight]
+
+  return createUIMessageStreamResponse({
+    stream: run.readable, // [!code highlight]
+  });
+}
+```
+
+### Step 4: Convert Tools to Steps
+
+Mark tool execution functions with `"use step"` to make them durable. This enables automatic retries and observability:
+
+```typescript title="ai/tools/search-web.ts" lineNumbers
+import { tool } from 'ai';
+import { z } from 'zod';
+
+async function executeSearch({ query }: { query: string }) {
+  'use step'; // [!code highlight]
+
+  const response = await fetch(`https://api.search.com?q=${query}`);
+  return response.json();
+}
+
+export const searchWeb = tool({
+  description: 'Search the web for information',
+  inputSchema: z.object({ query: z.string() }),
+  execute: executeSearch,
+});
+```
+
+With `"use step"`:
+
+- The tool execution runs in a separate step with full Node.js access
+- Failed tool calls are automatically retried (up to 3 times by default)
+- Each tool execution appears as a discrete step in observability tools
+- Results are persisted, so replays skip already-completed tools
+
+### Step 5: Stream Progress Updates from Tools
+
+Tools can emit progress updates to the same stream the agent uses. This allows the UI to display tool status:
+
+```typescript title="ai/tools/run-command.ts" lineNumbers
+import { tool } from 'ai';
+import { getWritable } from 'workflow'; // [!code highlight]
+import { z } from 'zod';
+import type { UIMessageChunk } from 'ai';
+
+async function executeRunCommand(
+  { command }: { command: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  'use step';
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+
+  // Emit a progress update // [!code highlight]
+  await writer.write({ // [!code highlight]
+    id: toolCallId, // [!code highlight]
+    type: 'data-run-command', // [!code highlight]
+    data: { command, status: 'executing' }, // [!code highlight]
+  }); // [!code highlight]
+
+  const result = await runCommand(command);
+
+  await writer.write({ // [!code highlight]
+    id: toolCallId, // [!code highlight]
+    type: 'data-run-command', // [!code highlight]
+    data: { command, status: 'done', result }, // [!code highlight]
+  }); // [!code highlight]
+
+  writer.releaseLock(); // [!code highlight]
+
+  return result;
+}
+
+export const runCommand = tool({
+  description: 'Run a shell command',
+  inputSchema: z.object({ command: z.string() }),
+  execute: executeRunCommand,
+});
+```
+
+The UI can handle these data chunks to display real-time progress.
+
+## Running the Workflow
+
+Run your development server, then open the observability dashboard to see your workflow in action:
+
+```bash
+npx workflow web
+```
+
+This opens a local dashboard showing:
+
+- All workflow runs and their status
+- Individual step executions with timing
+- Errors and retry attempts
+- Stream data flowing through the workflow
+
+## Next Steps
+
+Now that you have a basic durable agent, explore these additional capabilities:
+
+<Cards>
+  <Card title="Resumable Streams" href="/docs/ai-agents/resumable-streams">
+    Enable clients to reconnect to interrupted streams without losing data.
+  </Card>
+  <Card title="Sleep and Delays" href="/docs/ai-agents/sleep-and-delays">
+    Add native sleep functionality for time-based workflows.
+  </Card>
+  <Card title="Human-in-the-Loop" href="/docs/ai-agents/human-in-the-loop">
+    Implement approval workflows that wait for human input.
+  </Card>
+</Cards>
+
+## Related Documentation
+
+- [`DurableAgent` API Reference](/docs/api-reference/workflow-ai/durable-agent) - Full API documentation
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - Core concepts
+- [Streaming](/docs/foundations/streaming) - In-depth streaming guide
+- [Errors and Retries](/docs/foundations/errors-and-retries) - Error handling patterns
