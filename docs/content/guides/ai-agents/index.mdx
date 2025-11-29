@@ -8,7 +8,7 @@ Workflow DevKit makes your agents production-ready, by turning them into durable
 
 <AgentTraces />
 
-This guide walks you through converting a basic AI SDK agent into a durable agent using Workflow DevKit.
+This guide walks you through converting a basic [AI SDK agent](https://ai-sdk.dev/docs/agents/overview) into a durable agent using Workflow DevKit.
 
 ## Why Durable Agents?
 
@@ -128,7 +128,7 @@ Add the Workflow DevKit packages to your project:
 npm i workflow @workflow/ai
 ```
 
-and extend the NextJS config to transform the your workflow code:
+and extend the Next.js config to transform your workflow code (see Next.js [Getting Started guide](/docs/getting-started/next) for more details):
 
 ```typescript title="next.config.ts" lineNumbers
 import { withWorkflow } from 'workflow/next';
