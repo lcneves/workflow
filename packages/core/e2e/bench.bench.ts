@@ -1,8 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { withResolvers } from '@workflow/utils';
 import { bench, describe } from 'vitest';
 import { dehydrateWorkflowArguments } from '../src/serialization';
-import fs from 'fs';
-import path from 'path';
 
 const deploymentUrl = process.env.DEPLOYMENT_URL;
 if (!deploymentUrl) {

@@ -20,7 +20,7 @@ export class VercelBuildOutputAPIBuilder extends BaseBuilder {
       tsBaseUrl: tsConfig.baseUrl,
       tsPaths: tsConfig.paths,
     };
-    await this.buildStepsFunction(options);
+    const manifest = await this.buildStepsFunction(options);
     await this.buildWorkflowsFunction(options);
     await this.buildWebhookFunction(options);
     await this.createBuildOutputConfig(outputDir);
@@ -30,6 +30,7 @@ export class VercelBuildOutputAPIBuilder extends BaseBuilder {
     await this.createManifest({
       workflowBundlePath,
       manifestDir: workflowGeneratedDir,
+      manifest,
     });
 
     await this.createClientLibrary();
@@ -45,13 +46,13 @@ export class VercelBuildOutputAPIBuilder extends BaseBuilder {
     workflowGeneratedDir: string;
     tsBaseUrl?: string;
     tsPaths?: Record<string, string[]>;
-  }): Promise<void> {
+  }) {
     console.log('Creating Vercel Build Output API steps function');
     const stepsFuncDir = join(workflowGeneratedDir, 'step.func');
     await mkdir(stepsFuncDir, { recursive: true });
 
     // Create steps bundle
-    await this.createStepsBundle({
+    const { manifest } = await this.createStepsBundle({
       inputFiles,
       outfile: join(stepsFuncDir, 'index.js'),
       tsBaseUrl,
@@ -64,6 +65,8 @@ export class VercelBuildOutputAPIBuilder extends BaseBuilder {
       shouldAddSourcemapSupport: true,
       experimentalTriggers: [STEP_QUEUE_TRIGGER],
     });
+
+    return manifest;
   }
 
   private async buildWorkflowsFunction({

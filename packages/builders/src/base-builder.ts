@@ -27,7 +27,6 @@ const EMIT_SOURCEMAPS_FOR_DEBUGGING =
  */
 export abstract class BaseBuilder {
   protected config: WorkflowConfig;
-  protected lastWorkflowManifest?: WorkflowManifest;
 
   constructor(config: WorkflowConfig) {
     this.config = config;
@@ -384,9 +383,6 @@ export abstract class BaseBuilder {
 
     // Create .gitignore in .swc directory
     await this.createSwcGitignore();
-
-    // Store the manifest for later use (e.g., graph generation in watch mode)
-    this.lastWorkflowManifest = workflowManifest;
 
     if (this.config.watch) {
       return { context: esbuildCtx, manifest: workflowManifest };
@@ -836,29 +832,30 @@ export const OPTIONS = handler;`;
   protected async createManifest({
     workflowBundlePath,
     manifestDir,
+    manifest,
   }: {
     workflowBundlePath: string;
     manifestDir: string;
+    manifest: WorkflowManifest;
   }): Promise<void> {
     const buildStart = Date.now();
     console.log('Creating manifest...');
 
     try {
       const workflowGraphs = await extractWorkflowGraphs(workflowBundlePath);
-      const source = this.lastWorkflowManifest || {};
 
-      const steps = this.convertStepsManifest(source.steps);
+      const steps = this.convertStepsManifest(manifest.steps);
       const workflows = this.convertWorkflowsManifest(
-        source.workflows,
+        manifest.workflows,
         workflowGraphs
       );
 
-      const manifest = { version: '1.0.0', steps, workflows };
+      const output = { version: '1.0.0', steps, workflows };
 
       await mkdir(manifestDir, { recursive: true });
       await writeFile(
         join(manifestDir, 'manifest.json'),
-        JSON.stringify(manifest, null, 2)
+        JSON.stringify(output, null, 2)
       );
 
       const stepCount = Object.values(steps).reduce(

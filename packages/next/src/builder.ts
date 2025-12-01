@@ -43,7 +43,7 @@ export async function getNextBuilder() {
         tsPaths: tsConfig.paths,
       };
 
-      const { context: stepsBuildContext } =
+      const { context: stepsBuildContext, manifest } =
         await this.buildStepsFunction(options);
       const workflowsBundle = await this.buildWorkflowsFunction(options);
       await this.buildWebhookRoute({ workflowGeneratedDir });
@@ -53,6 +53,7 @@ export async function getNextBuilder() {
       await this.createManifest({
         workflowBundlePath,
         manifestDir: workflowGeneratedDir,
+        manifest,
       });
 
       await this.writeFunctionsConfig(outputDir);
@@ -69,6 +70,7 @@ export async function getNextBuilder() {
 
         let stepsCtx = stepsBuildContext;
         let workflowsCtx = workflowsBundle;
+        let currentManifest = manifest;
 
         const normalizePath = (pathname: string) =>
           pathname.replace(/\\/g, '/');
@@ -159,7 +161,7 @@ export async function getNextBuilder() {
           options.inputFiles = newInputFiles;
 
           await stepsCtx.dispose();
-          const { context: newStepsCtx } =
+          const { context: newStepsCtx, manifest: newManifest } =
             await this.buildStepsFunction(options);
           if (!newStepsCtx) {
             throw new Error(
@@ -167,6 +169,7 @@ export async function getNextBuilder() {
             );
           }
           stepsCtx = newStepsCtx;
+          currentManifest = newManifest;
 
           await workflowsCtx.interimBundleCtx.dispose();
           const newWorkflowsCtx = await this.buildWorkflowsFunction(options);
@@ -186,6 +189,7 @@ export async function getNextBuilder() {
             await this.createManifest({
               workflowBundlePath,
               manifestDir: workflowGeneratedDir,
+              manifest: currentManifest,
             });
           } catch (error) {
             console.error('Failed to rebuild manifest:', error);
@@ -254,6 +258,7 @@ export async function getNextBuilder() {
             await this.createManifest({
               workflowBundlePath,
               manifestDir: workflowGeneratedDir,
+              manifest: currentManifest,
             });
           } catch (error) {
             console.error('Failed to rebuild manifest:', error);

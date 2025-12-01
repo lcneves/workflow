@@ -10,7 +10,7 @@ export class StandaloneBuilder extends BaseBuilder {
       tsBaseUrl: tsConfig.baseUrl,
       tsPaths: tsConfig.paths,
     };
-    await this.buildStepsBundle(options);
+    const manifest = await this.buildStepsBundle(options);
     await this.buildWorkflowsBundle(options);
     await this.buildWebhookFunction();
 
@@ -20,6 +20,7 @@ export class StandaloneBuilder extends BaseBuilder {
     await this.createManifest({
       workflowBundlePath,
       manifestDir,
+      manifest,
     });
 
     await this.createClientLibrary();
