@@ -1,20 +1,21 @@
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { createRelativeLink } from 'fumadocs-ui/mdx';
 import {
   DocsBody as FumadocsDocsBody,
   DocsDescription as FumadocsDocsDescription,
   DocsPage as FumadocsDocsPage,
   DocsTitle as FumadocsDocsTitle,
 } from 'fumadocs-ui/page';
-import { createRelativeLink } from 'fumadocs-ui/mdx';
+import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import type { CSSProperties } from 'react';
+import { AgentTraces } from '@/components/custom/agent-traces';
 import { AskAI } from '@/components/geistdocs/ask-ai';
 import { CopyPage } from '@/components/geistdocs/copy-page';
 import { EditSource } from '@/components/geistdocs/edit-source';
 import { Feedback } from '@/components/geistdocs/feedback';
 import { getMDXComponents } from '@/components/geistdocs/mdx-components';
-import { AgentTraces } from '@/components/guides/agent-traces';
 import { OpenInChat } from '@/components/geistdocs/open-in-chat';
 import { ScrollTop } from '@/components/geistdocs/scroll-top';
 import { TableOfContents } from '@/components/geistdocs/toc';
@@ -27,7 +28,6 @@ import {
 } from '@/lib/geistdocs/source';
 import { TSDoc } from '@/lib/tsdoc';
 import { cn } from '@/lib/utils';
-import type { Metadata } from 'next';
 
 const containerStyle = {
   '--fd-nav-height': '4rem',
