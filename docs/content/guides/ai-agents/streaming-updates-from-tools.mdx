@@ -6,20 +6,24 @@ After [building a durable AI agent](/guides/ai-agents), we already get UI messag
 
 Workflow DevKit enables this by letting step functions write custom chunks to the same stream the agent uses. These chunks appear as data parts in your messages, which you can render however you like.
 
+As an example, we'll extend out Flight Booking Agent to use emit more granular progress updates while searching for flights.
+
 <Steps>
 
 <Step>
+
 ### Define Your Data Part Type
 
 First, define a TypeScript type for your custom data part. This ensures type safety across your tool and client code:
 
-```typescript title="types/chat.ts" lineNumbers
-export interface SearchWebDataPart {
-  type: 'data-search-web'; // [!code highlight]
+```typescript title="schemas/chat.ts" lineNumbers
+export interface FoundFlightDataPart {
+  type: 'data-found-flight'; // [!code highlight]
   id: string;
   data: {
-    url: string;
-    status: 'fetching' | 'done';
+    flightNumber: string;
+    from: string;
+    to: string;
   };
 }
 ```
@@ -29,51 +33,45 @@ The `type` field must be a string starting with `data-` followed by your custom 
 </Step>
 
 <Step>
+
 ### Emit Updates from Your Tool
 
 Use [`getWritable()`](/docs/api-reference/workflow/get-writable) inside a step function to get a handle to the stream. Write your custom chunks as the tool progresses:
 
-```typescript title="ai/tools/search-web.ts" lineNumbers
-import { tool } from 'ai';
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
 import { getWritable } from 'workflow';
-import { z } from 'zod';
 import type { UIMessageChunk } from 'ai';
 
-async function executeSearch(
-  { url }: { url: string },
+export async function searchFlights(
+  { from, to, date }: { from: string; to: string; date: string },
   { toolCallId }: { toolCallId: string }
 ) {
   'use step';
 
   const writable = getWritable<UIMessageChunk>(); // [!code highlight]
-  const writer = writable.getWriter();
+  const writer = writable.getWriter(); // [!code highlight]
 
-  // Emit a progress update
-  await writer.write({
-    type: 'data-search-web', // [!code highlight]
-    id: toolCallId, // [!code highlight]
-    data: { url, status: 'fetching' },
-  });
+  // ... existing logic to generate flights ...
 
-  const response = await fetch(url);
-  const content = await response.text();
+  for (const flight of generatedFlights) { // [!code highlight]
 
-  await writer.write({
-    type: 'data-search-web',
-    id: toolCallId,
-    data: { url, status: 'done' },
-  });
+    // Simulate the time it takes to find each flight
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // [!code highlight]
 
-  writer.releaseLock();
+    await writer.write({ // [!code highlight]
+      id: `${toolCallId}-${flight.flightNumber}`, // [!code highlight]
+      type: 'data-found-flight', // [!code highlight]
+      data: flight, // [!code highlight]
+    }); // [!code highlight]
+  } // [!code highlight]
 
-  return content;
+  writer.releaseLock(); // [!code highlight]
+
+  return {
+    message: `Found ${generatedFlights.length} flights from ${from} to ${to} on ${date}`,
+    flights: generatedFlights.sort((a, b) => a.price - b.price), // Sort by price
+  };
 }
-
-export const searchWeb = tool({
-  description: 'Read a web page and return the content',
-  inputSchema: z.object({ url: z.string() }),
-  execute: executeSearch,
-});
 ```
 
 Key points:
@@ -90,7 +88,7 @@ Key points:
 
 Update your chat component to detect and render the custom data parts. Data parts are stored in the message's `parts` array alongside text and tool invocation parts:
 
-```typescript title="app/chat.tsx" lineNumbers
+```typescript title="app/page.tsx" lineNumbers
 {message.parts.map((part, partIndex) => {
   // Render text parts
   if (part.type === 'text') {
@@ -101,53 +99,39 @@ Update your chat component to detect and render the custom data parts. Data part
     );
   }
 
-  // Render tool parts with progress status // [!code highlight]
-  if (part.type === 'tool-searchWeb') { // [!code highlight]
-    if (!('toolCallId' in part) || !('state' in part)) {
-      return null;
-    }
-
-    // Find the latest data part for this tool call // [!code highlight]
-    const dataPart = message.parts.findLast( // [!code highlight]
-      (p) => p.type === 'data-search-web' && p.id === part.toolCallId // [!code highlight]
+  // Render streaming flight data parts // [!code highlight]
+  if (part.type === 'data-found-flight') { // [!code highlight]
+    const flight = part.data as { // [!code highlight]
+      flightNumber: string; // [!code highlight]
+      airline: string; // [!code highlight]
+      from: string; // [!code highlight]
+      to: string; // [!code highlight]
+      price: number; // [!code highlight]
+    }; // [!code highlight]
+    return ( // [!code highlight]
+      <div key={`${part.id}-${flight.flightNumber}`} className="p-3 bg-muted rounded-md"> // [!code highlight]
+        <div className="font-medium">{flight.airline} - {flight.flightNumber}</div> // [!code highlight]
+        <div className="text-muted-foreground">{flight.from} → {flight.to}</div> // [!code highlight]
+        <div className="font-medium">${flight.price}</div> // [!code highlight]
+      </div> // [!code highlight]
     ); // [!code highlight]
+  } // [!code highlight]
 
-    // Extract status from the data part // [!code highlight]
-    const status = // [!code highlight]
-      dataPart && 'data' in dataPart // [!code highlight]
-        ? (dataPart.data as { status: string; url: string }) // [!code highlight]
-        : null; // [!code highlight]
-
-    return (
-      <Tool key={part.toolCallId}>
-        <ToolHeader type={part.type} state={part.state} />
-        <ToolContent>
-          {status?.status === 'fetching' && ( // [!code highlight]
-            <div className="text-muted-foreground text-sm"> // [!code highlight]
-              Fetching {status.url}... // [!code highlight]
-            </div> // [!code highlight]
-          )} // [!code highlight]
-          {part.state === 'output-available' && (
-            <ToolOutput output={renderToolOutput(part)} />
-          )}
-        </ToolContent>
-      </Tool>
-    );
-  }
-
-  return null;
+  // ... other rendering logic ...
 })}
 ```
 
 The pattern is:
 
-1. When rendering a tool invocation part, search for matching data parts using `findLast()`
-2. Match by comparing the data part's `id` to the tool's `toolCallId`
+1. Data parts have a `type` field starting with `data-`
+2. Match the type to your custom identifier (e.g., `data-found-flight`)
 3. Use the data part's payload to display progress or intermediate results
 
 </Step>
 
 </Steps>
+
+Now, when you run the agent to search for flights, you'll see the flight results pop up one after another. This will be most useful if you have tool calls that take minutes to complete, and you need to show granular progress updates to the user.
 
 ## Related Documentation
 

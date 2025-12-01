@@ -10,8 +10,8 @@ When using [multi-turn workflows](/guides/ai-agents/chat-session-modeling#multi-
 
 Message queueing is useful when:
 
-- Users send follow-up messages while the agent is still processing tool calls
-- External systems need to inject context mid-turn (e.g., a webhook fires during processing)
+- Users send follow-up messages while the agent is still searching for flights or processing bookings
+- External systems need to inject context mid-turn (e.g., a flight status webhook fires during processing)
 - You want messages to influence the agent's next step rather than waiting for the current turn to complete
 
 <Callout type="info">
@@ -40,11 +40,12 @@ interface PrepareStepResult {
 
 Combine a message queue with `prepareStep` to inject messages that arrive during processing:
 
-```typescript title="app/api/chat/workflow.ts" lineNumbers
+```typescript title="workflows/chat/workflow.ts" lineNumbers
 import { DurableAgent } from '@workflow/ai/agent';
 import type { UIMessageChunk } from 'ai';
 import { getWritable } from 'workflow';
-import { chatMessageHook } from '@/ai/hooks/chat-message';
+import { chatMessageHook } from './hooks/chat-message';
+import { flightBookingTools, FLIGHT_ASSISTANT_PROMPT } from './steps/tools';
 
 export async function chatWorkflow(threadId: string, initialMessage: string) {
   'use workflow';
@@ -53,9 +54,9 @@ export async function chatWorkflow(threadId: string, initialMessage: string) {
   const messageQueue: Array<{ role: 'user'; content: string }> = []; // [!code highlight]
 
   const agent = new DurableAgent({
-    model: 'anthropic/claude-haiku-4.5',
-    system: 'You are a helpful assistant.',
-    tools: { /* long-running tools */ },
+    model: 'bedrock/claude-4-5-haiku-20251001-v1',
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
   });
 
   // Listen for messages in background (non-blocking) // [!code highlight]
@@ -117,9 +118,9 @@ prepareStep: ({ messages }) => {
 
 ```typescript lineNumbers
 prepareStep: ({ stepNumber, messages }) => {
-  // Use a stronger model for later steps
+  // Use a stronger model for complex multi-step operations
   if (stepNumber > 2 && messages.length > 10) {
-    return { model: 'anthropic/claude-sonnet-4.5' };
+    return { model: 'bedrock/claude-4-sonnet-20250514-v1' };
   }
   return {};
 }

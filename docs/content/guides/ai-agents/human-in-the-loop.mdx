@@ -34,9 +34,9 @@ The workflow receives any data sent with the webhook (e.g. approval status, comm
 
 </Steps>
 
-## Creating an Approval Tool
+## Creating a Booking Approval Tool
 
-Add a tool that allows the agent to deliberately pauses execution until a human approves or rejects:
+Add a tool that allows the agent to deliberately pause execution until a human approves or rejects a flight booking:
 
 <Steps>
 
@@ -45,13 +45,13 @@ Add a tool that allows the agent to deliberately pauses execution until a human 
 
 Create a tool with an execute function that creates a webhook and emits a data chunk containing the webhook URL.
 
-```typescript title="ai/tools/human-approval.ts" lineNumbers
-import { tool, type UIMessageChunk } from 'ai';
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import type { UIMessageChunk } from 'ai';
 import { createWebhook, getWritable } from 'workflow'; // [!code highlight]
 import { z } from 'zod';
 
-async function executeHumanApproval(
-  { message }: { message: string },
+async function executeBookingApproval(
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number },
   { toolCallId }: { toolCallId: string }
 ) {
   // Note: No "use step" - webhooks are workflow-level primitives // [!code highlight]
@@ -60,7 +60,7 @@ async function executeHumanApproval(
 
   // Emit the approval URL to the UI
   await emitApprovalRequest(
-    { url: webhook.url, message },
+    { url: webhook.url, flightNumber, passengerName, price },
     { toolCallId }
   );
 
@@ -69,23 +69,25 @@ async function executeHumanApproval(
   const { approved, comment } = await request.json(); // [!code highlight]
 
   if (!approved) {
-    return `Action rejected: ${comment || 'No reason provided'}`;
+    return `Booking rejected: ${comment || 'No reason provided'}`;
   }
 
-  return `Approved${comment ? ` with comment: ${comment}` : ''}`;
+  return `Booking approved for ${passengerName} on flight ${flightNumber}${comment ? ` - Note: ${comment}` : ''}`;
 }
 
-export const humanApproval = tool({
-  description: 'Request human approval before proceeding with an action',
+export const bookingApproval = {
+  description: 'Request human approval before booking a flight',
   inputSchema: z.object({
-    message: z.string().describe('Description of what needs approval'),
+    flightNumber: z.string().describe('Flight number to book'),
+    passengerName: z.string().describe('Name of the passenger'),
+    price: z.number().describe('Total price of the booking'),
   }),
-  execute: executeHumanApproval,
-});
+  execute: executeBookingApproval,
+};
 
 // This is just a helper function to emit the approval request to the UI
 async function emitApprovalRequest(
-  { url, message }: { url: string; message: string },
+  { url, flightNumber, passengerName, price }: { url: string; flightNumber: string; passengerName: string; price: number },
   { toolCallId }: { toolCallId: string }
 ) {
   'use step';
@@ -95,8 +97,8 @@ async function emitApprovalRequest(
 
   await writer.write({
     id: toolCallId,
-    type: 'data-approval-required',
-    data: { url, message },
+    type: 'data-booking-approval',
+    data: { url, flightNumber, passengerName, price },
   });
 
   writer.releaseLock();
@@ -104,26 +106,28 @@ async function emitApprovalRequest(
 ```
 
 <Callout type="info">
-The `createWebhook()` function must be called from within a workflow context, not from a step. This is why `executeHumanApproval` does not have `"use step"`, but the stream write operation requires a step context, which is why `emitApprovalRequest` is a separate function with `"use step"`.
+The `createWebhook()` function must be called from within a workflow context, not from a step. This is why `executeBookingApproval` does not have `"use step"`, but the stream write operation requires a step context, which is why `emitApprovalRequest` is a separate function with `"use step"`.
 </Callout>
 </Step>
 
 <Step>
 ### Create the Approval Component
 
-The UI receives a data chunk with type `data-approval-required`. Build a component that displays the approval request and handles the user's decision. Instead of giving the human UI to resolve this hook, this could also be sent to an external service, e.g. as a payment provider callback.
+The UI receives a data chunk with type `data-booking-approval`. Build a component that displays the approval request and handles the user's decision. Instead of giving the human UI to resolve this hook, this could also be sent to an external service, e.g. as a payment provider callback.
 
-```typescript title="components/approval-button.tsx" lineNumbers
+```typescript title="components/booking-approval.tsx" lineNumbers
 'use client';
 
 import { useState } from 'react';
 
-interface ApprovalData {
+interface BookingApprovalData {
   url: string;
-  message: string;
+  flightNumber: string;
+  passengerName: string;
+  price: number;
 }
 
-export function ApprovalButton({ data }: { data: ApprovalData }) {
+export function BookingApproval({ data }: { data: BookingApprovalData }) {
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
@@ -148,7 +152,14 @@ export function ApprovalButton({ data }: { data: ApprovalData }) {
 
   return (
     <div className="border rounded-lg p-4 space-y-4">
-      <p className="font-medium">{data.message}</p>
+      <div className="space-y-2">
+        <p className="font-medium">Approve this booking?</p>
+        <div className="text-sm text-muted-foreground">
+          <div>Flight: {data.flightNumber}</div>
+          <div>Passenger: {data.passengerName}</div>
+          <div>Price: ${data.price}</div>
+        </div>
+      </div>
 
       <textarea
         value={comment}
@@ -186,17 +197,17 @@ export function ApprovalButton({ data }: { data: ApprovalData }) {
 
 Handle the custom data chunk type in your message renderer:
 
-```typescript title="components/chat.tsx" lineNumbers
-import { ApprovalButton } from './approval-button';
+```typescript title="app/page.tsx" lineNumbers
+import { BookingApproval } from '@/components/booking-approval';
 
 // Inside your message rendering:
-{m.parts.map((part, i) => {
+{message.parts.map((part, i) => {
   if (part.type === 'text') {
     return <span key={i}>{part.text}</span>;
   }
-  if (part.type === 'data-approval-required') {
-    return <ApprovalButton key={i} data={part.data} />;
-  }
+  if (part.type === 'data-booking-approval') { // [!code highlight]
+    return <BookingApproval key={i} data={part.data} />; // [!code highlight]
+  } // [!code highlight]
   return null;
 })}
 ```
@@ -219,16 +230,15 @@ For scenarios where you need your backend code to resume a workflow (not just UI
 
 Define a typed hook with a Zod schema for validation:
 
-```typescript title="ai/hooks/deployment-approval.ts" lineNumbers
+```typescript title="workflows/chat/hooks/booking-approval.ts" lineNumbers
 import { defineHook } from 'workflow';
 import { z } from 'zod';
 
 // Export the hook so it can be used in both the tool and API routes
-export const deploymentApprovalHook = defineHook({
+export const bookingApprovalHook = defineHook({
   schema: z.object({
     approved: z.boolean(),
     approvedBy: z.string(),
-    environment: z.enum(['staging', 'production']),
     notes: z.string().optional(),
   }),
 });
@@ -240,16 +250,17 @@ export const deploymentApprovalHook = defineHook({
 
 Use the hook in your tool instead of `createWebhook()`:
 
-```typescript title="ai/tools/deployment-approval.ts" lineNumbers
-import { tool } from 'ai';
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
 import { getWritable } from 'workflow';
 import { z } from 'zod';
 import type { UIMessageChunk } from 'ai';
-import { deploymentApprovalHook } from '../hooks/deployment-approval';
+import { bookingApprovalHook } from '../hooks/booking-approval';
 
-async function emitDeploymentApproval(
+async function emitBookingApproval(
   token: string,
-  environment: string,
+  flightNumber: string,
+  passengerName: string,
+  price: number,
   toolCallId: string
 ) {
   'use step';
@@ -259,37 +270,39 @@ async function emitDeploymentApproval(
 
   await writer.write({
     id: toolCallId,
-    type: 'data-deployment-approval',
-    data: { token, environment },
+    type: 'data-booking-approval',
+    data: { token, flightNumber, passengerName, price },
   });
 
   writer.releaseLock();
 }
 
-async function executeDeploymentApproval(
-  { environment }: { environment: 'staging' | 'production' },
+async function executeBookingApproval(
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number },
   { toolCallId }: { toolCallId: string }
 ) {
-  const hook = deploymentApprovalHook.create(); // [!code highlight]
+  const hook = bookingApprovalHook.create(); // [!code highlight]
 
-  await emitDeploymentApproval(hook.token, environment, toolCallId);
+  await emitBookingApproval(hook.token, flightNumber, passengerName, price, toolCallId);
 
   const approval = await hook; // [!code highlight]
 
   if (!approval.approved) {
-    return `Deployment to ${environment} rejected by ${approval.approvedBy}`;
+    return `Booking rejected by ${approval.approvedBy}`;
   }
 
-  return `Deployment to ${environment} approved by ${approval.approvedBy}`;
+  return `Booking approved by ${approval.approvedBy}${approval.notes ? ` - Note: ${approval.notes}` : ''}`;
 }
 
-export const deploymentApproval = tool({
-  description: 'Request approval for a deployment',
+export const bookingApproval = {
+  description: 'Request approval for a flight booking',
   inputSchema: z.object({
-    environment: z.enum(['staging', 'production']),
+    flightNumber: z.string(),
+    passengerName: z.string(),
+    price: z.number(),
   }),
-  execute: executeDeploymentApproval,
-});
+  execute: executeBookingApproval,
+};
 ```
 
 </Tab>
@@ -298,18 +311,17 @@ export const deploymentApproval = tool({
 
 Resume the hook from your backend API:
 
-```typescript title="app/api/approve-deployment/route.ts" lineNumbers
-import { deploymentApprovalHook } from '@/ai/hooks/deployment-approval';
+```typescript title="app/api/approve-booking/route.ts" lineNumbers
+import { bookingApprovalHook } from '@/workflows/chat/hooks/booking-approval';
 
 export async function POST(request: Request) {
-  const { token, approved, approvedBy, environment, notes } = await request.json();
+  const { token, approved, approvedBy, notes } = await request.json();
 
   try {
     // Schema validation happens automatically // [!code highlight]
-    await deploymentApprovalHook.resume(token, { // [!code highlight]
+    await bookingApprovalHook.resume(token, { // [!code highlight]
       approved,
       approvedBy,
-      environment,
       notes,
     });
 

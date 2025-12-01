@@ -164,7 +164,7 @@ import { useChat } from '@ai-sdk/react';
 
 export default function ChatPage() {
   const { messages, input, handleInputChange, handleSubmit } = useChat({ // [!code highlight]
-    api: '/api/chat',
+    // ... other options ...
   });
 
   // ... more UI logic

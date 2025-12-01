@@ -17,130 +17,126 @@ We can expose the sleep tool directly to the Agent by wrapping it in a tool.
 <Steps>
 
 <Step>
+
 ### Define the Tool
 
-```typescript title="ai/tools/sleep.ts" lineNumbers
-import { tool } from 'ai';
+Add a new "sleep" tool to the `tools` defined in `workflows/chat/steps/tools.ts`:
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
 import { getWritable, sleep } from 'workflow'; // [!code highlight]
-import { z } from 'zod';
-import type { UIMessageChunk } from 'ai';
 
-const inputSchema = z.object({
-  durationMs: z.number().describe('Duration to sleep in milliseconds'),
-});
+// ... existing imports ...
 
-async function executeSleep(
-  { durationMs }: z.infer<typeof inputSchema>,
-  { toolCallId }: { toolCallId: string }
-) {
+async function executeSleep( // [!code highlight]
+  { durationMs }: { durationMs: number }, // [!code highlight]
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) { // [!code highlight]
   // Note: No "use step" here - sleep is a workflow-level function // [!code highlight]
-
   await sleep(durationMs); // [!code highlight]
-
-  return `Slept for ${durationMs}ms`;
+  return `Slept for ${durationMs}ms`; // [!code highlight]
 }
 
-export const sleepTool = tool({
-  description: 'Pause execution for a specified duration',
-  inputSchema,
-  execute: executeSleep,
-});
-```
+// ... existing tool functions ...
 
-Note that the `sleep()` function must be called from within a workflow context, not from within a step. This is why `executeSleep` does not have `"use step"` - it runs in the workflow context where `sleep()` is available.
-
-</Step>
-<Step>
-### Emitting status updates
-
-We want the UI to react to the tool call status, so we emit a new chunk type `data-wait`, that the UI can then consume.
-
-```typescript lineNumbers
-// This is just a helper function to emit the sleep status to the UI
-async function emitSleepStatus(
-  { durationMs }: { durationMs: number },
-  { toolCallId }: { toolCallId: string }
-) {
-  'use step';
-
-  const writable = getWritable<UIMessageChunk>();
-  const writer = writable.getWriter();
-
-  const seconds = Math.ceil(durationMs / 1000);
-
-  await writer.write({
-    id: toolCallId,
-    type: 'data-wait',
-    data: { text: `Sleeping for ${seconds} seconds` },
-  });
-
-  writer.releaseLock();
+export const flightBookingTools = {
+ // ... existing tool definitions ...
+ sleep: { // [!code highlight]
+  description: 'Pause execution for a specified duration', // [!code highlight]
+  inputSchema: durationMs: z.number().describe('Duration to sleep in milliseconds'), // [!code highlight]
+  execute: executeSleep, // [!code highlight]
+ } // [!code highlight]
 }
 ```
 
-Then modify the tool execution to emit the status update:
+<Callout type="info">
+  Note that the `sleep()` function must be called from within a workflow context, not from within a step. This is why `executeSleep` does not have `"use step"` - it runs in the workflow context where `sleep()` is available.
+</Callout>
 
-```typescript lineNumbers
-async function executeSleep(
-  { durationMs }: z.infer<typeof inputSchema>,
-  { toolCallId }: { toolCallId: string }
-) {
-  await emitSleepStatus({ durationMs }, { toolCallId }); // [!code highlight]
-  await sleep(durationMs);
-}
-```
+ This already makes the full sleep functionality available to the Agent!
 
 </Step>
 
 <Step>
+
 ### Show the tool status in the UI
 
-```typescript lineNumbers
-// In your message rendering logic:
-{message.parts.map((part, i) => {
-  if (part.type === 'text') {
-    return <span key={i}>{part.text}</span>;
-  }
-  if (part.type === 'data-wait') { // [!code highlight]
-    return <div key={i}><WaitIcon />{part.data.text}...</div>; // [!code highlight]
-  } // [!code highlight]
-  return null;
-})}
+To round it off, extend the UI to display the tool call status. This can be done either by displaying the tool call information directly, or by emitting custom data parts to the stream (see [Streaming Updates from Tools](/guides/ai-agents/streaming-updates-from-tools) for more details). In this case, since there aren't any fine-grained progress updates to show, we'll just display the tool call information directly:
+
+```typescript title="app/page.tsx" lineNumbers
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                        part.type === "tool-sleep" // [!code highlight]
+                      ) {
+                        // ...
+                      }
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+
+function renderToolOutput(part: any) {
+  // ...
+  switch (part.type) {
+    // ...
+    case "tool-sleep": { // [!code highlight]
+      return ( // [!code highlight]
+        <div className="space-y-2"> // [!code highlight]
+          <p className="text-sm font-medium">Sleeping for {part.input.durationMs}ms...</p> // [!code highlight]
+        </div> // [!code highlight]
+      ); // [!code highlight]
+    }
+    // ...
+}
+
 ```
 
 </Step>
 
 </Steps>
-
-## Step-Level vs Workflow-Level Tools
-
-Tools can be implemented either at the step level or the workflow level, with different capabilities and constraints.
-
-| Capability | Step-Level (`"use step"`) | Workflow-Level (`"use workflow"`) |
-|------------|---------------------------|----------------|
-| `getWritable()` | ✅ | ❌ |
-| Automatic retries | ✅ | ❌ |
-| Side-effects (e.g. API calls) allowed | ✅ | ❌ |
-| `sleep()` | ❌ | ✅ |
-| `createWebhook()` | ❌ | ✅ |
-
-Tools can also combine both by starting out on the workflow level, and calling into steps for I/O operations, like so:
-
-```typescript lineNumbers
-// Step: handles I/O with retries
-async function performFetch(url: string) {
-  'use step';
-  const response = await fetch(url);
-  return response.json();
-}
-
-// Workflow-level: orchestrates steps and can use sleep()
-async function executeFetchWithDelay({ url }: { url: string }) {
-  const result = await performFetch(url);
-  await sleep('5s'); // Only available at workflow level
-  return result;
-}
-```
 
 ## Use Cases
 

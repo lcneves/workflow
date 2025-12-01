@@ -14,9 +14,10 @@ Each user message triggers a new workflow run. The client or API route owns the 
 
 <Tab value="Workflow">
 
-```typescript title="app/api/chat/workflow.ts" lineNumbers
+```typescript title="workflows/chat/workflow.ts" lineNumbers
 import { DurableAgent } from '@workflow/ai/agent';
 import { getWritable } from 'workflow';
+import { flightBookingTools, FLIGHT_ASSISTANT_PROMPT } from './steps/tools';
 import type { ModelMessage, UIMessageChunk } from 'ai';
 
 export async function chatWorkflow(messages: ModelMessage[]) {
@@ -25,9 +26,9 @@ export async function chatWorkflow(messages: ModelMessage[]) {
   const writable = getWritable<UIMessageChunk>();
 
   const agent = new DurableAgent({
-    model: 'anthropic/claude-sonnet-4',
-    system: 'You are a helpful assistant.',
-    tools: { /* ... */ },
+    model: 'bedrock/claude-4-5-haiku-20251001-v1',
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
   });
 
   const { messages: result } = await agent.stream({
@@ -44,12 +45,13 @@ export async function chatWorkflow(messages: ModelMessage[]) {
 <Tab value="API Route">
 
 ```typescript title="app/api/chat/route.ts" lineNumbers
+import type { UIMessage } from 'ai';
 import { createUIMessageStreamResponse, convertToModelMessages } from 'ai';
 import { start } from 'workflow/api';
-import { chatWorkflow } from './workflow';
+import { chatWorkflow } from '@/workflows/chat/workflow';
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  const { messages }: { messages: UIMessage[] } = await req.json();
   const modelMessages = convertToModelMessages(messages);
 
   const run = await start(chatWorkflow, [modelMessages]); // [!code highlight]
@@ -129,10 +131,11 @@ A single workflow handles the entire conversation session across multiple turns,
 
 <Tab value="Workflow">
 
-```typescript title="app/api/chat/workflow.ts" lineNumbers
+```typescript title="workflows/chat/workflow.ts" lineNumbers
 import { DurableAgent } from '@workflow/ai/agent';
 import { getWritable } from 'workflow';
-import { chatMessageHook } from '@/ai/hooks/chat-message';
+import { chatMessageHook } from './hooks/chat-message';
+import { flightBookingTools, FLIGHT_ASSISTANT_PROMPT } from './steps/tools';
 import type { ModelMessage, UIMessageChunk } from 'ai';
 
 export async function chatWorkflow(threadId: string, initialMessage: string) {
@@ -142,9 +145,9 @@ export async function chatWorkflow(threadId: string, initialMessage: string) {
   const messages: ModelMessage[] = [{ role: 'user', content: initialMessage }];
 
   const agent = new DurableAgent({
-    model: 'anthropic/claude-sonnet-4',
-    system: 'You are a helpful assistant.',
-    tools: { /* ... */ },
+    model: 'bedrock/claude-4-5-haiku-20251001-v1',
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
   });
 
   // Create hook with thread-specific token for resumption // [!code highlight]
@@ -179,7 +182,7 @@ Two endpoints: one to start the session, one to send follow-up messages.
 ```typescript title="app/api/chat/route.ts" lineNumbers
 import { createUIMessageStreamResponse } from 'ai';
 import { start } from 'workflow/api';
-import { chatWorkflow } from './workflow';
+import { chatWorkflow } from '@/workflows/chat/workflow';
 
 export async function POST(req: Request) {
   const { threadId, message } = await req.json();
@@ -193,9 +196,9 @@ export async function POST(req: Request) {
 ```
 
 ```typescript title="app/api/chat/[id]/route.ts" lineNumbers
-import { chatMessageHook } from '@/ai/hooks/chat-message';
+import { chatMessageHook } from '@/workflows/chat/hooks/chat-message';
 
-export async function POST(req: Request) {
+export async function POST(req: Request, { params }) {
   const { message } = await req.json();
   const { id: threadId } = await params; // [!code highlight]
 
@@ -209,7 +212,7 @@ export async function POST(req: Request) {
 
 <Tab value="Hook Definition">
 
-```typescript title="ai/hooks/chat-message.ts" lineNumbers
+```typescript title="workflows/chat/hooks/chat-message.ts" lineNumbers
 import { defineHook } from 'workflow';
 import { z } from 'zod';
 
@@ -315,15 +318,15 @@ The multi-turn pattern also easily enables multi-party chat sessions. Parties ca
 
 Internal system events like scheduled tasks, background jobs, or database triggers can inject updates into an active conversation.
 
-```typescript title="app/api/internal/order-update/route.ts" lineNumbers
-import { chatMessageHook } from '@/ai/hooks/chat-message';
+```typescript title="app/api/internal/flight-update/route.ts" lineNumbers
+import { chatMessageHook } from '@/workflows/chat/hooks/chat-message';
 
-// Called by your order processing system when status changes
+// Called by your flight status monitoring system
 export async function POST(req: Request) {
-  const { threadId, orderStatus } = await req.json();
+  const { threadId, flightNumber, newStatus } = await req.json();
 
   await chatMessageHook.resume(`thread:${threadId}`, { // [!code highlight]
-    message: `[System] Order status updated: ${orderStatus}`, // [!code highlight]
+    message: `[System] Flight ${flightNumber} status updated: ${newStatus}`, // [!code highlight]
   }); // [!code highlight]
 
   return Response.json({ success: true });
@@ -336,19 +339,15 @@ export async function POST(req: Request) {
 
 External webhooks from third-party services (Stripe, Twilio, etc.) can notify the conversation of events.
 
-```typescript title="app/api/webhooks/stripe/route.ts" lineNumbers
-import { chatMessageHook } from '@/ai/hooks/chat-message';
-import Stripe from 'stripe';
+```typescript title="app/api/webhooks/payment/route.ts" lineNumbers
+import { chatMessageHook } from '@/workflows/chat/hooks/chat-message';
 
 export async function POST(req: Request) {
-  const event = await req.json() as Stripe.Event;
+  const { threadId, paymentStatus, amount } = await req.json();
 
-  if (event.type === 'payment_intent.succeeded') {
-    const paymentIntent = event.data.object as Stripe.PaymentIntent;
-    const threadId = paymentIntent.metadata.threadId; // [!code highlight]
-
+  if (paymentStatus === 'succeeded') {
     await chatMessageHook.resume(`thread:${threadId}`, { // [!code highlight]
-      message: `[Stripe] Payment of $${(paymentIntent.amount / 100).toFixed(2)} received.`, // [!code highlight]
+      message: `[Payment] Payment of $${amount.toFixed(2)} received. Your booking is confirmed!`, // [!code highlight]
     }); // [!code highlight]
   }
 
@@ -363,7 +362,7 @@ export async function POST(req: Request) {
 Multiple human users can participate in the same conversation. Each user's client connects to the same workflow stream.
 
 ```typescript title="app/api/chat/[id]/route.ts" lineNumbers
-import { chatMessageHook } from '@/ai/hooks/chat-message';
+import { chatMessageHook } from '@/workflows/chat/hooks/chat-message';
 import { getUser } from '@/lib/auth';
 
 export async function POST(req: Request, { params }) {
