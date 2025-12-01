@@ -13,23 +13,23 @@ If you need to react to external events programmatically, see the [hooks](/docs/
 <Steps>
 
 <Step>
-`createWebhook()` generates a unique URL that can be used to resume a workflow. This can be packaged as a tool for the Agent to call, or used directly in your backend code.
+`defineHook()` creates a typed hook that can be awaited in a workflow. When the tool is called, it creates a hook instance using the tool call ID as the token.
 </Step>
 
 <Step>
-The workflow emits a data chunk containing the webhook URL, sending it to the consumer of the workflow, such as a chat UI.
+The workflow pauses at `await hook` - no compute resources are consumed while waiting for the human to take action.
 </Step>
 
 <Step>
-The workflow pauses at `await webhook` - no compute resources are consumed while waiting for the human to take action.
+The UI displays the pending tool call with its input data (flight details, price, etc.) and renders approval controls.
 </Step>
 
 <Step>
-The user of the workflow (e.g. a human in a chat UI) calls the webhook URL, optionally sending data back to the workflow.
+The user submits their decision through an API endpoint, which resumes the hook with the approval data.
 </Step>
 
 <Step>
-The workflow receives any data sent with the webhook (e.g. approval status, comments) and resumes execution.
+The workflow receives the approval data and resumes execution.
 </Step>
 
 </Steps>
@@ -41,32 +41,44 @@ Add a tool that allows the agent to deliberately pause execution until a human a
 <Steps>
 
 <Step>
-### Implement the tool
+### Define the Hook
 
-Create a tool with an execute function that creates a webhook and emits a data chunk containing the webhook URL.
+Create a typed hook with a Zod schema for validation:
 
-```typescript title="workflows/chat/steps/tools.ts" lineNumbers
-import type { UIMessageChunk } from 'ai';
-import { createWebhook, getWritable } from 'workflow'; // [!code highlight]
+```typescript title="workflows/chat/hooks/booking-approval.ts" lineNumbers
+import { defineHook } from 'workflow';
 import { z } from 'zod';
 
-async function executeBookingApproval(
-  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number },
-  { toolCallId }: { toolCallId: string }
-) {
-  // Note: No "use step" - webhooks are workflow-level primitives // [!code highlight]
+export const bookingApprovalHook = defineHook({
+  schema: z.object({
+    approved: z.boolean(),
+    comment: z.string().optional(),
+  }),
+});
+```
 
-  const webhook = createWebhook(); // [!code highlight]
+</Step>
 
-  // Emit the approval URL to the UI
-  await emitApprovalRequest(
-    { url: webhook.url, flightNumber, passengerName, price },
-    { toolCallId }
-  );
+<Step>
+### Implement the Tool
 
-  // Workflow pauses here until the webhook is called // [!code highlight]
-  const request = await webhook; // [!code highlight]
-  const { approved, comment } = await request.json(); // [!code highlight]
+Create a tool that creates a hook instance using the tool call ID as the token. The UI will use this ID to submit the approval.
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { z } from 'zod';
+import { bookingApprovalHook } from '../hooks/booking-approval';
+
+async function executeBookingApproval( // [!code highlight]
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number }, // [!code highlight]
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - hooks are workflow-level primitives // [!code highlight]
+
+  // Use the toolCallId as the hook token so the UI can reference it // [!code highlight]
+  const hook = bookingApprovalHook.create({ token: toolCallId }); // [!code highlight]
+
+  // Workflow pauses here until the hook is resolved // [!code highlight]
+  const { approved, comment } = await hook; // [!code highlight]
 
   if (!approved) {
     return `Booking rejected: ${comment || 'No reason provided'}`;
@@ -84,80 +96,171 @@ export const bookingApproval = {
   }),
   execute: executeBookingApproval,
 };
-
-// This is just a helper function to emit the approval request to the UI
-async function emitApprovalRequest(
-  { url, flightNumber, passengerName, price }: { url: string; flightNumber: string; passengerName: string; price: number },
-  { toolCallId }: { toolCallId: string }
-) {
-  'use step';
-
-  const writable = getWritable<UIMessageChunk>();
-  const writer = writable.getWriter();
-
-  await writer.write({
-    id: toolCallId,
-    type: 'data-booking-approval',
-    data: { url, flightNumber, passengerName, price },
-  });
-
-  writer.releaseLock();
-}
 ```
 
 <Callout type="info">
-The `createWebhook()` function must be called from within a workflow context, not from a step. This is why `executeBookingApproval` does not have `"use step"`, but the stream write operation requires a step context, which is why `emitApprovalRequest` is a separate function with `"use step"`.
+Note that the `defineHook().create()` function must be called from within a workflow context, not from within a step. This is why `executeBookingApproval` does not have `"use step"` - it runs in the workflow context where hooks are available.
 </Callout>
+
+</Step>
+
+<Step>
+### Create the API Route
+
+Create an API endpoint that the UI will call to submit the approval decision:
+
+```typescript title="app/api/approve-booking/route.ts" lineNumbers
+import { bookingApprovalHook } from '@/workflows/chat/hooks/booking-approval';
+
+export async function POST(request: Request) {
+  const { toolCallId, approved, comment } = await request.json();
+
+  try {
+    // Schema validation happens automatically // [!code highlight]
+    await bookingApprovalHook.resume(toolCallId, { // [!code highlight]
+      approved,
+      comment,
+    });
+
+    return Response.json({ success: true });
+  } catch (error) {
+    return Response.json(
+      { error: 'Invalid token or validation failed' },
+      { status: 400 }
+    );
+  }
+}
+```
+
+</Step>
+
+<Step>
+### Show the Tool Status in the UI
+
+Render the tool call and approval controls in your chat interface. The tool call part includes all the input data needed to display the booking details:
+
+```typescript title="app/page.tsx" lineNumbers
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                      ) {
+                        // ... render other tools
+                      }
+                      if (part.type === "tool-bookingApproval") { // [!code highlight]
+                        return ( // [!code highlight]
+                          <BookingApproval // [!code highlight]
+                            key={partIndex} // [!code highlight]
+                            toolCallId={part.id} // [!code highlight]
+                            input={part.input} // [!code highlight]
+                            output={part.output} // [!code highlight]
+                          /> // [!code highlight]
+                        ); // [!code highlight]
+                      } // [!code highlight]
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+```
+
 </Step>
 
 <Step>
 ### Create the Approval Component
 
-The UI receives a data chunk with type `data-booking-approval`. Build a component that displays the approval request and handles the user's decision. Instead of giving the human UI to resolve this hook, this could also be sent to an external service, e.g. as a payment provider callback.
+Build a component that displays the booking details from the tool input and handles the user's decision:
 
 ```typescript title="components/booking-approval.tsx" lineNumbers
 'use client';
 
 import { useState } from 'react';
 
-interface BookingApprovalData {
-  url: string;
-  flightNumber: string;
-  passengerName: string;
-  price: number;
+interface BookingApprovalProps {
+  toolCallId: string;
+  input: {
+    flightNumber: string;
+    passengerName: string;
+    price: number;
+  };
+  output?: string;
 }
 
-export function BookingApproval({ data }: { data: BookingApprovalData }) {
+export function BookingApproval({ toolCallId, input, output }: BookingApprovalProps) {
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isComplete, setIsComplete] = useState(false);
+
+  // If we have output, the approval has been processed
+  if (output) {
+    return (
+      <div className="border rounded-lg p-4">
+        <p className="text-sm text-muted-foreground">{output}</p>
+      </div>
+    );
+  }
 
   const handleSubmit = async (approved: boolean) => {
     setIsSubmitting(true);
     try {
-      await fetch(data.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, comment }),
-      });
-      setIsComplete(true);
+      await fetch('/api/approve-booking', { // [!code highlight]
+        method: 'POST', // [!code highlight]
+        headers: { 'Content-Type': 'application/json' }, // [!code highlight]
+        body: JSON.stringify({ toolCallId, approved, comment }), // [!code highlight]
+      }); // [!code highlight]
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  if (isComplete) {
-    return <div className="text-muted-foreground">Response submitted</div>;
-  }
 
   return (
     <div className="border rounded-lg p-4 space-y-4">
       <div className="space-y-2">
         <p className="font-medium">Approve this booking?</p>
         <div className="text-sm text-muted-foreground">
-          <div>Flight: {data.flightNumber}</div>
-          <div>Passenger: {data.passengerName}</div>
-          <div>Price: ${data.price}</div>
+          <div>Flight: {input.flightNumber}</div>
+          <div>Passenger: {input.passengerName}</div>
+          <div>Price: ${input.price}</div>
         </div>
       </div>
 
@@ -192,157 +295,42 @@ export function BookingApproval({ data }: { data: BookingApprovalData }) {
 
 </Step>
 
-<Step>
-### Render in Your Chat
-
-Handle the custom data chunk type in your message renderer:
-
-```typescript title="app/page.tsx" lineNumbers
-import { BookingApproval } from '@/components/booking-approval';
-
-// Inside your message rendering:
-{message.parts.map((part, i) => {
-  if (part.type === 'text') {
-    return <span key={i}>{part.text}</span>;
-  }
-  if (part.type === 'data-booking-approval') { // [!code highlight]
-    return <BookingApproval key={i} data={part.data} />; // [!code highlight]
-  } // [!code highlight]
-  return null;
-})}
-```
-
-</Step>
-
 </Steps>
 
-## Programmatic Hook Resumption
+## Using Webhooks Directly
 
-For scenarios where you need your backend code to resume a workflow (not just UI interactions), or when you want type-safe validation of approval data, use [`defineHook()`](/docs/api-reference/workflow/define-hook). This approach is useful for:
-
-- Backend services that need to approve/reject based on business logic
-- External systems that call your API to resume workflows
-- Type-safe validation of approval data with Zod schemas
-
-<Tabs items={['Hook Definition', 'Tool Implementation', 'API Route']}>
-
-<Tab value="Hook Definition">
-
-Define a typed hook with a Zod schema for validation:
-
-```typescript title="workflows/chat/hooks/booking-approval.ts" lineNumbers
-import { defineHook } from 'workflow';
-import { z } from 'zod';
-
-// Export the hook so it can be used in both the tool and API routes
-export const bookingApprovalHook = defineHook({
-  schema: z.object({
-    approved: z.boolean(),
-    approvedBy: z.string(),
-    notes: z.string().optional(),
-  }),
-});
-```
-
-</Tab>
-
-<Tab value="Tool Implementation">
-
-Use the hook in your tool instead of `createWebhook()`:
+For simpler cases where you don't need type-safe validation or programmatic resumption, you can use [`createWebhook()`](/docs/api-reference/workflow/create-webhook) directly. This generates a unique URL that can be called to resume the workflow:
 
 ```typescript title="workflows/chat/steps/tools.ts" lineNumbers
-import { getWritable } from 'workflow';
+import { createWebhook } from 'workflow';
 import { z } from 'zod';
-import type { UIMessageChunk } from 'ai';
-import { bookingApprovalHook } from '../hooks/booking-approval';
-
-async function emitBookingApproval(
-  token: string,
-  flightNumber: string,
-  passengerName: string,
-  price: number,
-  toolCallId: string
-) {
-  'use step';
-
-  const writable = getWritable<UIMessageChunk>();
-  const writer = writable.getWriter();
-
-  await writer.write({
-    id: toolCallId,
-    type: 'data-booking-approval',
-    data: { token, flightNumber, passengerName, price },
-  });
-
-  writer.releaseLock();
-}
 
 async function executeBookingApproval(
   { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number },
   { toolCallId }: { toolCallId: string }
 ) {
-  const hook = bookingApprovalHook.create(); // [!code highlight]
+  const webhook = createWebhook(); // [!code highlight]
 
-  await emitBookingApproval(hook.token, flightNumber, passengerName, price, toolCallId);
+  // The webhook URL could be logged, sent via email, or stored for later use
+  console.log('Approval URL:', webhook.url);
 
-  const approval = await hook; // [!code highlight]
+  // Workflow pauses here until the webhook is called // [!code highlight]
+  const request = await webhook; // [!code highlight]
+  const { approved, comment } = await request.json(); // [!code highlight]
 
-  if (!approval.approved) {
-    return `Booking rejected by ${approval.approvedBy}`;
+  if (!approved) {
+    return `Booking rejected: ${comment || 'No reason provided'}`;
   }
 
-  return `Booking approved by ${approval.approvedBy}${approval.notes ? ` - Note: ${approval.notes}` : ''}`;
-}
-
-export const bookingApproval = {
-  description: 'Request approval for a flight booking',
-  inputSchema: z.object({
-    flightNumber: z.string(),
-    passengerName: z.string(),
-    price: z.number(),
-  }),
-  execute: executeBookingApproval,
-};
-```
-
-</Tab>
-
-<Tab value="API Route">
-
-Resume the hook from your backend API:
-
-```typescript title="app/api/approve-booking/route.ts" lineNumbers
-import { bookingApprovalHook } from '@/workflows/chat/hooks/booking-approval';
-
-export async function POST(request: Request) {
-  const { token, approved, approvedBy, notes } = await request.json();
-
-  try {
-    // Schema validation happens automatically // [!code highlight]
-    await bookingApprovalHook.resume(token, { // [!code highlight]
-      approved,
-      approvedBy,
-      notes,
-    });
-
-    return Response.json({ success: true });
-  } catch (error) {
-    return Response.json(
-      { error: 'Invalid token or validation failed' },
-      { status: 400 }
-    );
-  }
+  return `Booking approved for ${passengerName} on flight ${flightNumber}`;
 }
 ```
 
-This API can be called by:
+The webhook URL can be called directly with a POST request containing the approval data. This is useful for:
 
-- Your UI components (passing the token from the data chunk)
-- Backend services that need to programmatically approve/reject
-- External systems via API integration
-</Tab>
-
-</Tabs>
+- External systems that need to call back into your workflow
+- Payment provider callbacks
+- Email-based approval links
 
 ## Related Documentation
 

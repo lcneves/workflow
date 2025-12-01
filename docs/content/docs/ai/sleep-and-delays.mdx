@@ -33,7 +33,7 @@ async function executeSleep( // [!code highlight]
 ) { // [!code highlight]
   // Note: No "use step" here - sleep is a workflow-level function // [!code highlight]
   await sleep(durationMs); // [!code highlight]
-  return `Slept for ${durationMs}ms`; // [!code highlight]
+  return { message: `Slept for ${durationMs}ms` }; // [!code highlight]
 }
 
 // ... existing tool functions ...
