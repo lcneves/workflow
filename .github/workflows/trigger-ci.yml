@@ -144,9 +144,14 @@ _This PR was last updated in response to the \`/run-ci\` command in #${prDetails
                 });
               } else {
                 // Existing PR found but it's not labeled as a CI test PR
-                // Use the first one and add the labels
-                ciPR = existingPRs.data[0];
-                isNewPR = true; // Treat as new to ensure labels are added
+                // Verify it's actually a CI test PR by checking the title
+                const existingPR = existingPRs.data[0];
+                if (existingPR.title.startsWith('[CI Test]')) {
+                  // Use the existing PR and add the labels
+                  ciPR = existingPR;
+                  isNewPR = true; // Treat as new to ensure labels are added
+                }
+                // If it's not a CI test PR, ciPR remains undefined and a new PR will be created
               }
             }
             
@@ -178,6 +183,7 @@ _This PR was created in response to the \`/run-ci\` command in #${prDetails.numb
             }
             
             // Ensure labels are present on the CI PR (handles both new and existing PRs)
+            // Labels can be strings or objects with 'name' property depending on the API response
             const currentLabels = ciPR.labels?.map(l => typeof l === 'string' ? l : l.name) || [];
             const requiredLabels = ['ci-test', 'automated'];
             const missingLabels = requiredLabels.filter(label => !currentLabels.includes(label));
