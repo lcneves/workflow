@@ -1,0 +1,125 @@
+module.exports = async ({ github, context, core, exec }, prDetails) => {
+  const ciBranchName = `ci-test/${prDetails.number}`;
+  
+  // Add remote for the external fork if it's from a fork
+  if (prDetails.head_repo_full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+    await exec.exec('git', ['remote', 'add', 'external', `https://github.com/${prDetails.head_repo_full_name}.git`]);
+    await exec.exec('git', ['fetch', 'external', prDetails.head_ref]);
+    await exec.exec('git', ['checkout', '-b', ciBranchName, `external/${prDetails.head_ref}`]);
+  } else {
+    await exec.exec('git', ['fetch', 'origin', prDetails.head_ref]);
+    await exec.exec('git', ['checkout', '-b', ciBranchName, `origin/${prDetails.head_ref}`]);
+  }
+  
+  // Push the branch to origin (force push to update if exists)
+  await exec.exec('git', ['push', '-f', 'origin', ciBranchName]);
+  
+  // Check if a CI PR already exists for this original PR
+  const existingPRs = await github.rest.pulls.list({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    state: 'open',
+    head: `${context.repo.owner}:${ciBranchName}`
+  });
+  
+  let ciPR;
+  let isNewPR = false;
+  
+  if (existingPRs.data.length > 0) {
+    // Filter to find the CI test PR (should be labeled with 'ci-test')
+    const ciTestPR = existingPRs.data.find(pr => 
+      pr.labels.some(label => label.name === 'ci-test')
+    );
+    
+    if (ciTestPR) {
+      // Update existing PR
+      ciPR = ciTestPR;
+      await github.rest.pulls.update({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        pull_number: ciPR.number,
+        body: `🤖 **Automated CI Test PR**
+
+This is an automated PR created to run CI tests for PR #${prDetails.number} by @${prDetails.user}.
+
+**Original PR:** #${prDetails.number}
+**Last triggered by:** @${context.actor}
+**Source branch:** \`${prDetails.head_ref}\`
+**Source SHA:** \`${prDetails.head_sha}\`
+
+⚠️ **This PR will be automatically closed once CI completes.** Do not merge this PR.
+
+---
+_This PR was last updated in response to the \`/run-ci\` command in #${prDetails.number}_`
+      });
+    } else {
+      // Existing PR found but it's not labeled as a CI test PR
+      // Verify it's actually a CI test PR by checking the title
+      const existingPR = existingPRs.data[0];
+      if (existingPR.title.startsWith('[CI Test]')) {
+        // Use the existing PR and add the labels
+        ciPR = existingPR;
+        isNewPR = true; // Treat as new to ensure labels are added
+      }
+      // If it's not a CI test PR, ciPR remains undefined and a new PR will be created
+    }
+  }
+  
+  if (!ciPR) {
+    // Create a new draft PR
+    const newPR = await github.rest.pulls.create({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      title: `[CI Test] ${prDetails.title}`,
+      head: ciBranchName,
+      base: prDetails.base_ref,
+      body: `🤖 **Automated CI Test PR**
+
+This is an automated PR created to run CI tests for PR #${prDetails.number} by @${prDetails.user}.
+
+**Original PR:** #${prDetails.number}
+**Triggered by:** @${context.actor}
+**Source branch:** \`${prDetails.head_ref}\`
+**Source SHA:** \`${prDetails.head_sha}\`
+
+⚠️ **This PR will be automatically closed once CI completes.** Do not merge this PR.
+
+---
+_This PR was created in response to the \`/run-ci\` command in #${prDetails.number}_`,
+      draft: true
+    });
+    ciPR = newPR.data;
+    isNewPR = true;
+  }
+  
+  // Ensure labels are present on the CI PR (handles both new and existing PRs)
+  // Labels can be strings or objects with 'name' property depending on the API response
+  const currentLabels = ciPR.labels?.map(l => typeof l === 'string' ? l : l.name) || [];
+  const requiredLabels = ['ci-test', 'automated'];
+  const missingLabels = requiredLabels.filter(label => !currentLabels.includes(label));
+  
+  if (missingLabels.length > 0) {
+    await github.rest.issues.addLabels({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      issue_number: ciPR.number,
+      labels: missingLabels
+    });
+  }
+  
+  // Comment on the original PR
+  const prAction = isNewPR ? 'created' : 'updated';
+  await github.rest.issues.createComment({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: context.issue.number,
+    body: `✅ CI test ${prAction} by @${context.actor}!
+
+CI is now running in draft PR #${ciPR.number}. You can monitor the progress there.
+
+Once the tests complete, you can review the results and the draft PR will be automatically closed.`
+  });
+  
+  core.setOutput('ci_pr_number', ciPR.number);
+  core.setOutput('ci_branch_name', ciBranchName);
+};
