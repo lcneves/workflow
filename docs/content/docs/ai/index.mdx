@@ -78,7 +78,7 @@ OPENAI_API_KEY=...
 
 Then modify your API endpoint to use the OpenAI provider:
 
-```ts title="app/api/chat/route.ts" lineNumbers lint-nocheck
+```ts title="app/api/chat/route.ts" lineNumbers
 // ...
 import { openai } from "@workflow/ai/openai"; // [!code highlight]
 
@@ -90,6 +90,8 @@ export async function POST(req: Request) {
     model: openai("gpt-5.1"), // [!code highlight]
     // ...
   });
+  // ...
+}
 ```
 
 </Tab>
