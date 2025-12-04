@@ -62,6 +62,13 @@ const DEV_TEST_CONFIGS = {
     apiFileImportPath: '../..',
     workflowsDir: 'src/workflows',
   },
+  nest: {
+    generatedStepPath: '.nestjs/workflow/steps.mjs',
+    generatedWorkflowPath: '.nestjs/workflow/workflows.mjs',
+    apiFilePath: 'src/app.controller.ts',
+    apiFileImportPath: '..',
+    workflowsDir: 'src/workflows',
+  },
 };
 
 const matrix = {
@@ -135,6 +142,12 @@ matrix.app.push({
   name: 'astro',
   project: 'workbench-astro-workflow',
   ...DEV_TEST_CONFIGS.astro,
+});
+
+matrix.app.push({
+  name: 'nest',
+  project: 'workbench-nest-workflow',
+  ...DEV_TEST_CONFIGS.nest,
 });
 
 console.log(JSON.stringify(matrix));
