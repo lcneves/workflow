@@ -1,0 +1,171 @@
+---
+title: Postgres ワールド
+---
+
+The PostgreSQL ワールドは、ジョブ処理（[pg-boss](https://github.com/timgit/pg-boss) を使用）やストリーミング（PostgreSQL の NOTIFY と LISTEN を使用）を含め、PostgreSQL によって完全に支えられた [World](/docs/deploying/world) の参照実装です。
+
+このワールドは長時間実行されるプロセス向けに設計されているため、PostgreSQL データベースからイベントを受信およびディスパッチできます。その性質上、Vercel のようなサーバーレス プラットフォームにデプロイすることは想定されていません。
+
+<Steps>
+
+<Step>
+
+## インストール
+
+パッケージ `@workflow/world-postgres` をインストールします:
+
+```package-install
+@workflow/world-postgres
+```
+
+</Step>
+
+<Step>
+
+## 環境変数を追加
+
+ワークフローに必要な以下の環境変数を `.env` ファイルに追加してください:
+
+```bash
+WORKFLOW_TARGET_WORLD="@workflow/world-postgres"
+WORKFLOW_POSTGRES_URL="postgres://postgres:password@db.yourdb.co:5432/postgres"
+WORKFLOW_POSTGRES_JOB_PREFIX="workflow_"
+WORKFLOW_POSTGRES_WORKER_CONCURRENCY=10
+```
+
+ワールドの設定は環境変数から自動的に読み込まれます:
+
+- `WORKFLOW_TARGET_WORLD` - 必須で、使用するワールド実装を指定します
+- `WORKFLOW_POSTGRES_URL` - PostgreSQL 接続文字列（デフォルトは `postgres://world:world@localhost:5432/world`）
+- `WORKFLOW_POSTGRES_JOB_PREFIX` - キューのジョブ名のプレフィックス
+- `WORKFLOW_POSTGRES_WORKER_CONCURRENCY` - 同時実行するワーカー数（指定がない場合はデフォルト `10`）
+
+
+</Step>
+
+<Step>
+
+## データベーススキーマの設定
+
+必要なデータベーステーブルを作成するためにセットアップスクリプトを実行します:
+
+```bash
+pnpm exec workflow-postgres-setup
+```
+
+これにより、PostgreSQL データベースに以下のテーブルが作成されます:
+
+- `workflow_runs` - ワークフロー実行状態を保存します
+- `workflow_events` - ワークフローイベントを保存します
+- `workflow_steps` - ワークフローステップの状態を保存します
+- `workflow_hooks` - ワークフローフックを保存します
+- `workflow_stream_chunks` - ストリーミングデータを保存します
+
+以下のような出力が表示されるはずです:
+
+```
+🔧 Setting up database schema...
+📍 Connection: postgres://postgres:****@db.yourcloudprovider.co:5432/postgres
+✅ Database schema created successfully!
+```
+
+</Step>
+
+<Step>
+
+## PostgreSQL ワールドの初期化
+
+PostgreSQL ワールドの起動方法はフレームワークによって異なります。主な考え方は、サーバー起動時に PostgreSQL ワールドを起動することです。
+
+以下はその例です:
+
+### Next.js
+
+ワールドを初期化して起動するために、プロジェクトルートに `instrumentation.ts` ファイルを作成します:
+
+```ts title="instrumentation.ts" lineNumbers
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== "edge") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+}
+```
+
+<Callout>
+  詳細は [Next.js のインストゥルメンテーション](https://nextjs.org/docs/app/guides/instrumentation) を参照してください。
+</Callout>
+
+### SvelteKit
+
+ファイル `src/hooks.server.ts` を作成します:
+
+```ts title="src/hooks.server.ts" lineNumbers
+import type { ServerInit } from "@sveltejs/kit";
+
+export const init: ServerInit = async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    const { getWorld } = await import("workflow/runtime");
+    console.log("Starting Postgres World...");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+};
+```
+
+<Callout>
+  詳細は [SvelteKit フック](https://svelte.dev/docs/kit/hooks) を参照してください。
+</Callout>
+
+### Nitro ベースのアプリ
+
+PostgreSQL ワールドを起動するプラグインを作成します。これは Nitro サーバー起動時に呼び出されます。
+
+```ts title="plugins/start-pg-world.ts" lineNumbers
+import { defineNitroPlugin } from "nitro/~internal/runtime/plugin";
+
+export default defineNitroPlugin(async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+});
+```
+
+プラグインを `nitro.config.ts` ファイルに追加します。これによりプラグインが有効になります:
+
+```ts title="nitro.config.ts"
+import { defineNitroConfig } from "nitropack";
+
+export default defineNitroConfig({
+  // ... your nitro config
+  modules: ["workflow/nitro"],
+  plugins: ["plugins/start-pg-world.ts"],
+});
+```
+
+<Callout>
+  詳細は [Nitro プラグイン](https://v3.nitro.build/docs/plugins) を参照してください。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 仕組み
+
+Postgres ワールドは、ワークフロー実行のための永続的なバックエンドとして PostgreSQL を使用します:
+
+- **ジョブキュー**: 信頼性の高いジョブ処理のために [pg-boss](https://github.com/timgit/pg-boss) を使用します
+- **イベントストリーミング**: PostgreSQL の NOTIFY/LISTEN を活用してリアルタイムにイベントを配信します
+- **状態の永続化**: すべてのワークフロー状態は PostgreSQL のテーブルに保存されます
+- **ワーカー管理**: ジョブ処理のために設定可能な同時実行ワーカーをサポートします
+
+この設定により、すべての状態が確実に PostgreSQL データベースに永続化されるため、アプリケーションの再起動や障害が発生してもワークフローが継続できるようになります。

@@ -1,0 +1,204 @@
+---
+title: 睡眠、挂起与调度
+---
+
+AI 代理有时需要暂停执行，以便安排定期或将来的操作、在重试操作前等待（例如因速率限制），或等待外部状态可用。
+
+Workflow DevKit 的 `sleep` 函数使代理能够在不消耗资源的情况下暂停执行，并在指定时间、指定时长后或响应外部事件时恢复。挂起的工作流操作将在重启、新部署和基础设施更改中存活，无论挂起持续几秒还是几个月。
+
+<Callout type="info">
+请参阅 [`sleep()` API 参考](/docs/api-reference/workflow/sleep) 以获取所有支持的持续时间格式和详细的 API 文档，另请参阅 [hooks](/docs/foundations/hooks) 文档，了解有关如何响应外部事件并恢复的更多信息。
+</Callout>
+
+## 添加 Sleep 工具
+
+Sleep 是 Workflow DevKit 的内置函数，因此将其作为工具暴露仅需将其包装在工具定义中。了解有关如何定义工具的更多信息，请参阅 [Patterns for Defining Tools](/docs/ai/defining-tools)。
+
+<Steps>
+
+<Step>
+
+### 定义工具
+
+将一个新的 "sleep" 工具添加到在 `workflows/chat/steps/tools.ts` 中定义的 `tools`：
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable, sleep } from "workflow"; // [!code highlight]
+
+// ... existing imports ...
+
+async function executeSleep( // [!code highlight]
+  { durationMs }: { durationMs: number }, // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - sleep is a workflow-level function // [!code highlight]
+  await sleep(durationMs); // [!code highlight]
+  return { message: `Slept for ${durationMs}ms` }; // [!code highlight]
+}
+
+// ... existing tool functions ...
+
+export const flightBookingTools = {
+ // ... existing tool definitions ...
+ sleep: { // [!code highlight]
+  description: "Pause execution for a specified duration", // [!code highlight]
+  inputSchema: z.object({ // [!code highlight]
+    durationMs: z.number().describe("Duration to sleep in milliseconds"), // [!code highlight]
+  }), // [!code highlight]
+  execute: executeSleep, // [!code highlight]
+ } // [!code highlight]
+}
+```
+
+<Callout type="info">
+请注意，`sleep()` 函数必须从工作流上下文中调用，而不能从 step 内部调用。这就是为什么 `executeSleep` 没有 `"use step"` —— 它在可用 `sleep()` 的工作流上下文中运行。
+</Callout>
+
+ 这已经使完整的 sleep 功能可供 Agent 使用！
+
+</Step>
+
+<Step>
+
+### 在 UI 中显示工具状态
+
+为完善功能，扩展 UI 以显示工具调用状态。可以直接显示工具调用信息，或向流中发出自定义数据片段（有关详细信息，请参阅 [来自工具的流式更新](/docs/ai/streaming-updates-from-tools)）。在本例中，由于没有细粒度的进度更新要显示，我们将直接显示工具调用信息：
+
+```typescript title="app/page.tsx" lineNumbers
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                        part.type === "tool-sleep" // [!code highlight]
+                      ) {
+                        // ...
+                      }
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+
+function renderToolOutput(part: any) {
+  // ...
+  switch (part.type) {
+    // ...
+    case "tool-sleep": { // [!code highlight]
+      return ( // [!code highlight]
+        <div className="space-y-2"> // [!code highlight]
+          <p className="text-sm font-medium">Sleeping for {part.input.durationMs}ms...</p> // [!code highlight]
+        </div> // [!code highlight]
+      ); // [!code highlight]
+    }
+    // ...
+}
+
+```
+
+</Step>
+
+</Steps>
+
+现在，再次试用航班预订 Agent，要求它在检查任何航班之前休眠 10 秒。你将看到代理暂停，且 UI 会反映工具调用状态。
+
+## 用例
+
+除了将 `sleep()` 作为工具之外，还有其他常见的代理用例通常需要挂起与恢复。
+
+### 速率限制
+
+在遇到 API 速率限制时，使用带延迟的 `RetryableError`：
+
+```typescript lineNumbers
+async function callRateLimitedAPI(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After");
+    throw new RetryableError("Rate limited", {
+      retryAfter: retryAfter ? parseInt(retryAfter) * 1000 : "1m",
+    });
+  }
+
+  return response.json();
+}
+```
+
+### 带退避的轮询
+
+使用递增延迟轮询以获取结果：
+
+```typescript lineNumbers
+export async function pollForResult(jobId: string) {
+  "use workflow";
+
+  let attempt = 0;
+  const maxAttempts = 10;
+
+  while (attempt < maxAttempts) {
+    const result = await checkJobStatus(jobId);
+
+    if (result.status === "complete") {
+      return result.data;
+    }
+
+    attempt++;
+    await sleep(Math.min(1000 * 2 ** attempt, 60000)); // Exponential backoff, max 1 minute
+  }
+
+  throw new Error("Job did not complete in time");
+}
+
+async function checkJobStatus(jobId: string) {
+  "use step";
+  // Check job status...
+}
+```
+
+## 相关文档
+
+- [`sleep()` API 参考](/docs/api-reference/workflow/sleep) - 包含所有持续时间格式的完整 API 文档
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - 理解工作流上下文
+- [Errors and Retries](/docs/foundations/errors-and-retries) - 使用带延迟的 `RetryableError`

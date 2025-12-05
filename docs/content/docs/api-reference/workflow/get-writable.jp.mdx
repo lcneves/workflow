@@ -1,0 +1,284 @@
+---
+title: getWritable
+description: 現在のワークフロー実行のデフォルトの書き込み可能ストリームを取得します。
+---
+
+ワークフロー関数内で書き込み可能ストリームを取得してステップに渡すことができ、またはステップ関数内で直接呼び出して、[`Run` オブジェクト](/docs/api-reference/workflow-api/get-run) の `readable` プロパティを使用してワークフローの外部から読み取れるデータを書き込むことができます。
+
+この関数をワークフローおよびステップで使用して、クライアントがリアルタイムで消費できるストリーミング出力を生成します。
+
+<Callout type="warn">
+  この関数はワークフローまたはステップ関数の内部でのみ呼び出すことができます（"use workflow" または "use step" ディレクティブを持つ関数）
+</Callout>
+
+<Callout type="error">
+  **重要:** ワークフロー関数内で `getWritable()` を呼び出してストリームを取得することはできますが、ワークフローコンテキスト内でストリームを**直接操作することはできません**（例: `getWriter()`, `write()`, `close()` を呼び出す）。ストリームはステップ関数に引数として渡すか、ステップが直接 `getWritable()` を呼び出す必要があります。
+</Callout>
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function myWorkflow() {
+  "use workflow";
+
+  // Get the writable stream
+  const writable = getWritable(); // [!code highlight]
+
+  // Pass it to a step function to interact with it
+  await writeToStream(writable); // [!code highlight]
+}
+
+async function writeToStream(writable: WritableStream) {
+  "use step";
+
+  const writer = writable.getWriter();
+  await writer.write(new TextEncoder().encode("Hello from workflow!"));
+  writer.releaseLock();
+  await writable.close();
+}
+```
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+  definition={`
+import { getWritable } from "workflow";
+export default getWritable;`}
+  showSections={["parameters"]}
+/>
+
+### 戻り値
+
+<TSDoc
+  definition={`
+import { getWritable } from "workflow";
+export default getWritable;`}
+  showSections={["returns"]}
+/>
+
+`W` がストリームに書き込む予定のデータの型である `WritableStream<W>` を返します。
+
+## 知っておくと良いこと
+
+- **ワークフロー関数はストリームを取得できるだけです** - ワークフロー内で `getWritable()` を呼び出してストリーム参照を取得できますが、ワークフローコンテキスト内では `getWriter()`、`write()`、`close()` のようなメソッドを直接呼び出すことはできません。
+- **ステップ関数はストリームと相互作用できます** - ステップはストリームを引数として受け取るか、直接 `getWritable()` を呼び出してストリームと自由に操作できます（書き込み、クローズなど）。
+- ワークフローから呼び出した場合、ストリームと相互作用するにはステップに引数として渡す必要があります。
+- ステップから呼び出した場合、同じワークフロースコープのストリームを直接取得します。
+- 書き込み後は必ずライターのロックを解除してリソースリークを防いでください。
+- ストリームはバイナリデータ（`TextEncoder` を使用）や構造化オブジェクトを書き込むことができます。
+- 完了を示すために、終了時にはストリームをクローズすることを忘れないでください。
+
+## 例
+
+### 基本的なテキストストリーミング
+
+テキストデータをストリーミングする簡単な例を示します:
+
+```typescript lineNumbers
+import { sleep, getWritable } from "workflow";
+
+export async function outputStreamWorkflow() {
+  "use workflow";
+
+  const writable = getWritable(); // [!code highlight]
+
+  await sleep("1s");
+  await stepWithOutputStream(writable);
+  await sleep("1s");
+  await stepCloseOutputStream(writable);
+
+  return "done";
+}
+
+async function stepWithOutputStream(writable: WritableStream) {
+  "use step";
+
+  const writer = writable.getWriter();
+  // Write binary data using TextEncoder
+  await writer.write(new TextEncoder().encode("Hello, world!"));
+  writer.releaseLock();
+}
+
+async function stepCloseOutputStream(writable: WritableStream) {
+  "use step";
+
+  // Close the stream to signal completion
+  await writable.close();
+}
+```
+
+### ステップ内での `getWritable()` の呼び出し
+
+ストリームをパラメータとして渡さなくても、ステップ関数内で直接 `getWritable()` を呼び出すことができます:
+
+```typescript lineNumbers
+import { sleep, getWritable } from "workflow";
+
+export async function outputStreamFromStepWorkflow() {
+  "use workflow";
+
+  // No need to create or pass the stream - steps can get it themselves
+  await sleep("1s");
+  await stepWithOutputStreamInside();
+  await sleep("1s");
+  await stepCloseOutputStreamInside();
+
+  return "done";
+}
+
+async function stepWithOutputStreamInside() {
+  "use step";
+
+  // Call getWritable() directly inside the step // [!code highlight]
+  const writable = getWritable(); // [!code highlight]
+  const writer = writable.getWriter();
+
+  await writer.write(new TextEncoder().encode("Hello from step!"));
+  writer.releaseLock();
+}
+
+async function stepCloseOutputStreamInside() {
+  "use step";
+
+  // Call getWritable() to get the same stream // [!code highlight]
+  const writable = getWritable(); // [!code highlight]
+  await writable.close();
+}
+```
+
+### ステップで名前空間付きストリームを使用する
+
+ステップから `getWritable()` を呼び出す際に名前空間付きストリームを使用することもできます:
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function multiStreamWorkflow() {
+  "use workflow";
+
+  // Steps will access both streams by namespace
+  await writeToDefaultStream();
+  await writeToNamedStream();
+  await closeStreams();
+
+  return "done";
+}
+
+async function writeToDefaultStream() {
+  "use step";
+
+  const writable = getWritable(); // Default stream
+  const writer = writable.getWriter();
+  await writer.write({ message: "Default stream data" });
+  writer.releaseLock();
+}
+
+async function writeToNamedStream() {
+  "use step";
+
+  const writable = getWritable({ namespace: "logs" }); // [!code highlight]
+  const writer = writable.getWriter();
+  await writer.write({ log: "Named stream data" });
+  writer.releaseLock();
+}
+
+async function closeStreams() {
+  "use step";
+
+  await getWritable().close(); // Close default stream
+  await getWritable({ namespace: "logs" }).close(); // Close named stream
+}
+```
+
+### 高度なチャットストリーミング
+
+AIチャットの応答をストリーミングする、より複雑な例を示します:
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+import { generateId, streamText, type UIMessageChunk } from "ai";
+
+export async function chat(messages: UIMessage[]) {
+  "use workflow";
+
+  // Get typed writable stream for UI message chunks
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+
+  // Start the stream
+  await startStream(writable);
+
+  let currentMessages = [...messages];
+
+  // Process messages in steps
+  for (let i = 0; i < MAX_STEPS; i++) {
+    const result = await streamTextStep(currentMessages, writable);
+    currentMessages.push(result.messages);
+
+    if (result.finishReason !== "tool-calls") {
+      break;
+    }
+  }
+
+  // End the stream
+  await endStream(writable);
+}
+
+async function startStream(writable: WritableStream<UIMessageChunk>) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Send start message
+  writer.write({
+    type: "start",
+    messageMetadata: {
+      createdAt: Date.now(),
+      messageId: generateId(),
+    },
+  });
+
+  writer.releaseLock();
+}
+
+async function streamTextStep(
+  messages: UIMessage[],
+  writable: WritableStream<UIMessageChunk>
+) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Call streamText from the AI SDK
+  const result = streamText({
+    model: "gpt-4",
+    messages,
+    /* other options */
+  });
+
+  // Pipe the AI stream into the writable stream
+  const reader = result
+    .toUIMessageStream({ sendStart: false, sendFinish: false })
+    .getReader();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    await writer.write(value);
+  }
+
+  reader.releaseLock();
+
+  // Close the stream
+  writer.close();
+  writer.releaseLock();
+}
+
+async function endStream(writable: WritableStream<UIMessageChunk>) {
+  "use step";
+
+  // Close the stream to signal completion
+  await writable.close();
+}
+```

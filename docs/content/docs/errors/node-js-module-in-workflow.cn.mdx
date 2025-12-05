@@ -1,0 +1,73 @@
+---
+title: 工作流中的 Node.js 模块
+---
+
+当你尝试在工作流函数内部直接导入或使用 Node.js 核心模块（例如 `fs`、`http`、`crypto`、`path` 等）时，会发生此错误。
+
+## 错误信息
+
+```
+Cannot use Node.js module "fs" in workflow functions. Move this module to a step function.
+```
+
+## 原因
+
+工作流函数在沙箱环境中运行，无法完全访问 Node.js 运行时。此限制对于保持 **确定性** 十分重要——即能够精确重放工作流并在挂起或失败后从中断处恢复。
+
+Node.js 模块可能具有副作用和非确定性行为，这可能破坏工作流重放的保证。
+
+## 快速修复
+
+将任何使用 Node.js 模块的代码移动到 步骤函数。步骤函数可以完全访问 Node.js 运行时。
+
+例如，当在工作流函数中尝试读取文件时，应将代码移动到步骤函数。
+
+**之前:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // This will cause an error - Node.js module in workflow context
+  const content = fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+  return content;
+}
+```
+
+**之后:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // Call step function that has Node.js access
+  const content = await read(filePath); // [!code highlight]
+  return content;
+}
+
+async function read(filePath: string) {
+  "use step";
+
+  // Node.js modules are allowed in step functions
+  return fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+}
+```
+
+## 常见的 Node.js 模块
+
+这些常见的 Node.js 核心模块不能在工作流函数中使用：
+
+- 文件系统: `fs`, `path`
+- 网络: `http`, `https`, `net`, `dns`, `fetch`
+- 进程: `child_process`, `cluster`
+- 加密: `crypto` (改用 Web Crypto API)
+- 操作系统: `os`
+- 流: `stream` (改用 Web Streams API)
+
+<Callout type="info">
+您可以在工作流函数中使用 Web 平台 API（例如 `Headers`、`crypto.randomUUID()`、`Response` 等），因为这些在沙箱环境中可用。
+</Callout>

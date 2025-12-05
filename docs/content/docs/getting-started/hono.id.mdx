@@ -1,0 +1,242 @@
+---
+title: Hono
+description: Panduan ini akan memandu Anda menyiapkan workflow pertama dalam aplikasi Hono. Sepanjang proses, Anda akan mempelajari lebih banyak tentang konsep-konsep yang mendasar untuk menggunakan development kit dalam proyek Anda sendiri.
+---
+
+<Steps>
+
+<Step>
+## Buat Proyek Hono Anda
+
+Mulailah dengan membuat proyek Hono baru. Perintah ini akan membuat direktori baru bernama `my-workflow-app` dan menyiapkan proyek Hono di dalamnya.
+
+```bash
+npm create hono@latest my-workflow-app -- --template=nodejs
+```
+
+Masuk ke direktori yang baru dibuat:
+
+```bash
+cd my-workflow-app
+```
+
+### Instal `workflow`, `nitro`, dan `rollup`
+
+```package-install
+npm i workflow nitro rollup
+```
+
+<Callout>
+Secara default, Hono tidak menyertakan sistem build. Nitro menambahkan satu yang memungkinkan kompilasi workflow, run, dan deploy untuk pengembangan dan produksi. Pelajari lebih lanjut tentang Nitro [di sini](https://v3.nitro.build).
+</Callout>
+
+### Konfigurasikan Nitro
+
+Buat file baru `nitro.config.ts` untuk konfigurasi Nitro Anda dengan modul `workflow/nitro`. Ini mengaktifkan penggunaan direktif `"use workflow"` dan `"use step"`.
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  modules: ["workflow/nitro"],
+  routes: {
+    "/**": "./src/index.ts"
+  }
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Siapkan IntelliSense untuk TypeScript (Opsional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Untuk mengaktifkan petunjuk yang membantu di IDE Anda, pasang plugin workflow di `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+### Perbarui `package.json`
+
+Untuk menggunakan builder Nitro, perbarui `package.json` Anda agar menyertakan skrip berikut:
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## Buat Workflow Pertama Anda
+
+Buat file baru untuk workflow pertama kita:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Kita akan mengisi fungsi-fungsi tersebut selanjutnya, tetapi mari lihat kode ini:
+
+- Kita mendefinisikan fungsi **alur kerja** dengan direktif ` "use workflow" `. Pikirkan fungsi workflow sebagai _pengatur_ dari **langkah-langkah** individual.
+- Fungsi `sleep` dari Workflow DevKit memungkinkan kita menjeda eksekusi workflow tanpa menggunakan sumber daya apa pun. Durasi sleep bisa beberapa detik, jam, hari, atau bahkan berbulan-bulan.
+
+## Buat Langkah-Langkah Workflow Anda
+
+Sekarang mari kita definisikan fungsi-fungsi yang hilang tersebut.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Melihat kode ini:
+
+- Logika bisnis berada di dalam **langkah-langkah**. Ketika sebuah langkah dipanggil di dalam sebuah **alur kerja**, langkah tersebut akan dimasukkan ke antrean untuk dijalankan pada permintaan terpisah sementara workflow ditangguhkan, sama seperti `sleep`.
+- Jika sebuah langkah melemparkan error, seperti pada `sendWelcomeEmail`, langkah tersebut akan otomatis dicoba ulang hingga berhasil (atau mencapai batas retry maksimal langkah tersebut).
+- Langkah-langkah dapat melempar `FatalError` jika kesalahan tersebut disengaja dan tidak boleh dicoba ulang.
+
+<Callout>
+  Kita akan membahas lebih dalam tentang workflow, langkah-langkah, dan cara lain untuk menjeda atau menangani peristiwa di [Dasar-dasar](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Buat Route Handler Anda
+
+Untuk memanggil workflow baru Anda, kita akan membuat route handler API baru di `src/index.ts` dengan kode berikut:
+
+```typescript title="src/index.ts"
+import { Hono } from "hono";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = new Hono();
+
+app.post("/api/signup", async (c) => {
+  const { email } = await c.req.json();
+  await start(handleUserSignup, [email]);
+  return c.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+Route handler ini membuat endpoint request `POST` di `/api/signup` yang akan memicu workflow Anda.
+
+</Step>
+
+<Step>
+
+## Jalankan di lingkungan pengembangan
+
+Untuk memulai server pengembangan Anda, jalankan perintah berikut di terminal di direktori root Hono:
+
+```bash
+npm run dev
+```
+
+Setelah server pengembangan berjalan, Anda dapat memicu workflow dengan menjalankan perintah ini di terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Periksa log server pengembangan Hono untuk melihat eksekusi workflow Anda serta langkah-langkah yang sedang diproses.
+
+Selain itu, Anda dapat menggunakan [Workflow DevKit CLI atau Web UI](/docs/observability) untuk memeriksa run dan langkah workflow Anda secara rinci.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+## Menerapkan ke produksi
+
+Aplikasi Workflow DevKit saat ini bekerja paling baik ketika diterapkan ke [Vercel](https://vercel.com/home) dan tidak memerlukan konfigurasi khusus.
+
+Periksa bagian [Menerapkan](/docs/deploying) untuk mempelajari bagaimana workflow Anda dapat dideploy ke tempat lain.
+
+## Langkah Selanjutnya
+
+- Pelajari lebih lanjut tentang [Dasar-dasar](/docs/foundations).
+- Periksa [Kesalahan](/docs/errors) jika Anda menemukan masalah.
+- Jelajahi [Referensi API](/docs/api-reference).

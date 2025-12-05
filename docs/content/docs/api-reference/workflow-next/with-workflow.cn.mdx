@@ -1,0 +1,51 @@
+---
+title: withWorkflow
+---
+
+配置 webpack/turbopack 的加载器以转换工作流代码（`"use step"`/`"use workflow"` 指令）
+
+## 使用
+
+要在本地开发或部署到生产环境时启用 `"use step"` 和 `"use workflow"` 指令，请将你的 `nextConfig` 用 `withWorkflow` 包裹。
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next"; // [!code highlight]
+import type { NextConfig } from "next";
+ 
+const nextConfig: NextConfig = {
+  // … rest of your Next.js config
+};
+
+// not required but allows configuring workflow options
+const workflowConfig = {} 
+
+export default withWorkflow(nextConfig, workflowConfig); // [!code highlight]
+```
+
+如果你在 `next.config` 中导出的是一个函数，你需要确保调用从 `withWorkflow` 返回的函数。
+
+```typescript title="next.config.ts" lineNumbers
+import { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+const withNextIntl = createNextIntlPlugin();
+
+export default async function config(
+  phase: string,
+  ctx: {
+    defaultConfig: NextConfig
+  }
+): Promise<NextConfig> {
+  let nextConfig: NextConfig | typeof config = {};
+
+  for (const configModifier of [withNextIntl, withWorkflow]) {
+    nextConfig = configModifier(nextConfig);
+
+    if (typeof nextConfig === "function") {
+      nextConfig = await nextConfig(phase, ctx);
+    }
+  }
+  return nextConfig;
+}
+```

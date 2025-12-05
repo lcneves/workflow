@@ -1,0 +1,55 @@
+---
+title: Idempotence
+---
+
+L'idempotence est une propriété d'une opération qui garantit qu'elle peut être relancée en toute sécurité sans produire d'effets secondaires en double.
+
+Dans les systèmes distribués (appels d'API externes), il n'est pas toujours possible de garantir qu'une opération n'a été exécutée qu'une seule fois simplement en constatant qu'elle a réussi.
+Considérez une API de paiement qui facture l'utilisateur $10, mais en raison de pannes réseau, la réponse de confirmation est perdue. Lorsque l'étape se réessaie (parce que la tentative précédente a été considérée comme un échec), elle facturera à nouveau l'utilisateur.
+
+Pour éviter cela, de nombreuses API externes prennent en charge des clés d'idempotence. Une clé d'idempotence est un identifiant unique pour une opération qui peut être utilisé pour dédupliquer les requêtes.
+
+## Le schéma principal : utilisez l'ID de l'étape comme clé d'idempotence
+
+Chaque invocation d'étape possède un `stepId` stable qui reste le même entre les réessais.
+Utilisez-le comme clé d'idempotence lors des appels aux API tierces.
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+
+  const { stepId } = getStepMetadata();
+
+  // Example: Stripe-style idempotency key
+  // This guarantees only one charge is created even if the step retries
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: stepId, // [!code highlight]
+    }
+  );
+}
+```
+
+Pourquoi cela fonctionne :
+
+- **Stable entre les réessais** : `stepId` ne change pas entre les tentatives.
+- **Unique globalement par étape** : satisfait l'exigence d'unicité pour une clé d'idempotence.
+
+## Bonnes pratiques
+
+- **Fournissez toujours des clés d'idempotence aux effets secondaires externes non idempotents** dans les étapes (paiements, e-mails, SMS, files d'attente).
+- **Privilégiez `stepId` comme clé** ; il est stable entre les réessais et unique par étape.
+- **Gardez les clés déterministes** ; évitez d'inclure des horodatages ou des compteurs de tentatives.
+- **Gérez les réponses 409/conflit** de manière appropriée ; considérez-les comme un succès si la tentative précédente s'est achevée.
+
+## Documentation associée
+
+- En savoir plus sur les réessais dans [Erreurs et réessais](/docs/foundations/errors-and-retries)
+- Référence API : [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)

@@ -1,0 +1,55 @@
+---
+title: Idempotencia
+---
+
+La idempotencia es una propiedad de una operación que garantiza que puede reintentarse de forma segura sin producir efectos secundarios duplicados.
+
+En sistemas distribuidos (llamando a APIs externas), no siempre es posible garantizar que una operación se haya realizado solo una vez simplemente comprobando si tiene éxito.
+Considera una API de pagos que cobra al usuario $10, pero debido a fallos de red, la respuesta de confirmación se pierde. Cuando el paso se reintente (porque el intento anterior se consideró un fallo), volverá a cobrar al usuario.
+
+Para evitar esto, muchas APIs externas soportan claves de idempotencia. Una clave de idempotencia es un identificador único para una operación que puede usarse para desduplicar solicitudes.
+
+## El patrón central: usa el ID del paso como tu clave de idempotencia
+
+Cada invocación de paso tiene un `stepId` estable que permanece igual entre reintentos.
+Úsalo como la clave de idempotencia al llamar a APIs de terceros.
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+
+  const { stepId } = getStepMetadata();
+
+  // Example: Stripe-style idempotency key
+  // This guarantees only one charge is created even if the step retries
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: stepId, // [!code highlight]
+    }
+  );
+}
+```
+
+Por qué esto funciona:
+
+- **Estable entre reintentos**: `stepId` no cambia entre intentos.
+- **Único globalmente por paso**: Cumple el requisito de unicidad para una clave de idempotencia.
+
+## Buenas prácticas
+
+- **Proporciona siempre claves de idempotencia a efectos secundarios externos que no sean idempotentes** dentro de los pasos (pagos, correos electrónicos, SMS, colas).
+- **Prefiere `stepId` como tu clave**; es estable entre reintentos y único por paso.
+- **Mantén las claves deterministas**; evita incluir marcas de tiempo o contadores de intentos.
+- **Maneja las respuestas 409/conflict** de forma adecuada; trátalas como un éxito si el intento previo se completó.
+
+## Documentación relacionada
+
+- Aprende sobre reintentos en [Errores y reintentos](/docs/foundations/errors-and-retries)
+- Referencia de la API: [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)

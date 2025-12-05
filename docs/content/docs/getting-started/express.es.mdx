@@ -1,0 +1,259 @@
+---
+title: Express
+---
+
+Esta guía te guiará a través de la configuración de tu primer workflow en una aplicación Express. A lo largo del proceso, aprenderás más sobre los conceptos que son fundamentales para usar el kit de desarrollo en tus propios proyectos.
+
+---
+
+<Steps>
+
+<Step>
+## Create Your Express Project
+
+Comienza creando un nuevo proyecto Express.
+
+```bash
+mkdir my-workflow-app
+```
+
+Entra en el directorio recién creado:
+
+```bash
+cd my-workflow-app
+```
+
+Inicializa el proyecto:
+
+```bash
+npm init --y
+```
+
+### Install `workflow`, `express`, `nitro`, and `rollup`
+
+```package-install
+npm i workflow express nitro rollup
+```
+
+<Callout>
+Por defecto, Express no incluye un sistema de compilación. Nitro añade uno que permite compilar workflows, ejecuciones y despliegues para desarrollo y producción. Aprende más sobre Nitro [aquí](https://v3.nitro.build).
+</Callout>
+
+Si usas TypeScript, necesitas instalar el paquete `@types/express`.
+
+```bash
+npm i -D @types/express
+```
+
+### Configure Nitro
+
+Crea un nuevo archivo `nitro.config.ts` para tu configuración de Nitro con el módulo `workflow/nitro`. Esto permite el uso de las directivas `"use workflow"` y `"use step"`.
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineNitroConfig } from "nitro/config";
+
+export default defineNitroConfig({
+  modules: ["workflow/nitro"],
+  vercel: { entryFormat: "node" },
+  routes: {
+    "/**": { handler: "./src/index.ts", format: "node" },
+  },
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Configura IntelliSense para TypeScript (Opcional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Para habilitar sugerencias útiles en tu IDE, configura el plugin workflow en `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+### Update `package.json`
+
+Para usar el builder de Nitro, actualiza tu `package.json` para incluir los siguientes scripts:
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## Create Your First Workflow
+
+Crea un nuevo archivo para nuestro primer workflow:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Rellenaremos esas funciones a continuación, pero echemos un vistazo a este código:
+
+- Definimos una función **workflow** con la directiva `"use workflow"`. Piensa en la función workflow como el _orquestador_ de los **steps** individuales.
+- La función `sleep` del Workflow DevKit nos permite suspender la ejecución del workflow sin consumir recursos. Un sleep puede durar unos segundos, horas, días o incluso meses.
+
+## Create Your Workflow Steps
+
+Ahora definamos esas funciones faltantes.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Al revisar este código:
+
+- La lógica de negocio reside dentro de los **steps**. Cuando se invoca un step dentro de un **workflow**, se encola para ejecutarse en una solicitud separada mientras el workflow está suspendido, igual que `sleep`.
+- Si un step lanza un error, como en `sendWelcomeEmail`, el step se reintentará automáticamente hasta que tenga éxito (o alcance el recuento máximo de reintentos del step).
+- Los steps pueden lanzar un `FatalError` si un error es intencional y no debe reintentarse.
+
+<Callout>
+  Profundizaremos más en los workflows, steps y otras formas de suspender o manejar eventos en [Fundamentos](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Create Your Route Handler
+
+Para invocar tu nuevo workflow, crearemos tanto la app Express como un nuevo manejador de ruta API en `src/index.ts` con el siguiente código:
+
+```typescript title="src/index.ts"
+import express from "express";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = express();
+app.use(express.json());
+
+app.post("/api/signup", async (req, res) => {
+  const { email } = req.body;
+  await start(handleUserSignup, [email]);
+  return res.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+Este manejador de ruta crea un endpoint `POST` en `/api/signup` que activará tu workflow.
+
+</Step>
+
+<Step>
+
+## Run in development
+
+Para iniciar tu servidor de desarrollo, ejecuta el siguiente comando en tu terminal desde el directorio raíz de Express:
+
+```bash
+npm run dev
+```
+
+Una vez que tu servidor de desarrollo esté en ejecución, puedes activar tu workflow ejecutando este comando en la terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Consulta los logs del servidor de desarrollo de Express para ver la ejecución de tu workflow así como los steps que se están procesando.
+
+Además, puedes usar la [CLI de Workflow DevKit o interfaz web](/docs/observability) para inspeccionar las ejecuciones y los steps de tu workflow en detalle.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Interfaz web de Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+---
+
+## Deploying to production
+
+Las aplicaciones Workflow DevKit funcionan mejor actualmente cuando se despliegan en [Vercel](https://vercel.com/home) y no requieren configuración especial.
+
+Consulta la sección [Despliegue](/docs/deploying) para aprender cómo tus workflows pueden desplegarse en otros lugares.
+
+## Next Steps
+
+- Aprende más sobre los [Fundamentos](/docs/foundations).
+- Consulta [Errores](/docs/errors) si encuentras problemas.
+- Explora la [Referencia de la API](/docs/api-reference).

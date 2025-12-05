@@ -1,0 +1,43 @@
+---
+title: Worlds
+---
+
+<Callout type="wip">
+
+Halaman ini sedang dalam pengerjaan.
+
+</Callout>
+
+Alur kerja `World` adalah sebuah interface yang mengabstraksi bagaimana workflows dan steps berkomunikasi dengan dunia luar, memungkinkan Anda membangun adapter kustom dan menggunakan kembali mereka di berbagai environment, infrastruktur, dan penyedia hosting.
+
+## Memilih implementasi World
+
+* Secara default, Workflow menggunakan [Lokal World](/docs/deploying/world/local-world) untuk mempermudah pengembangan lokal.
+* Saat dideploy di Vercel, Workflow beralih ke [Vercel World](/docs/deploying/world/vercel-world).
+
+Jika Anda ingin menggunakan implementasi World yang berbeda, setel variabel lingkungan `WORKFLOW_TARGET_WORLD` ke nama NPM paket World yang Anda inginkan:
+
+```bash
+export WORKFLOW_TARGET_WORLD=@my-namespace/my-npm-package
+export MY_WORLD_CONFIG=... # implementation-specific configuration
+```
+
+## Built-in Worlds
+
+Workflow DevKit menyediakan dua implementasi World bawaan:
+
+- [Lokal World](/docs/deploying/world/local-world) - Berbasis filesystem untuk pengembangan lokal
+- [Vercel World](/docs/deploying/world/vercel-world) - Siap produksi untuk penyebaran di Vercel
+
+## Community Worlds
+
+> World-world ini dipelihara oleh komunitas dan diuji di CI. Lihat [worlds-manifest.json](https://github.com/vercel/workflow/blob/main/worlds-manifest.json) untuk detail konfigurasi.
+
+- [Turso](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/turso) (`@workflow-worlds/turso`) - Turso/libSQL World untuk basis data SQLite tertanam atau jarak jauh
+- [MongoDB](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/mongodb) (`@workflow-worlds/mongodb`) - MongoDB World yang menggunakan driver native
+- [Redis](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/redis) (`@workflow-worlds/redis`) - Redis World yang menggunakan BullMQ untuk antrean, Redis Streams untuk output
+
+### Other Community Worlds
+
+- [Postgres World](/docs/deploying/world/postgres-world) - Implementasi referensi untuk World backend PostgreSQL multi-host.
+- [Jazz World](https://github.com/garden-co/workflow-world-jazz) - Implementasi World penuh yang dibangun di atas [Jazz](https://jazz.tools)

@@ -1,0 +1,106 @@
+---
+title: 可重试错误
+---
+
+当在步骤中抛出 `RetryableError` 时，表示工作流应该重试该步骤。此外，它包含一个参数 `retryAfter`，指示应在何时重试该步骤。
+
+您应在希望重试某个步骤或在特定时长后重试时使用此项。
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!") // [!code highlight]
+}
+```
+
+<Callout>
+`Error` 与 `RetryableError` 之间的区别可能并不十分明显，因为当二者被抛出时，都会导致重试。不同之处在于 `RetryableError` 具有额外的可配置 `retryAfter` 参数。
+</Callout>
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+interface RetryableError {
+    options?: RetryableErrorOptions;
+    message: string;
+}
+
+export default RetryableError;`}
+/>
+
+#### RetryableErrorOptions
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+export default RetryableErrorOptions;`}
+/>
+
+## 示例
+
+### 在一段时间后重试
+
+`RetryableError` 可以通过 `retryAfter` 参数进行配置，以指定应在何时重试该步骤。
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: "5m" // - supports "5m", "30s", "1h", etc. // [!code highlight]
+    })
+}
+```
+
+您也可以以毫秒为单位指定重试延迟：
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: 5000 // - 5000 milliseconds = 5 seconds // [!code highlight]
+    })
+}
+```
+
+或者在特定的日期和时间重试：
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: new Date(Date.now() + 60000) // - retry after 1 minute // [!code highlight]
+    })
+}
+```

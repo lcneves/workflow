@@ -1,0 +1,253 @@
+---
+title: WorkflowChatTransport
+---
+
+<Callout type="warn">
+Paket `@workflow/ai` saat ini sedang dalam pengembangan aktif dan harus dianggap eksperimental.
+</Callout>
+
+Implementasi transport chat untuk AI SDK yang menyediakan streaming pesan yang andal dengan penyambungan ulang otomatis pada stream yang terputus. Transport ini adalah pengganti langsung untuk transport bawaan AI SDK, memungkinkan pemulihan mulus dari masalah jaringan, penyegaran halaman, atau batas waktu Vercel Function.
+
+<Callout>
+`WorkflowChatTransport` mengimplementasikan interface [`ChatTransport`](https://ai-sdk.dev/docs/ai-sdk-ui/transport) dari AI SDK dan dirancang untuk bekerja dengan aplikasi chat berbasis workflow. Ini membutuhkan endpoint yang mengembalikan header `x-workflow-run-id` untuk memungkinkan pemulihan stream.
+</Callout>
+
+```typescript lineNumbers
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+
+export default function Chat() {
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport(),
+  });
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>{m.content}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Tanda Tangan API
+
+### Kelas
+
+<TSDoc
+definition={`
+import { WorkflowChatTransport } from "@workflow/ai";
+export default WorkflowChatTransport;`}
+/>
+
+### WorkflowChatTransportOptions
+
+<TSDoc
+definition={`
+import type { WorkflowChatTransportOptions } from "@workflow/ai";
+export default WorkflowChatTransportOptions;`}
+/>
+
+## Fitur Utama
+
+- **Penyambungan Ulang Otomatis**: Memulihkan secara otomatis dari stream yang terputus dengan batas percobaan ulang yang dapat dikonfigurasi
+- **Integrasi Workflow**: Bekerja secara mulus dengan endpoint berbasis workflow yang menyediakan header `x-workflow-run-id`
+- **Permintaan yang Dapat Disesuaikan**: Memungkinkan intercept dan memodifikasi permintaan melalui `prepareSendMessagesRequest` dan `prepareReconnectToStreamRequest`
+- **Callback Stream**: Menyediakan hook untuk melacak siklus hidup chat melalui `onChatSendMessage` dan `onChatEnd`
+- **Fetch Kustom**: Mendukung implementasi fetch kustom untuk kasus penggunaan lanjutan
+
+## Yang Perlu Diketahui
+
+- Transport mengharapkan endpoint chat mengembalikan header `x-workflow-run-id` dalam respons untuk memungkinkan pemulihan stream
+- Secara default, transport mengirim POST ke `/api/chat` dan menyambung kembali melalui `/api/chat/{runId}/stream`
+- Callback `onChatSendMessage` menerima objek respons penuh, memungkinkan Anda mengekstrak dan menyimpan ID run workflow untuk pemulihan sesi
+- Gangguan stream terdeteksi secara otomatis ketika chunk "finish" tidak diterima dalam respons awal
+- Opsi `maxConsecutiveErrors` mengontrol berapa banyak percobaan penyambungan ulang yang dilakukan sebelum menyerah (default: 3)
+
+## Contoh
+
+### Pengaturan Chat Dasar
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useState } from "react";
+
+export default function BasicChat() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport(),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+### Dengan Persistensi Sesi dan Pemulihan
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useMemo, useState } from "react";
+
+export default function ChatWithResumption() {
+  const [input, setInput] = useState("");
+  const activeWorkflowRunId = useMemo(() => {
+    if (typeof window === "undefined") return;
+    return localStorage.getItem("active-workflow-run-id") ?? undefined;
+  }, []);
+
+  const { messages, sendMessage } = useChat({
+    resume: !!activeWorkflowRunId,
+    transport: new WorkflowChatTransport({
+      onChatSendMessage: (response, options) => {
+        // Save chat history to localStorage
+        localStorage.setItem(
+          "chat-history",
+          JSON.stringify(options.messages)
+        );
+
+        // Extract and store the workflow run ID for session resumption
+        const workflowRunId = response.headers.get("x-workflow-run-id");
+        if (workflowRunId) {
+          localStorage.setItem("active-workflow-run-id", workflowRunId);
+        }
+      },
+      onChatEnd: ({ chatId, chunkIndex }) => {
+        console.log(`Chat ${chatId} completed with ${chunkIndex} chunks`);
+        // Clear the active run ID when chat completes
+        localStorage.removeItem("active-workflow-run-id");
+      },
+    }),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+### Dengan Konfigurasi Permintaan Kustom
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useState } from "react";
+
+export default function ChatWithCustomConfig() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport({
+      prepareSendMessagesRequest: async (config) => {
+        return {
+          ...config,
+          api: "/api/chat",
+          headers: {
+            ...config.headers,
+            "Authorization": `Bearer ${process.env.NEXT_PUBLIC_API_TOKEN}`,
+            "X-Custom-Header": "custom-value",
+          },
+          credentials: "include",
+        };
+      },
+      prepareReconnectToStreamRequest: async (config) => {
+        return {
+          ...config,
+          headers: {
+            ...config.headers,
+            "Authorization": `Bearer ${process.env.NEXT_PUBLIC_API_TOKEN}`,
+          },
+          credentials: "include",
+        };
+      },
+      maxConsecutiveErrors: 5,
+    }),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+## Lihat Juga
+
+- [DurableAgent](/docs/api-reference/workflow-ai/durable-agent) - Membangun agen AI tahan lama dalam alur kerja
+- [AI SDK `useChat` Documentation](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat) - Menggunakan `useChat` dengan transport kustom
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - Memahami dasar-dasar workflow
+- ["flight-booking-app" Contoh](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) - Contoh aplikasi yang menggunakan `WorkflowChatTransport`

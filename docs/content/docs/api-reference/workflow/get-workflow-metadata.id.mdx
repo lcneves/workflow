@@ -1,0 +1,44 @@
+---
+title: getWorkflowMetadata
+---
+
+Mengembalikan metadata tambahan yang tersedia di fungsi workflow saat ini.
+
+Anda mungkin ingin menggunakan fungsi ini ketika Anda perlu:
+
+* Mencatat ID eksekusi workflow
+* Mengakses informasi waktu eksekusi workflow
+
+<Callout>
+Jika Anda perlu mengakses konteks langkah, lihat [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata).
+</Callout>
+
+```typescript lineNumbers
+import { getWorkflowMetadata } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+
+    const ctx = getWorkflowMetadata() // [!code highlight]
+    console.log(ctx.workflowRunId)
+}
+```
+
+## Tanda Tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { getWorkflowMetadata } from "workflow";
+export default getWorkflowMetadata;`}
+showSections={['parameters']}
+/>
+
+### Pengembalian
+
+<TSDoc
+definition={`
+import type { WorkflowMetadata } from "workflow";
+export default WorkflowMetadata;`}
+/>

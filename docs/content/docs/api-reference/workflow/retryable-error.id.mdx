@@ -1,0 +1,106 @@
+---
+title: RetryableError
+---
+
+Ketika sebuah `RetryableError` dilempar dalam sebuah langkah, itu menunjukkan bahwa workflow harus mencoba ulang langkah tersebut. Selain itu, ia berisi parameter `retryAfter` yang menunjukkan kapan langkah tersebut harus dicoba ulang.
+
+Anda harus menggunakan ini ketika Anda ingin mencoba ulang sebuah langkah atau mencoba ulang setelah durasi tertentu.
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!") // [!code highlight]
+}
+```
+
+<Callout>
+Perbedaan antara `Error` dan `RetryableError` mungkin tidak sepenuhnya jelas, karena ketika keduanya dilempar, keduanya melakukan retry. Perbedaannya adalah `RetryableError` memiliki parameter tambahan yang dapat dikonfigurasi, `retryAfter`.
+</Callout>
+
+## Tanda tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+interface RetryableError {
+    options?: RetryableErrorOptions;
+    message: string;
+}
+
+export default RetryableError;`}
+/>
+
+#### RetryableErrorOptions
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+export default RetryableErrorOptions;`}
+/>
+
+## Contoh
+
+### Mencoba ulang setelah durasi
+
+`RetryableError` dapat dikonfigurasi dengan parameter `retryAfter` untuk menentukan kapan langkah harus dicoba ulang.
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: "5m" // - supports "5m", "30s", "1h", etc. // [!code highlight]
+    })
+}
+```
+
+Anda juga dapat menentukan penundaan retry dalam milidetik:
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: 5000 // - 5000 milliseconds = 5 seconds // [!code highlight]
+    })
+}
+```
+
+Atau mencoba ulang pada tanggal dan waktu tertentu:
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: new Date(Date.now() + 60000) // - retry after 1 minute // [!code highlight]
+    })
+}
+```

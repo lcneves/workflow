@@ -1,0 +1,138 @@
+---
+title: Mises à jour en continu depuis les outils
+---
+
+Après [avoir créé un agent IA durable](/docs/ai), nous obtenons déjà des fragments de messages d'interface utilisateur pour afficher les invocations d'outils et les valeurs de retour. Cependant, pour des étapes de longue durée, il peut être utile d'afficher des mises à jour de progression, ou de diffuser la sortie d'une étape à l'utilisateur pendant qu'elle est générée.
+
+Workflow DevKit permet cela en autorisant les fonctions d'étape à écrire des fragments personnalisés dans le même flux que celui utilisé par l'agent. Ces fragments apparaissent comme des parties de données dans vos messages, que vous pouvez rendre comme vous le souhaitez.
+
+À titre d'exemple, nous allons étendre l'Agent de réservation de vols pour émettre des mises à jour de progression plus granulaires lors de la recherche de vols.
+
+<Steps>
+
+<Step>
+
+### Définissez votre type de partie de données
+
+Tout d'abord, définissez un type TypeScript pour votre partie de données personnalisée. Cela garantit la sécurité des types dans le code de votre outil et du client :
+
+```typescript title="schemas/chat.ts" lineNumbers
+export interface FoundFlightDataPart {
+  type: "data-found-flight"; // [!code highlight]
+  id: string;
+  data: {
+    flightNumber: string;
+    from: string;
+    to: string;
+  };
+}
+```
+
+Le champ `type` doit être une chaîne commençant par `data-` suivie de votre identifiant personnalisé. Le champ `id` doit correspondre au `toolCallId` afin que le client puisse associer les données à la bonne invocation d'outil. En savoir plus sur les [parties de données](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#data-parts-persistent) dans la documentation de l'AI SDK.
+
+</Step>
+
+<Step>
+
+### Émettre des mises à jour depuis votre outil
+
+Utilisez [`getWritable()`](/docs/api-reference/workflow/get-writable) à l'intérieur d'une fonction d'étape pour obtenir une poignée vers le flux. Il s'agit du même flux auquel l'LLM et les autres appels d'outils écrivent, ce qui nous permet d'injecter nos propres paquets de données directement.
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable } from "workflow"; // [!code highlight]
+import type { UIMessageChunk } from "ai";
+
+export async function searchFlights(
+  { from, to, date }: { from: string; to: string; date: string },
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) {
+  "use step";
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+
+  // ... existing logic to generate flights ...
+
+  for (const flight of generatedFlights) { // [!code highlight]
+
+    // Simulate the time it takes to find each flight
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // [!code highlight]
+
+    await writer.write({ // [!code highlight]
+      id: `${toolCallId}-${flight.flightNumber}`, // [!code highlight]
+      type: "data-found-flight", // [!code highlight]
+      data: flight, // [!code highlight]
+    }); // [!code highlight]
+  } // [!code highlight]
+
+  writer.releaseLock(); // [!code highlight]
+
+  return {
+    message: `Found ${generatedFlights.length} flights from ${from} to ${to} on ${date}`,
+    flights: generatedFlights.sort((a, b) => a.price - b.price), // Sort by price
+  };
+}
+```
+
+Points clés :
+
+- Appelez `getWritable<UIMessageChunk>()` pour obtenir le flux  
+- Utilisez `getWriter()` pour acquérir un writer  
+- Écrivez des objets avec les champs `type`, `id` et `data`  
+- Appelez toujours `releaseLock()` lorsque vous avez fini d'écrire (en savoir plus sur le [streaming](/docs/foundations/streaming))
+
+</Step>
+
+<Step>
+### Gérer les parties de données côté client
+
+Mettez à jour votre composant de chat pour détecter et rendre les parties de données personnalisées. Les parties de données sont stockées dans le tableau `parts` du message aux côtés des parties de texte et des parties d'invocation d'outil :
+
+```typescript title="app/page.tsx" lineNumbers
+{message.parts.map((part, partIndex) => {
+  // Render text parts
+  if (part.type === "text") {
+    return (
+      <Response key={`${message.id}-text-${partIndex}`}>
+        {part.text}
+      </Response>
+    );
+  }
+
+  // Render streaming flight data parts // [!code highlight]
+  if (part.type === "data-found-flight") { // [!code highlight]
+    const flight = part.data as { // [!code highlight]
+      flightNumber: string; // [!code highlight]
+      airline: string; // [!code highlight]
+      from: string; // [!code highlight]
+      to: string; // [!code highlight]
+    }; // [!code highlight]
+    return ( // [!code highlight]
+      <div key={`${part.id}-${flight.flightNumber}`} className="p-3 bg-muted rounded-md"> // [!code highlight]
+        <div className="font-medium">{flight.airline} - {flight.flightNumber}</div> // [!code highlight]
+        <div className="text-muted-foreground">{flight.from} → {flight.to}</div> // [!code highlight]
+      </div> // [!code highlight]
+    ); // [!code highlight]
+  } // [!code highlight]
+
+  // ... other rendering logic ...
+})}
+```
+
+Le schéma est le suivant :
+
+1. Les parties de données ont un champ `type` commençant par `data-`  
+2. Faites correspondre le type à votre identifiant personnalisé (par exemple, `data-found-flight`)  
+3. Utilisez la charge utile (payload) de la partie de données pour afficher la progression ou des résultats intermédiaires
+
+</Step>
+
+</Steps>
+
+Désormais, lorsque vous lancez l'agent pour rechercher des vols, vous verrez les résultats des vols apparaître les uns après les autres. Cela sera particulièrement utile si vous avez des appels d'outils qui prennent plusieurs minutes à s'exécuter et que vous devez afficher des mises à jour de progression granulaires à l'utilisateur.
+
+## Documentation connexe
+
+- [Création d'agents IA durables](/docs/ai) - Guide complet sur les agents durables  
+- [`getWritable()` API Reference](/docs/api-reference/workflow/get-writable) - Détails de l'API de streaming  
+- [Diffusion en continu](/docs/foundations/streaming) - Comprendre les flux de workflow

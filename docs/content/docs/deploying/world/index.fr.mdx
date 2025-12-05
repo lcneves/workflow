@@ -1,0 +1,43 @@
+---
+title: Mondes
+---
+
+<Callout type="wip">
+
+Cette page est en cours de rédaction.
+
+</Callout>
+
+Le workflow `World` est une interface qui abstrait la façon dont les workflows et les étapes communiquent avec le monde extérieur, vous permettant de créer des adaptateurs personnalisés et de les réutiliser dans différents environnements, infrastructures et fournisseurs d'hébergement.
+
+## Choisir une implémentation de World
+
+* Par défaut, Workflow utilise le [Monde local](/docs/deploying/world/local-world) pour faciliter le développement local.
+* Lorsqu'il est déployé sur Vercel, Workflow passe au [Monde Vercel](/docs/deploying/world/vercel-world).
+
+Si vous souhaitez utiliser une implémentation de World différente, définissez la variable d'environnement `WORKFLOW_TARGET_WORLD` sur le nom NPM du package World souhaité :
+
+```bash
+export WORKFLOW_TARGET_WORLD=@my-namespace/my-npm-package
+export MY_WORLD_CONFIG=... # implementation-specific configuration
+```
+
+## Mondes intégrés
+
+Workflow DevKit fournit deux implémentations de mondes intégrées :
+
+- [Monde local](/docs/deploying/world/local-world) - Basé sur le système de fichiers pour le développement local
+- [Monde Vercel](/docs/deploying/world/vercel-world) - Prêt pour la production pour les déploiements sur Vercel
+
+## Mondes communautaires
+
+> Ces mondes sont maintenus par la communauté et testés en CI. Voir le [worlds-manifest.json](https://github.com/vercel/workflow/blob/main/worlds-manifest.json) pour les détails de configuration.
+
+- [Turso](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/turso) (`@workflow-worlds/turso`) - Monde Turso/libSQL pour bases de données SQLite embarquées ou distantes
+- [MongoDB](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/mongodb) (`@workflow-worlds/mongodb`) - Monde MongoDB utilisant le pilote natif
+- [Redis](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/redis) (`@workflow-worlds/redis`) - Monde Redis utilisant BullMQ pour les files d'attente, Redis Streams pour la sortie
+
+### Autres mondes communautaires
+
+- [Monde Postgres](/docs/deploying/world/postgres-world) - Implémentation de référence pour un backend PostgreSQL multi-hôte.
+- [Monde Jazz](https://github.com/garden-co/workflow-world-jazz) - Une implémentation complète de World construite sur [Jazz](https://jazz.tools)

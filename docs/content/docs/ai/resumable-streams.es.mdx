@@ -1,0 +1,155 @@
+---
+title: Flujos reanudables
+---
+
+Al construir interfaces de chat, es común encontrarse con interrupciones de red, actualizaciones de página o tiempos de espera de funciones serverless, lo que puede romper la conexión con un agente en curso.
+
+Mientras que una implementación de chat estándar requeriría que el usuario reenvíe su mensaje y espere toda la respuesta nuevamente, las ejecuciones de workflows son duraderas, al igual que los streams adjuntos a ellas. Esto significa que un stream puede reanudarse en cualquier punto, opcionalmente sincronizando solo los datos que se perdieron desde la última conexión.
+
+Los streams reanudables vienen de serie con Workflow DevKit; sin embargo, el cliente necesita reconocer que existe un stream, necesita saber a qué stream reconectarse y dónde empezar. Para ello, Workflow DevKit proporciona el helper [`WorkflowChatTransport`](/docs/api-reference/workflow-ai/workflow-chat-transport), un transportador plug-and-play para el AI SDK que maneja la lógica de reanudación en el cliente por ti.
+
+## Implementación de la reanudación de streams
+
+Agreguemos la reanudación de streams a nuestro Agente de Reserva de Vuelos que construimos en la guía [Creación de agentes de IA duraderos](/docs/ai).
+
+<Steps>
+
+<Step>
+
+### Devuelve el Run ID desde tu API
+
+Modifica tu endpoint de chat para incluir el run ID del workflow en un encabezado de respuesta. El Run ID identifica de forma única el stream de la ejecución, por lo que permite al cliente saber a qué stream reconectarse.
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+// ... imports ...
+
+export async function POST(req: Request) {
+
+  // ... existing logic to create the workflow ...
+
+  const run = await start(chatWorkflow, [modelMessages]);
+
+  return createUIMessageStreamResponse({
+    stream: run.readable,
+    headers: { // [!code highlight
+      "x-workflow-run-id": run.runId, // [!code highlight]
+    }, // [!code highlight]
+  });
+}
+```
+
+</Step>
+
+<Step>
+
+### Agrega un endpoint de reconexión de stream
+
+Actualmente solo tenemos un endpoint de API que siempre crea una nueva ejecución, por lo que necesitamos crear una nueva ruta de API que devuelva el stream para una ejecución existente:
+
+```typescript title="app/api/chat/[id]/stream/route.ts" lineNumbers
+import { createUIMessageStreamResponse } from "ai";
+import { getRun } from "workflow/api"; // [!code highlight]
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+
+  // Client provides the last chunk index they received
+  const startIndexParam = searchParams.get("startIndex"); // [!code highlight]
+  const startIndex = startIndexParam
+    ? parseInt(startIndexParam, 10)
+    : undefined;
+
+  // Instead of starting a new run, we fetch an existing run.
+  const run = getRun(id); // [!code highlight]
+  const stream = run.getReadable({ startIndex }); // [!code highlight]
+
+  return createUIMessageStreamResponse({ stream }); // [!code highlight]
+}
+```
+
+El parámetro `startIndex` asegura que el cliente pueda elegir desde dónde reanudar el stream. Por ejemplo, si la función expira durante el streaming, el transport de chat usará `startIndex` para reanudar el stream exactamente desde el último token recibido.
+
+</Step>
+
+<Step>
+
+### Usa `WorkflowChatTransport` en el cliente
+
+Reemplaza el transportador por defecto en `useChat` del AI-SDK por [`WorkflowChatTransport`](/docs/api-reference/workflow-ai/workflow-chat-transport), y actualiza los callbacks para almacenar y usar el último run ID. Por ahora, guardaremos el run ID en localStorage. En tu propia aplicación, esto debería guardarse donde guardes la información de sesión.
+
+```typescript title="app/page.tsx" lineNumbers
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai"; // [!code highlight]
+import { useMemo, useState } from "react";
+
+export default function ChatPage() {
+
+  // Check for an active workflow run on mount
+  const activeRunId = useMemo(() => { // [!code highlight]
+    if (typeof window === "undefined") return; // [!code highlight]
+    return localStorage.getItem("active-workflow-run-id") ?? undefined; // [!code highlight]
+  }, []); // [!code highlight]
+
+  const { messages, sendMessage, status } = useChat({
+    resume: Boolean(activeRunId), // [!code highlight]
+    transport: new WorkflowChatTransport({ // [!code highlight]
+      api: "/api/chat",
+
+      // Store the run ID when a new chat starts
+      onChatSendMessage: (response) => { // [!code highlight]
+        const workflowRunId = response.headers.get("x-workflow-run-id"); // [!code highlight]
+        if (workflowRunId) { // [!code highlight]
+          localStorage.setItem("active-workflow-run-id", workflowRunId); // [!code highlight]
+        } // [!code highlight]
+      }, // [!code highlight]
+
+      // Clear the run ID when the chat completes
+      onChatEnd: () => { // [!code highlight]
+        localStorage.removeItem("active-workflow-run-id"); // [!code highlight]
+      }, // [!code highlight]
+
+      // Use the stored run ID for reconnection
+      prepareReconnectToStreamRequest: ({ api, ...rest }) => { // [!code highlight]
+        const runId = localStorage.getItem("active-workflow-run-id"); // [!code highlight]
+        if (!runId) throw new Error("No active workflow run ID found"); // [!code highlight]
+        return { // [!code highlight]
+          ...rest, // [!code highlight]
+          api: `/api/chat/${encodeURIComponent(runId)}/stream`, // [!code highlight]
+        }; // [!code highlight]
+      }, // [!code highlight]
+    }), // [!code highlight]
+  });
+
+  // ... render your chat UI
+}
+```
+
+</Step>
+
+</Steps>
+
+Ahora prueba de nuevo el ejemplo de reserva de vuelos. Ábrelo en una pestaña separada o pulsa repetidamente el botón de actualizar, y observa cómo el cliente se conecta al mismo stream de chat cada vez.
+
+## Cómo funciona
+
+1. Cuando el usuario envía un mensaje, `WorkflowChatTransport` realiza un POST a `/api/chat`
+2. La API inicia un workflow y devuelve el run ID en el encabezado `x-workflow-run-id`
+3. `onChatSendMessage` almacena este run ID en localStorage
+4. Si el stream se interrumpe antes de recibir un fragmento de tipo "finish", el transport se reconecta automáticamente
+5. `prepareReconnectToStreamRequest` construye la URL de reconexión usando el run ID almacenado, apuntando al nuevo endpoint `/api/chat/{runId}/stream`
+6. El endpoint de reconexión devuelve el stream desde donde el cliente lo dejó
+7. Cuando el stream finaliza, `onChatEnd` elimina el run ID almacenado
+
+Este enfoque también maneja las actualizaciones de página, ya que el cliente se reconectará automáticamente al stream desde la última posición conocida cuando la interfaz se cargue con un run ID almacenado, siguiendo el comportamiento de [reanudación de streams del AI SDK](https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-resume-streams#chatbot-resume-streams).
+
+## Documentación relacionada
+
+- [Referencia de la API de `WorkflowChatTransport`](/docs/api-reference/workflow-ai/workflow-chat-transport) - Opciones completas de configuración
+- [Streaming](/docs/foundations/streaming) - Comprender los streams de workflow
+- [Referencia de la API de `getRun()`](/docs/api-reference/workflow-api/get-run) - Recuperación de ejecuciones existentes

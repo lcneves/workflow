@@ -1,0 +1,225 @@
+---
+title: Nuxt
+description: Este guia irá orientar você na configuração do seu primeiro fluxo de trabalho em um app Nuxt. Ao longo do caminho, você aprenderá mais sobre os conceitos fundamentais para usar o kit de desenvolvimento em seus próprios projetos.
+---
+
+<Steps>
+
+<Step>
+## Crie seu Projeto Nuxt
+
+Comece criando um novo projeto Nuxt. Este comando criará um novo diretório chamado `nuxt-app` e configurará um projeto Nuxt dentro dele.
+
+```bash
+npm create nuxt@latest nuxt-app
+```
+
+Entre no diretório recém-criado:
+
+```bash
+cd nuxt-app
+```
+
+### Instale `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Configure o Nuxt
+
+Adicione `workflow` ao seu `nuxt.config.ts`. Isso configura automaticamente a integração Nitro e habilita o uso das diretivas `"use workflow"` e `"use step"`.
+
+```typescript title="nuxt.config.ts" lineNumbers
+import { defineNuxtConfig } from "nuxt/config";
+
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"], // [!code highlight]
+  compatibilityDate: "latest",
+});
+```
+
+Isso também habilitará automaticamente o plugin TypeScript, que fornece dicas de IntelliSense úteis no seu IDE para as funções workflow e step.
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Desativar plugin TypeScript (Opcional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+O plugin TypeScript é habilitado por padrão. Se você precisar desativá-lo, pode configurá-lo no seu `nuxt.config.ts`:
+
+```typescript title="nuxt.config.ts" lineNumbers
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"],
+  workflow: {
+    typescriptPlugin: false, // [!code highlight]
+  },
+  compatibilityDate: "latest",
+});
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Crie seu Primeiro Workflow
+
+Crie um novo arquivo para o nosso primeiro fluxo de trabalho:
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Vamos preencher essas funções a seguir, mas vamos dar uma olhada neste código:
+
+- Definimos uma função de **fluxo de trabalho** com a diretiva `"use workflow"`. Pense na função de workflow como o _orquestrador_ das **etapas** individuais.
+- A função `sleep` do Workflow DevKit nos permite suspender a execução do fluxo de trabalho sem consumir recursos. Um sleep pode durar alguns segundos, horas, dias ou até meses.
+
+## Crie as Etapas do Seu Workflow
+
+Agora vamos definir essas funções que estão faltando.
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Analisando este código:
+
+- A lógica de negócio vive dentro das **etapas**. Quando uma etapa é invocada dentro de um **fluxo de trabalho**, ela é enfileirada para ser executada em uma solicitação separada enquanto o fluxo de trabalho está suspenso, assim como `sleep`.
+- Se uma etapa lançar um erro, como em `sendWelcomeEmail`, a etapa será automaticamente reexecutada até que tenha sucesso (ou atinja o número máximo de tentativas da etapa).
+- Etapas podem lançar um `FatalError` se um erro for intencional e não deva ser reexecutado.
+
+<Callout>
+  Nós vamos nos aprofundar em fluxos de trabalho, etapas e outras maneiras de suspender ou lidar com eventos em [Fundamentos](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Crie sua Rota de API
+
+Para invocar seu novo fluxo de trabalho, vamos criar um manipulador de rota de API em `server/api/signup.post.ts` com o seguinte código:
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler, readBody } from "h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async (event) => {
+  const { email } = await readBody(event);
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+
+  return {
+    message: "User signup workflow started",
+  };
+});
+```
+
+Essa rota de API cria um endpoint de requisição `POST` em `/api/signup` que acionará seu fluxo de trabalho.
+
+<Callout>
+  Fluxos de trabalho podem ser acionados a partir de rotas de API ou de qualquer código do lado do servidor.
+</Callout>
+
+</Step>
+
+<Step>
+
+## Executar em desenvolvimento
+
+Para iniciar seu servidor de desenvolvimento, execute o seguinte comando no terminal, na raiz do projeto Nuxt:
+
+```bash
+npm run dev
+```
+
+Uma vez que o servidor de desenvolvimento esteja em execução, você pode acionar seu fluxo de trabalho executando este comando no terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Verifique os logs do servidor de desenvolvimento do Nuxt para ver seu fluxo de trabalho sendo executado, bem como as etapas que estão sendo processadas.
+
+Além disso, você pode usar a [CLI ou Interface Web do Workflow DevKit](/docs/observability) para inspecionar suas execuções de fluxo de trabalho e etapas em detalhe.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Interface Web do Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+## Implantação em produção
+
+Apps do Workflow DevKit atualmente funcionam melhor quando implantados no [Vercel](https://vercel.com/home) e não precisam de configuração especial.
+
+Consulte a seção [Implantação](/docs/deploying) para saber como seus fluxos de trabalho podem ser implantados em outros ambientes.
+
+## Próximos passos
+
+- Saiba mais sobre os [Fundamentos](/docs/foundations).
+- Verifique [Erros](/docs/errors) se encontrar problemas.
+- Explore a [Referência da API](/docs/api-reference).

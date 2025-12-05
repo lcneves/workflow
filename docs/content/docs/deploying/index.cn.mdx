@@ -1,0 +1,79 @@
+---
+title: 部署
+icon: FlaskConical
+---
+
+<Callout>
+  本节目前仍处于实验阶段，可能会发生变化。请试用并在 [GitHub](https://github.com/vercel/workflow/discussions) 上分享您的反馈。
+</Callout>
+
+工作流可以通过 **Worlds** 在任何基础设施上运行。World 是一个适配器，负责通过特定后端处理工作流的存储、排队、身份验证和流式传输。
+
+## 什么是 Worlds?
+
+一个 **World** 将工作流连接到为其提供支持的基础设施。可以把它视为工作流驻留和执行的“环境”。World 接口抽象了本地开发与生产部署之间的差异，使相同的工作流代码能够在不同环境中无缝运行。
+
+## 默认行为
+
+Worlds 会根据场景自动配置：
+
+- **本地开发** - 自动使用 Local World
+- **Vercel 部署** - 自动使用 Vercel World
+
+使用其他 Worlds 时，您可以通过环境变量显式设置配置。有关配置详情，请参考相应 World 的文档。
+
+## 内置 Worlds
+
+Workflow DevKit 随附两个 World 实现：
+
+<Cards>
+  <Card title="Local World" href="/docs/deploying/world/local-world">
+    基于文件系统的本地开发后端，将数据存储在 `.workflow-data/` 目录中。
+  </Card>
+  <Card title="Vercel World" href="/docs/deploying/world/vercel-world">
+    适用于 Vercel 部署的生产级后端，与 Vercel 的基础设施集成。
+    </Card>
+</Cards>
+
+## 构建 World
+
+除了 Workflow DevKit 提供的默认 Worlds 外，您还可以为自定义基础设施构建新的 World 实现：
+
+- 数据库后端（PostgreSQL、MySQL、MongoDB 等）
+- 云提供商（AWS、GCP、Azure 等）
+- 自定义队列系统
+- 第三方平台
+
+要构建自定义 World，可以使用社区实现的 `World`，或自行实现 `World` 接口。以下接口是必需的：
+
+- **Storage** - 持久化工作流运行、步骤、钩子和元数据
+- **Queue** - 异步入队并处理工作流步骤
+- **AuthProvider** - 处理 API 访问的身份验证
+- **Streamer** - 管理可读和可写流
+
+有关实现细节，请参阅 [World API Reference](/docs/deploying/world)。
+
+### 使用第三方 World
+
+对于自定义后端和第三方 World 实现，请参阅特定 World 的文档以获取配置详情。每个 World 可能有其自己的一组必需环境变量和配置选项。
+
+## 可观测性
+
+[可观测性 工具](/docs/observability)（CLI 和 Web UI）可以连接到任何 World 后端以检查工作流数据。默认连接到本地环境，但也可以配置为检查远程环境：
+
+```bash
+# Inspect local workflows
+npx workflow inspect runs
+
+# Inspect remote workflows (custom worlds)
+npx workflow inspect runs --backend <your-world-name>
+```
+
+了解有关 [可观测性](/docs/observability) 工具的更多信息。
+
+## 了解更多
+
+- [Local World](/docs/deploying/world/local-world) - 本地开发后端
+- [Vercel World](/docs/deploying/world/vercel-world) - 适用于 Vercel 的生产后端
+- [World API Reference](/docs/deploying/world) - 构建自定义 World
+- [可观测性](/docs/observability) - 检查工作流数据

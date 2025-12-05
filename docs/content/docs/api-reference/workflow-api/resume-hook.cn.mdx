@@ -1,0 +1,154 @@
+---
+title: resumeHook
+---
+
+通过向由其令牌标识的钩子发送有效负载来恢复工作流运行。
+
+它会创建一个 `hook_received` 事件并重新触发工作流以继续执行。
+
+<Callout type="warn">
+`resumeHook` 是一个运行时函数，必须在工作流函数之外调用。
+</Callout>
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const { token, data } = await request.json();
+
+  try {
+    const result = await resumeHook(token, data); // [!code highlight]
+    return Response.json({
+      runId: result.runId
+    });
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { resumeHook } from "workflow/api";
+export default resumeHook;`}
+showSections={["parameters"]}
+/>
+
+### 返回值
+
+返回一个 `Promise<Hook>`，其解析结果为：
+
+<TSDoc
+definition={`
+import type { Hook } from "@workflow/world";
+export default Hook;`}
+showSections={["returns"]}
+/>
+
+## 示例
+
+### 基础 API 路由
+
+在基础 API 路由中使用 `resumeHook` 恢复钩子：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const { token, data } = await request.json();
+
+  try {
+    const result = await resumeHook(token, data); // [!code highlight]
+
+    return Response.json({
+      success: true,
+      runId: result.runId
+    });
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+### 具有类型安全
+
+定义有效载荷类型并使用 `resumeHook` 以类型安全的方式恢复钩子：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+type ApprovalPayload = {
+  approved: boolean;
+  comment: string;
+};
+
+export async function POST(request: Request) {
+  const { token, approved, comment } = await request.json();
+
+  try {
+    const result = await resumeHook<ApprovalPayload>(token, { // [!code highlight]
+      approved, // [!code highlight]
+      comment, // [!code highlight]
+    }); // [!code highlight]
+
+    return Response.json({ runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Invalid token" }, { status: 404 });
+  }
+}
+```
+
+### 服务端操作（Next.js）
+
+在 Next.js 的服务端操作中使用 `resumeHook` 恢复钩子：
+
+```typescript lineNumbers
+"use server";
+
+import { resumeHook } from "workflow/api";
+
+export async function approveRequest(token: string, approved: boolean) {
+  try {
+    const result = await resumeHook(token, { approved });
+    return result.runId;
+  } catch (error) {
+    throw new Error("Invalid approval token");
+  }
+}
+```
+
+### Webhook 处理器
+
+在通用的 webhook 处理器中使用 `resumeHook` 恢复钩子：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+// Generic webhook handler that forwards data to a hook
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    return Response.json({ error: "Missing token" }, { status: 400 });
+  }
+
+  try {
+    const body = await request.json();
+    const result = await resumeHook(token, body);
+
+    return Response.json({ success: true, runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Hook not found" }, { status: 404 });
+  }
+}
+```
+
+## 相关函数
+
+- [`createHook()`](/docs/api-reference/workflow/create-hook) - 在工作流中创建一个钩子。
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - 类型安全的钩子辅助工具。

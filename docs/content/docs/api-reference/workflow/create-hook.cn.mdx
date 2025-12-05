@@ -1,0 +1,133 @@
+---
+title: createHook
+---
+
+创建一个低级别的 hook 原语，可用于使用任意有效负载恢复工作流运行。
+
+Hooks 允许外部系统在不受 webhook 的 HTTP 特定限制的情况下向暂停的工作流发送数据。它们由一个 token 标识，并且可以接收任何可序列化的有效负载。
+
+```ts lineNumbers
+import { createHook } from "workflow"
+
+export async function hookWorkflow() {
+  "use workflow";
+  const hook = createHook();  // [!code highlight]
+  const result = await hook; // Suspends the workflow until the hook is resumed
+}
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { createHook } from "workflow";
+export default createHook;`
+}
+showSections={['parameters']}
+/>
+
+#### HookOptions
+
+<TSDoc
+definition={`
+import type { HookOptions } from "workflow";
+export default HookOptions;`
+}
+/>
+
+### 返回值
+
+<TSDoc
+definition={`
+import { createHook } from "workflow";
+export default createHook;`}
+showSections={['returns']}
+/>
+
+#### Hook
+
+<TSDoc
+definition={`
+import type { Hook } from "workflow";
+export default Hook;`}
+/>
+
+返回的 `Hook` 对象还实现了 `AsyncIterable<T>`，这允许你使用 `for await...of` 语法迭代接收到的有效负载。
+
+## 示例
+
+### 基本用法
+
+在创建 hook 时，你可以指定一个有效负载类型以用于自动类型安全。
+
+```typescript lineNumbers
+import { createHook } from "workflow"
+
+export async function approvalWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ approved: boolean; comment: string }>(); // [!code highlight]
+  console.log("Send approval to token:", hook.token);
+
+  const result = await hook;
+
+  if (result.approved) {
+    console.log("Approved with comment:", result.comment);
+  }
+}
+```
+
+### 自定义 Token
+
+Token 用于标识特定的 hook。你可以自定义 token 以更贴合具体用例。
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function slackBotWorkflow(channelId: string) {
+  "use workflow";
+
+  // Token constructed from channel ID
+  const hook = createHook<SlackMessage>({ // [!code highlight]
+    token: `slack_webhook:${channelId}`, // [!code highlight]
+  }); // [!code highlight]
+
+  for await (const message of hook) {
+    if (message.text === "/stop") {
+      break;
+    }
+    await processMessage(message);
+  }
+}
+```
+
+### 等待多个有效负载
+
+你也可以通过使用 `for await...of` 语法来等待多个有效负载。
+
+```typescript lineNumbers
+import { createHook } from "workflow"
+
+export async function collectHookWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ message: string; done?: boolean }>();
+
+  const payloads = [];
+  for await (const payload of hook) { // [!code highlight]
+    payloads.push(payload);
+
+    if (payload.done) break;
+  }
+
+  return payloads;
+}
+```
+
+## 相关函数
+
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - 类型安全的 hook 辅助函数
+- [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) - 使用有效负载恢复 hook
+- [`createWebhook()`](/docs/api-reference/workflow/create-webhook) - 更高级别的 HTTP webhook 抽象

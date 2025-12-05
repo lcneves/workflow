@@ -1,0 +1,53 @@
+---
+title: 可观测性
+---
+
+Workflow DevKit 提供强大的工具，通过 CLI 和 Web 界面检查、监控和调试你的工作流。这些工具允许你检查工作流运行、步骤、webhook、事件，并流式输出。
+
+## 快速开始
+
+```bash
+npx workflow
+```
+
+CLI 随 Workflow DevKit 一起预装并注册了 `workflow` 命令。如果尚未安装 `workflow` 包，`npx workflow` 会在全局安装它，或在本地已安装时使用本地版本。
+
+开始检查你本地的工作流：
+
+```bash
+# See all available commands
+npx workflow inspect --help
+
+# List recent workflow runs
+npx workflow inspect runs
+```
+
+## Web 界面
+
+Workflow DevKit 随附一个用于检查工作流的本地 Web 界面。使用 `--web` 标志时，CLI 会在本地提供该 Web 界面。
+
+```bash
+# Launch Web UI for visual exploration
+npx workflow inspect runs --web
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit Web 界面" />
+
+## 后端
+
+Workflow DevKit CLI 可以检查来自任何 [World](/docs/deploying#what-are-worlds) 的数据。默认情况下，它会检查你本地开发环境中的数据。例如，如果你使用 Next.js 在本地开发工作流，CLI 会在你的 `.next/workflow-data/` 目录中找到数据。
+
+如果你将工作流部署到生产环境，但想通过 CLI 检查这些数据，可以通过将 `--backend` 标志设置为你所使用的 world 的名称或包名来指定后端，例如 `vercel`。
+
+<Callout>
+后端可能需要额外配置。如果你缺少环境变量，World 包应提供有关如何配置的说明。
+</Callout>
+
+### Vercel 后端
+
+要检查在 Vercel 上运行的工作流，请确保已登录 Vercel CLI 并已将项目关联。有关详细信息，请参阅 [Vercel CLI 身份验证与项目关联文档](https://vercel.com/docs/cli/project-linking)。然后，简单地将后端指定为 `vercel`。
+
+```bash
+# Inspect workflows running on Vercel
+npx workflow inspect runs --backend vercel
+```

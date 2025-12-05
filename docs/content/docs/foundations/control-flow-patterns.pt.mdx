@@ -1,0 +1,110 @@
+---
+title: Padrões de Fluxo de Controle
+---
+
+Padrões comuns de fluxo de controle distribuído são simples de implementar em fluxos de trabalho e não exigem aprender nenhuma sintaxe nova. Você pode simplesmente usar os padrões familiares async/await.
+
+## Execução Sequencial
+
+A maneira mais simples de orquestrar etapas é executá-las uma após a outra, onde cada etapa pode depender da etapa anterior.
+
+```typescript lineNumbers
+export async function dataPipelineWorkflow(data: any) {
+  "use workflow";
+
+  const validated = await validateData(data);
+  const processed = await processData(validated);
+  const stored = await storeData(processed);
+
+  return stored;
+}
+```
+
+## Execução Paralela
+
+Quando você precisar executar várias etapas em paralelo, pode usar `Promise.all` para executá-las todas ao mesmo tempo.
+
+```typescript lineNumbers
+export async function fetchUserData(userId: string) {
+  "use workflow";
+
+  const [user, orders, preferences] = await Promise.all([ // [!code highlight]
+    fetchUser(userId), // [!code highlight]
+    fetchOrders(userId), // [!code highlight]
+    fetchPreferences(userId) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { user, orders, preferences };
+}
+```
+
+Isso não se aplica apenas às etapas—já que [`sleep()`](/docs/api-reference/workflow/sleep) e [`webhook`](/docs/api-reference/workflow/create-webhook) também são apenas promises, podemos aguardar esses em paralelo também.
+Também podemos usar `Promise.race` em vez de `Promise.all` para parar de executar promises depois que a primeira for concluída.
+
+```typescript lineNumbers
+
+import { sleep, createWebhook } from "workflow";
+
+export async function runExternalTask(userId: string) {
+  "use workflow";
+
+  const webhook = createWebhook();
+  await executeExternalTask(webhook.url); // Send the webhook somewhere
+
+  // Wait for the external webhook to be hit, with a timeout of 1 day,
+  // whichever comes first
+  await Promise.race([ // [!code highlight]
+    webhook, // [!code highlight]
+    sleep("1 day"), // [!code highlight]
+  ]); // [!code highlight]
+
+  console.log("Done")
+}
+```
+
+## Um exemplo completo
+
+Aqui está um exemplo simplificado retirado da [demonstração do gerador de cartões de aniversário](https://github.com/vercel/workflow-examples/tree/main/birthday-card-generator), para ilustrar como orquestrações mais complexas podem ser modeladas com promises.
+
+```typescript lineNumbers
+import { createWebhook, sleep } from "workflow"
+
+async function birthdayWorkflow(
+    prompt: string,
+    email: string,
+    friends: string[],
+    birthday: Date
+) {
+    "use workflow";
+
+    // Generate a birthday card with sequential steps
+    const text = await makeCardText(prompt)
+    const image = await makeCardImage(text)
+
+    // Create webhooks for each friend who's invited to the birthday party
+    const webhooks = friends.map(_ => createWebhook())
+
+    // Send out all the RSVP invites in parallel steps
+    await Promise.all(
+        friends.map(
+            (friend, i) => sendRSVPEmail(friend, webhooks[i])
+        )
+    )
+
+    // Collect RSVPs as they are made without blocking the workflow
+    let rsvps = []
+    webhooks.map(
+        webhook => webhook
+            .then(req => req.json())
+            .then(( { rsvp } ) => rsvps.push(rsvp))
+    )
+
+    // Wait until the birthday
+    await sleep(birthday)
+
+    // Send birthday card with as many rsvps were collected
+    await sendBirthdayCard(text, image, rsvps, email)
+
+    return { text, image, status: "Sent" }
+}
+```

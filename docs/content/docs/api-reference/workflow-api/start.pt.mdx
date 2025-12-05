@@ -1,0 +1,73 @@
+---
+title: iniciar
+---
+
+Inicia/enfileira uma nova execução de workflow.
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow); // [!code highlight]
+```
+
+## Assinatura da API
+
+### Parâmetros
+
+<TSDoc
+definition={`
+import { start } from "workflow/api";
+export default start;`}
+showSections={["parameters"]}
+/>
+
+#### StartOptions
+
+<TSDoc
+definition={`
+import type { StartOptions } from "workflow/api";
+export default StartOptions;`}
+/>
+
+### Retorna
+
+Retorna um objeto `Run`:
+
+<TSDoc
+definition={`
+import { Run } from "workflow/api";
+export default Run;`}
+showSections={["returns"]}
+/>
+
+Saiba mais sobre [`WorkflowReadableStreamOptions`](/docs/api-reference/workflow-api/get-run#workflowreadablestreamoptions).
+
+## Bom saber
+
+* A função `start()` é usada em contextos de tempo de execução/não relacionados a workflow para acionar programaticamente execuções de workflow.
+* Isto é diferente de chamar funções de workflow diretamente, que é o padrão típico em aplicações Next.js.
+* A função retorna imediatamente após enfileirar o workflow - ela não espera que o workflow seja concluído.
+* Todos os argumentos devem ser [serializáveis](/docs/foundations/serialization).
+
+## Exemplos
+
+### Com argumentos
+
+```typescript
+import { start } from "workflow/api";
+import { userSignupWorkflow } from "./workflows/user-signup";
+
+const run = await start(userSignupWorkflow, ["user@example.com"]); // [!code highlight]
+```
+
+### Com `StartOptions`
+
+```typescript
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow, ["arg1", "arg2"], { // [!code highlight]
+  deploymentId: "custom-deployment-id" // [!code highlight]
+}); // [!code highlight]
+```

@@ -1,0 +1,177 @@
+---
+title: respuesta-webhook-no-enviada
+---
+
+Este error ocurre cuando un webhook está configurado con `respondWith: "manual"` pero el flujo de trabajo no envía una respuesta usando `request.respondWith()` antes de que la ejecución del webhook termine.
+
+## Mensaje de error
+
+```
+Workflow run did not send a response
+```
+
+## Por qué ocurre esto
+
+Cuando creas un webhook con `respondWith: "manual"`, eres responsable de llamar a `request.respondWith()` para enviar la respuesta HTTP al llamador. Si la ejecución del flujo de trabajo finaliza sin enviar una respuesta, se lanzará este error.
+
+La infraestructura del webhook espera a que se envíe una respuesta y, si no se proporciona ninguna, no puede completar correctamente la solicitud HTTP.
+
+## Causas comunes
+
+### Olvidar llamar a `request.respondWith()`
+
+```typescript lineNumbers
+// Error - no response sent
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  // Process data...
+  console.log(data);
+
+  // Error: workflow ends without calling request.respondWith() // [!code highlight]
+}
+```
+
+**Solución:** Siempre llama a `request.respondWith()` cuando uses el modo de respuesta manual.
+
+```typescript lineNumbers
+// Fixed - response sent
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  // Process data...
+  console.log(data);
+
+  // Send response before workflow ends // [!code highlight]
+  await request.respondWith(new Response("Processed", { status: 200 })); // [!code highlight]
+}
+```
+
+### Lógica de respuesta condicional
+
+```typescript lineNumbers
+// Error - response only sent in some branches
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  if (data.isValid) {
+    await request.respondWith(new Response("OK", { status: 200 }));
+  }
+  // Error: no response when data.isValid is false // [!code highlight]
+}
+```
+
+**Solución:** Asegúrate de que todas las rutas de código envíen una respuesta.
+
+```typescript lineNumbers
+// Fixed - response sent in all branches
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  if (data.isValid) { // [!code highlight]
+    await request.respondWith(new Response("OK", { status: 200 })); // [!code highlight]
+  } else { // [!code highlight]
+    await request.respondWith(new Response("Invalid data", { status: 400 })); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+### Excepción antes de la respuesta
+
+```typescript lineNumbers
+// Error - exception thrown before response
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+
+  // Error occurs here // [!code highlight]
+  throw new Error("Something went wrong"); // [!code highlight]
+
+  // Never reached
+  await request.respondWith(new Response("OK", { status: 200 }));
+}
+```
+
+**Solución:** Usa try-catch para manejar errores y enviar respuestas apropiadas.
+
+```typescript lineNumbers
+// Fixed - error handling with response
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+
+  try { // [!code highlight]
+    // Process request...
+    const result = await processData(request); // [!code highlight]
+    await request.respondWith(new Response("OK", { status: 200 })); // [!code highlight]
+  } catch (error) { // [!code highlight]
+    // Send error response // [!code highlight]
+    await request.respondWith( // [!code highlight]
+      new Response("Internal error", { status: 500 }) // [!code highlight]
+    ); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+## Alternativa: Usar el modo de respuesta predeterminado
+
+Si no necesitas control personalizado de la respuesta, considera usar el modo de respuesta predeterminado que devuelve automáticamente una respuesta `202 Accepted`:
+
+```typescript lineNumbers
+// Automatic 202 response - no manual response needed
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook(); // [!code highlight]
+  const request = await webhook;
+
+  // Process request asynchronously
+  await processData(request);
+
+  // No need to call request.respondWith()
+}
+```
+
+## Más información
+
+- [Referencia de la API de createWebhook()](/docs/api-reference/workflow/create-webhook)
+- [Referencia de la API de resumeWebhook()](/docs/api-reference/workflow-api/resume-webhook)
+- [Guía de Webhooks](/docs/foundations/hooks)

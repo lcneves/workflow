@@ -1,0 +1,59 @@
+---
+title: sleep
+---
+
+指定した期間または終了日時まで、リソースを消費することなくワークフローを一時停止します。期間または終了日時が過ぎると、ワークフローは実行を再開します。
+
+一定期間後や特定の日付後にワークフローを再開したい場合に便利です。
+
+<Callout>
+`sleep` はステップ関数の*特別な*タイプであり、ワークフロー関数内で直接呼び出す必要があります。
+</Callout>
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("10s") // [!code highlight]
+}
+```
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+definition={`
+import { sleep } from "workflow";
+export default sleep;`}
+showSections={['parameters']}
+/>
+
+## 例
+
+### 期間による待機
+
+ワークフローを一定時間中断するために `sleep` に期間を指定できます。
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("1d") // [!code highlight]
+}
+```
+
+### 終了日時まで待機
+
+特定の日付までワークフローを中断するために、将来の `Date` オブジェクトを `sleep` に指定できます。
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep(new Date(Date.now() + 10_000)) // [!code highlight]
+}
+```

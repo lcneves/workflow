@@ -1,0 +1,205 @@
+---
+title: Vercel 世界
+---
+
+The **Vercel 世界** (`@workflow/world-vercel`) 是一个与 Vercel 基础设施集成的可用于生产的工作流后端。它为在 Vercel 平台上的工作流部署提供可扩展的存储、稳健的队列和安全的认证。
+
+Vercel world 专为生产部署而设计，提供：
+
+- **可扩展存储** - 基于云的工作流数据持久化
+- **分布式队列** - 可靠的异步步骤执行
+- **安全认证** - 基于 API 令牌的访问控制
+- **多环境支持** - 单独的生产、预览和开发环境
+- **团队支持** - 与 Vercel 团队和项目的集成
+
+## 工作原理
+
+### 存储
+
+Vercel world 使用 Vercel 的 Workflow Storage API 存储工作流数据：
+
+- 运行、步骤、hooks 和流存储在 Vercel 的云基础设施中
+- 数据会自动复制和备份
+- 存储会随应用程序自动扩展
+- 数据在静态和传输过程中均被加密
+
+### 队列
+
+Vercel world 使用 Vercel 的分布式队列系统：
+
+1. 当一个步骤被入队时，它会被添加到 Vercel 的队列服务
+2. 队列将步骤分发到可用的 serverless 函数
+3. 步骤在自动重试和错误处理下执行
+4. 失败的步骤会根据重试策略进行重试
+
+### 认证
+
+Vercel world 使用基于令牌的认证：
+
+- API 请求包含认证头
+- 令牌被作用域限定到特定的项目和团队
+- 令牌可以是环境特定的（生产、预览、开发）
+- 在 Vercel 部署中，认证会自动处理
+
+## 部署到 Vercel
+
+### 自动配置
+
+当您部署到 Vercel 时，world 会自动配置：
+
+```bash
+npx vercel deploy
+```
+
+无需额外配置，Vercel 会自动：
+
+- 选择 Vercel World 后端
+- 设置认证
+- 配置项目和团队 ID
+- 提供存储和队列基础设施
+
+### 部署工作流
+
+使用 Vercel CLI 将您的应用部署到 Vercel：
+
+```bash
+npx vercel deploy --prod
+```
+
+工作流会自动运行：
+
+- 在生产中使用 Vercel World
+- 数据存储在 Vercel 的基础设施中
+- 步骤在 Vercel 的 serverless 函数上被排队和执行
+
+## 多环境支持
+
+Vercel world 支持多个环境：
+
+- **生产** - 您的在线生产部署
+- **预览** - 用于 pull request 的预览部署
+- **开发** - 开发环境测试
+
+每个环境都有隔离的工作流数据，确保开发和测试不会干扰生产工作流。
+
+## 远程访问配置
+
+要使用 [可观测性工具](/docs/observability) 从本地机器检查生产工作流，您可以使用 CLI 标志来配置远程访问。
+
+在大多数情况下，这些标志不是必需的。CLI 会自动从 Vercel CLI 的令牌存储中检索认证令牌，并根据当前工作目录和 Vercel 项目链接状态推断团队和项目 ID。
+
+### CLI 标志
+
+如果您需要覆盖自动配置，可以通过 CLI 标志传递配置：
+
+```bash
+npx workflow inspect runs \
+  --backend vercel \
+  --env production \
+  --project my-project \
+  --team my-team \
+  --authToken <your-token>
+```
+
+在 [可观测性](/docs/observability) 部分了解有关远程检查的更多信息。
+
+## 团队支持
+
+如果您的项目属于 Vercel 团队，Vercel world 会自动与团队权限集成：
+
+- 遵守团队访问控制
+- 需要团队作用域的认证令牌
+- 按团队隔离工作流数据
+
+## 可扩展性
+
+Vercel world 为生产级别的规模而设计：
+
+- **自动扩展** - 处理任意数量的并发工作流
+- **分布式执行** - 步骤在多个 serverless 函数上运行
+- **全球分布** - 与 Vercel 的全球边缘网络协同工作
+- **高可用性** - 内置冗余和故障切换
+
+## 安全
+
+Vercel world 实施了安全最佳实践：
+
+- **基于令牌的认证** - 安全的 API 访问
+- **环境隔离** - 生产、预览和开发数据相互独立
+- **加密** - 数据在静态和传输过程中加密
+- **团队权限** - 遵守 Vercel 团队访问控制
+
+## API 参考
+
+### createVercelWorld
+
+Creates a Vercel world instance:
+
+```typescript
+function createVercelWorld(
+  config?: APIConfig
+): World
+```
+
+**参数：**
+
+- `config.token` - 认证令牌
+- `config.headers` - 自定义头，包括：
+  - `x-vercel-environment` - 环境名称
+  - `x-vercel-project-id` - 项目 ID
+  - `x-vercel-team-id` - 团队 ID
+- `config.baseUrl` - API 基础 URL（默认：`https://api.vercel.com/v1/workflow`）
+
+**返回：**
+
+- `World` - 一个实现 World 接口的实例
+
+**示例：**
+
+```typescript
+import { createVercelWorld } from "@workflow/world-vercel";
+
+const world = createVercelWorld({
+  token: process.env.WORKFLOW_VERCEL_AUTH_TOKEN,
+  headers: {
+    "x-vercel-environment": "production",
+    "x-vercel-project-id": "my-project",
+    "x-vercel-team-id": "my-team",
+  },
+});
+```
+
+## 故障排除
+
+### 认证错误
+
+如果您看到认证错误：
+
+1. 验证您的令牌是否有效：`vercel whoami --token <your-token>`
+2. 检查令牌是否具有必要的权限范围
+3. 确保项目和团队 ID 正确
+
+### 找不到环境
+
+如果找不到该环境：
+
+1. 验证环境名称（`production`、`preview`、`development`）
+2. 检查该项目是否已部署到该环境
+3. 确保您的令牌对该项目具有访问权限
+
+### 部署问题
+
+如果部署后工作流无法正常工作：
+
+1. 验证 `withWorkflow()` 是否包裹了您的 Next.js 配置
+2. 检查构建日志以查找错误
+3. 确保工作流文件位于正确的目录
+4. 先在本地使用 [本地 World](/docs/deploying/world/local-world) 进行测试
+
+## 了解更多
+
+- [World 接口](/docs/deploying/world) - 了解 World 接口
+- [本地 World](/docs/deploying/world/local-world) - 用于本地开发
+- [可观测性](/docs/observability) - 监控和调试工具
+- [Vercel 部署文档](https://vercel.com/docs/deployments/overview)
+- [Vercel 上的 Workflow 文档](https://vercel.com/docs/workflow)

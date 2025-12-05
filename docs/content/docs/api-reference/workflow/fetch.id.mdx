@@ -1,0 +1,139 @@
+---
+title: fetch
+---
+
+Membuat permintaan HTTP dari dalam workflow. Ini adalah fungsi langkah khusus yang membungkus API `fetch` standar, secara otomatis menangani serialisasi dan menyediakan semantik pengulangan.
+
+Ini berguna ketika Anda perlu memanggil API eksternal atau layanan dari dalam workflow Anda.
+
+<Callout>
+`fetch` adalah tipe fungsi langkah *khusus* yang disediakan dan harus dipanggil langsung di dalam fungsi workflow.
+</Callout>
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    return await response.json()
+}
+```
+
+## Tanda Tangan API
+
+### Parameter
+
+Menerima argumen yang sama seperti web [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch)
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['parameters']}
+/>
+
+### Mengembalikan
+
+Mengembalikan respons yang sama seperti web [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch)
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['returns']}
+/>
+
+## Contoh
+
+### Penggunaan Dasar
+
+Berikut contoh sederhana cara Anda dapat menggunakan `fetch` di dalam workflow Anda.
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    const data = await response.json()
+
+    // Make a POST request
+    const postResponse = await fetch("https://api.example.com/create", { // [!code highlight]
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: "test" })
+    })
+
+    return data
+}
+```
+
+Kita memanggil `fetch()` dengan sebuah URL dan opsi permintaan opsional, sama seperti API fetch standar. Runtime workflow secara otomatis menangani serialisasi respons.
+
+API ini disediakan sebagai kemudahan untuk menggunakan `fetch` dalam workflow, tetapi seringkali Anda mungkin ingin memperluas dan mengimplementasikan fetch Anda sendiri untuk penanganan kesalahan dan logika pengulangan (retry) yang lebih canggih.
+
+### Menyesuaikan Perilaku Fetch
+
+Berikut contoh pembungkus fetch kustom yang menyediakan penanganan kesalahan yang lebih canggih dengan logika pengulangan kustom:
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow"
+
+export async function customFetch(
+    url: string,
+    init?: RequestInit
+) {
+    "use step"
+
+    const response = await fetch(url, init)
+
+    // Handle client errors (4xx) - don't retry
+    if (response.status >= 400 && response.status < 500) {
+        if (response.status === 429) {
+            // Rate limited - retry with backoff from Retry-After header
+            const retryAfter = response.headers.get("Retry-After")
+
+            if (retryAfter) {
+                // The Retry-After header is either a number (seconds) or an RFC 7231 date string
+                const retryAfterValue = /^\d+$/.test(retryAfter)
+                    ? parseInt(retryAfter) * 1000  // Convert seconds to milliseconds
+                    : new Date(retryAfter);        // Parse RFC 7231 date format
+
+                // Use `RetryableError` to customize the retry
+                throw new RetryableError( // [!code highlight]
+                    `Rate limited by ${url}`, // [!code highlight]
+                    { retryAfter: retryAfterValue } // [!code highlight]
+                ) // [!code highlight]
+            }
+        }
+
+        // Other client errors are fatal (400, 401, 403, 404, etc.)
+        throw new FatalError( // [!code highlight]
+            `Client error ${response.status}: ${response.statusText}` // [!code highlight]
+        ) // [!code highlight]
+    }
+
+    // Handle server errors (5xx) - will retry automatically
+    if (!response.ok) {
+        throw new Error(
+            `Server error ${response.status}: ${response.statusText}`
+        )
+    }
+
+    return response
+}
+```
+
+Contoh ini menunjukkan:
+
+- Mengatur `maxRetries` kustom menjadi 5 percobaan.
+- Melempar [`FatalError`](/docs/api-reference/workflow/fatal-error) untuk kesalahan klien (400-499) untuk mencegah pengulangan.
+- Menangani pembatasan 429 dengan membaca header `Retry-After` dan menggunakan [`RetryableError`](/docs/api-reference/workflow/retryable-error).
+- Mengizinkan pengulangan otomatis untuk kesalahan server (5xx).

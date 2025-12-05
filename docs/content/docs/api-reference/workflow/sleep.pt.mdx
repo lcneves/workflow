@@ -1,0 +1,59 @@
+---
+title: sleep
+---
+
+Suspende um fluxo de trabalho por uma duração especificada ou até uma data final sem consumir quaisquer recursos. Assim que a duração ou a data final passar, o fluxo de trabalho retomará a execução.
+
+Isto é útil quando pretende retomar um fluxo de trabalho após algum período ou data.
+
+<Callout>
+`sleep` é um tipo *especial* de step function e deve ser chamado diretamente dentro de funções de fluxo de trabalho.
+</Callout>
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("10s") // [!code highlight]
+}
+```
+
+## Assinatura da API
+
+### Parâmetros
+
+<TSDoc
+definition={`
+import { sleep } from "workflow";
+export default sleep;`}
+showSections={['parameters']}
+/>
+
+## Exemplos
+
+### Suspensão por Duração
+
+Pode especificar uma duração para `sleep` a fim de suspender o fluxo de trabalho por um período de tempo fixo.
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("1d") // [!code highlight]
+}
+```
+
+### Suspensão até uma Data Final
+
+É possível especificar um objeto `Date` futuro para `sleep` suspender o fluxo de trabalho até uma data específica.
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep(new Date(Date.now() + 10_000)) // [!code highlight]
+}
+```

@@ -1,0 +1,138 @@
+---
+title: 来自工具的流式更新
+---
+
+在[构建持久化 AI 代理](/docs/ai)之后，我们已经可以获得用于显示工具调用和返回值的 UI 消息块。然而，对于长时间运行的步骤，我们可能希望显示进度更新，或在步骤生成输出时将其流式传输给用户。
+
+Workflow DevKit 通过让步骤函数将自定义块写入代理使用的相同流来实现这一点。这些块作为消息中的数据部分出现，您可以按自己的方式渲染它们。
+
+作为示例，我们将扩展航班预订代理，以在搜索航班时发出更细粒度的进度更新。
+
+<Steps>
+
+<Step>
+
+### 定义您的数据部分类型
+
+首先，为您的自定义数据部分定义一个 TypeScript 类型。这可确保工具和客户端代码之间的类型安全：
+
+```typescript title="schemas/chat.ts" lineNumbers
+export interface FoundFlightDataPart {
+  type: "data-found-flight"; // [!code highlight]
+  id: string;
+  data: {
+    flightNumber: string;
+    from: string;
+    to: string;
+  };
+}
+```
+
+`type` 字段必须是以 `data-` 开头并跟随您自定义标识符的字符串。`id` 字段应与 `toolCallId` 匹配，以便客户端可以将该数据与正确的工具调用关联。有关 [数据部分](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#data-parts-persistent) 的更多信息，请参阅 AI SDK 文档。
+
+</Step>
+
+<Step>
+
+### 从您的工具发出更新
+
+在步骤函数内部使用[`getWritable()`](/docs/api-reference/workflow/get-writable) 来获取流的句柄。这是 LLM 和其他工具调用正在写入的相同流，因此我们可以直接注入自己的数据包。
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable } from "workflow"; // [!code highlight]
+import type { UIMessageChunk } from "ai";
+
+export async function searchFlights(
+  { from, to, date }: { from: string; to: string; date: string },
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) {
+  "use step";
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+
+  // ... existing logic to generate flights ...
+
+  for (const flight of generatedFlights) { // [!code highlight]
+
+    // Simulate the time it takes to find each flight
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // [!code highlight]
+
+    await writer.write({ // [!code highlight]
+      id: `${toolCallId}-${flight.flightNumber}`, // [!code highlight]
+      type: "data-found-flight", // [!code highlight]
+      data: flight, // [!code highlight]
+    }); // [!code highlight]
+  } // [!code highlight]
+
+  writer.releaseLock(); // [!code highlight]
+
+  return {
+    message: `Found ${generatedFlights.length} flights from ${from} to ${to} on ${date}`,
+    flights: generatedFlights.sort((a, b) => a.price - b.price), // Sort by price
+  };
+}
+```
+
+要点：
+
+- 调用 `getWritable<UIMessageChunk>()` 来获取流
+- 使用 `getWriter()` 获取一个 writer
+- 写入包含 `type`、`id` 和 `data` 字段的对象
+- 完成写入后始终调用 `releaseLock()`（了解更多关于 [流式传输](/docs/foundations/streaming)）
+
+</Step>
+
+<Step>
+### 在客户端处理数据部分
+
+更新聊天组件以检测并渲染自定义数据部分。数据部分与文本和工具调用部分一起存储在消息的 `parts` 数组中：
+
+```typescript title="app/page.tsx" lineNumbers
+{message.parts.map((part, partIndex) => {
+  // Render text parts
+  if (part.type === "text") {
+    return (
+      <Response key={`${message.id}-text-${partIndex}`}>
+        {part.text}
+      </Response>
+    );
+  }
+
+  // Render streaming flight data parts // [!code highlight]
+  if (part.type === "data-found-flight") { // [!code highlight]
+    const flight = part.data as { // [!code highlight]
+      flightNumber: string; // [!code highlight]
+      airline: string; // [!code highlight]
+      from: string; // [!code highlight]
+      to: string; // [!code highlight]
+    }; // [!code highlight]
+    return ( // [!code highlight]
+      <div key={`${part.id}-${flight.flightNumber}`} className="p-3 bg-muted rounded-md"> // [!code highlight]
+        <div className="font-medium">{flight.airline} - {flight.flightNumber}</div> // [!code highlight]
+        <div className="text-muted-foreground">{flight.from} → {flight.to}</div> // [!code highlight]
+      </div> // [!code highlight]
+    ); // [!code highlight]
+  } // [!code highlight]
+
+  // ... other rendering logic ...
+})}
+```
+
+模式为：
+
+1. 数据部分具有以 `data-` 开头的 `type` 字段
+2. 将类型与自定义标识符匹配（例如 `data-found-flight`）
+3. 使用数据部分的有效负载来显示进度或中间结果
+
+</Step>
+
+</Steps>
+
+现在，当您运行代理搜索航班时，您会看到航班结果一个接一个地弹出。如果您的工具调用需要数分钟才能完成，并且您需要向用户显示细粒度的进度更新，这将非常有用。
+
+## 相关文档
+
+- [构建持久化 AI 代理](/docs/ai) - 持久化代理完整指南
+- [`getWritable()` API Reference](/docs/api-reference/workflow/get-writable) - 流 API 详细信息
+- [流式传输](/docs/foundations/streaming) - 了解工作流中的流

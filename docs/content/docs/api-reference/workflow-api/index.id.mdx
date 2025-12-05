@@ -1,0 +1,24 @@
+---
+title: "alur-kerja/api"
+---
+
+Referensi API untuk fungsi runtime dari paket `workflow/api`.
+
+## Fungsi
+
+Workflow DevKit menyediakan fungsi runtime yang digunakan di luar fungsi workflow dan step. Fungsi-fungsi ini diakses dari titik masuk runtime (mis. tempat `start(workflowFn)` dipanggil):
+
+<Cards>
+    <Card href="/docs/api-reference/workflow-api/start" title="start()">
+        Mulai/mengantri eksekusi workflow baru.
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-hook" title="resumeHook()">
+        Melanjutkan workflow dengan mengirimkan payload ke hook.
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-webhook" title="resumeWebhook()">
+        Melanjutkan workflow dengan mengirimkan `Request` ke webhook.
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/get-run" title="getRun()">
+        Dapatkan status dan metadata jalannya workflow tanpa menunggu penyelesaian.
+    </Card>
+</Cards>

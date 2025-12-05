@@ -1,0 +1,154 @@
+---
+title: resumeHook
+---
+
+トークンで識別されるフックにペイロードを送信して、ワークフローの実行を再開します。
+
+これにより `hook_received` イベントが作成され、ワークフローの実行を継続するためにワークフローが再トリガーされます。
+
+<Callout type="warn">
+`resumeHook` は実行時関数で、ワークフロー関数の外部から呼び出す必要があります。
+</Callout>
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const { token, data } = await request.json();
+
+  try {
+    const result = await resumeHook(token, data); // [!code highlight]
+    return Response.json({
+      runId: result.runId
+    });
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+definition={`
+import { resumeHook } from "workflow/api";
+export default resumeHook;`}
+showSections={["parameters"]}
+/>
+
+### 戻り値
+
+`Promise<Hook>` を返します。解決される値は次のとおりです：
+
+<TSDoc
+definition={`
+import type { Hook } from "@workflow/world";
+export default Hook;`}
+showSections={["returns"]}
+/>
+
+## 使用例
+
+### 基本的な API ルート
+
+フックを再開するために、基本的な API ルート内で `resumeHook` を使用する例：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const { token, data } = await request.json();
+
+  try {
+    const result = await resumeHook(token, data); // [!code highlight]
+
+    return Response.json({
+      success: true,
+      runId: result.runId
+    });
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+### 型安全性
+
+ペイロードの型を定義し、型安全にフックを再開するために `resumeHook` を使用する例：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+type ApprovalPayload = {
+  approved: boolean;
+  comment: string;
+};
+
+export async function POST(request: Request) {
+  const { token, approved, comment } = await request.json();
+
+  try {
+    const result = await resumeHook<ApprovalPayload>(token, { // [!code highlight]
+      approved, // [!code highlight]
+      comment, // [!code highlight]
+    }); // [!code highlight]
+
+    return Response.json({ runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Invalid token" }, { status: 404 });
+  }
+}
+```
+
+### サーバーアクション (Next.js)
+
+Next.js のサーバーアクション内で `resumeHook` を使用してフックを再開する例：
+
+```typescript lineNumbers
+"use server";
+
+import { resumeHook } from "workflow/api";
+
+export async function approveRequest(token: string, approved: boolean) {
+  try {
+    const result = await resumeHook(token, { approved });
+    return result.runId;
+  } catch (error) {
+    throw new Error("Invalid approval token");
+  }
+}
+```
+
+### Webhook ハンドラ
+
+汎用の Webhook ハンドラ内で `resumeHook` を使用してフックを再開する例：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+// Generic webhook handler that forwards data to a hook
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    return Response.json({ error: "Missing token" }, { status: 400 });
+  }
+
+  try {
+    const body = await request.json();
+    const result = await resumeHook(token, body);
+
+    return Response.json({ success: true, runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Hook not found" }, { status: 404 });
+  }
+}
+```
+
+## 関連関数
+
+- [`createHook()`](/docs/api-reference/workflow/create-hook) - ワークフロー内でフックを作成します。
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - 型安全なフックヘルパー。

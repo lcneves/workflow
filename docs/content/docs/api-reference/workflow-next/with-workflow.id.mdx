@@ -1,0 +1,51 @@
+---
+title: withWorkflow
+---
+
+Mengonfigurasi loader webpack/turbopack untuk mentransformasi kode workflow (direktif `"use step"`/`"use workflow"`)
+
+## Penggunaan
+
+Untuk mengaktifkan direktif `"use step"` dan `"use workflow"` saat mengembangkan secara lokal atau menerapkan ke produksi, bungkus `nextConfig` Anda dengan `withWorkflow`.
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next"; // [!code highlight]
+import type { NextConfig } from "next";
+ 
+const nextConfig: NextConfig = {
+  // … rest of your Next.js config
+};
+
+// not required but allows configuring workflow options
+const workflowConfig = {} 
+
+export default withWorkflow(nextConfig, workflowConfig); // [!code highlight]
+```
+
+Jika Anda mengekspor sebuah fungsi di `next.config`, Anda perlu memastikan bahwa Anda memanggil fungsi yang dikembalikan dari `withWorkflow`.
+
+```typescript title="next.config.ts" lineNumbers
+import { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+const withNextIntl = createNextIntlPlugin();
+
+export default async function config(
+  phase: string,
+  ctx: {
+    defaultConfig: NextConfig
+  }
+): Promise<NextConfig> {
+  let nextConfig: NextConfig | typeof config = {};
+
+  for (const configModifier of [withNextIntl, withWorkflow]) {
+    nextConfig = configModifier(nextConfig);
+
+    if (typeof nextConfig === "function") {
+      nextConfig = await nextConfig(phase, ctx);
+    }
+  }
+  return nextConfig;
+}
+```

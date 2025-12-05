@@ -1,0 +1,129 @@
+---
+title: webhook-respondWith-提供了无效值
+---
+
+当您在创建 webhook 时为 `respondWith` 选项提供无效值时，会出现此错误。`respondWith` 选项必须是 `"manual"` 或一个 `Response` 对象。
+
+## 错误信息
+
+```
+Invalid `respondWith` value: [value]
+```
+
+## 为什么会发生
+
+在使用 `createWebhook()` 创建 webhook 时，您可以通过 `respondWith` 选项指定 webhook 对传入的 HTTP 请求如何响应。此选项仅接受特定值：
+
+1. `"manual"` - 允许您在工作流内手动发送响应
+2. 一个 `Response` 对象 - 立即发送的预定义响应
+3. `undefined` (默认) - 返回一个 `202 Accepted` 响应
+
+## 常见原因
+
+### 使用无效的字符串值
+
+```typescript lineNumbers
+// Error - invalid string value
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "automatic", // Error! // [!code highlight]
+  });
+}
+```
+
+**解决方案：** 使用 `"manual"` 或提供一个 `Response` 对象。
+
+```typescript lineNumbers
+// Fixed - use "manual"
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual", // [!code highlight]
+  });
+
+  const request = await webhook;
+
+  // Send custom response
+  await request.respondWith(new Response("OK", { status: 200 })); // [!code highlight]
+}
+```
+
+### 使用非 Response 对象
+
+```typescript lineNumbers
+// Error - plain object instead of Response
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: { status: 200, body: "OK" }, // Error! // [!code highlight]
+  });
+}
+```
+
+**解决方案：** 创建一个正确的 `Response` 对象。
+
+```typescript lineNumbers
+// Fixed - use Response constructor
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: new Response("OK", { status: 200 }), // [!code highlight]
+  });
+}
+```
+
+## 有效的用法示例
+
+### 默认行为（202 响应）
+
+```typescript lineNumbers
+// Returns 202 Accepted automatically
+const webhook = await createWebhook();
+const request = await webhook;
+// No need to send a response
+```
+
+### 手动响应
+
+```typescript lineNumbers
+// Manual response control
+const webhook = await createWebhook({
+  respondWith: "manual",
+});
+
+const request = await webhook;
+
+// Process the request...
+const data = await request.json();
+
+// Send custom response
+await request.respondWith(
+  new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })
+);
+```
+
+### 预定义响应
+
+```typescript lineNumbers
+// Immediate response
+const webhook = await createWebhook({
+  respondWith: new Response("Request received", { status: 200 }),
+});
+
+const request = await webhook;
+// Response already sent
+```
+
+## 了解更多
+
+- [createWebhook() API 参考](/docs/api-reference/workflow/create-webhook)
+- [resumeWebhook() API 参考](/docs/api-reference/workflow-api/resume-webhook)
+- [Webhooks 指南](/docs/foundations/hooks)

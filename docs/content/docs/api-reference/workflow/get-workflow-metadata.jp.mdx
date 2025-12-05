@@ -1,0 +1,44 @@
+---
+title: getWorkflowMetadata
+---
+
+現在のワークフロー関数で利用可能な追加のメタデータを返します。
+
+次のような場合にこの関数を使用することがあります:
+
+* ワークフローの実行IDをログに記録する
+* ワークフローのタイミング情報にアクセスする
+
+<Callout>
+ステップのコンテキストにアクセスする必要がある場合は、[`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata) を参照してください。
+</Callout>
+
+```typescript lineNumbers
+import { getWorkflowMetadata } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+
+    const ctx = getWorkflowMetadata() // [!code highlight]
+    console.log(ctx.workflowRunId)
+}
+```
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+definition={`
+import { getWorkflowMetadata } from "workflow";
+export default getWorkflowMetadata;`}
+showSections={['parameters']}
+/>
+
+### 戻り値
+
+<TSDoc
+definition={`
+import type { WorkflowMetadata } from "workflow";
+export default WorkflowMetadata;`}
+/>

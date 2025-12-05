@@ -1,0 +1,133 @@
+---
+title: createHook
+---
+
+Membuat primitif hook tingkat rendah yang dapat digunakan untuk melanjutkan eksekusi workflow dengan payload arbitrer.
+
+Hooks memungkinkan sistem eksternal mengirim data ke workflow yang dijeda tanpa keterbatasan spesifik-HTTP dari webhook. Mereka diidentifikasi oleh token dan dapat menerima setiap payload yang dapat diserialisasi.
+
+```ts lineNumbers
+import { createHook } from "workflow"
+
+export async function hookWorkflow() {
+  "use workflow";
+  const hook = createHook();  // [!code highlight]
+  const result = await hook; // Suspends the workflow until the hook is resumed
+}
+```
+
+## Tanda Tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { createHook } from "workflow";
+export default createHook;`
+}
+showSections={['parameters']}
+/>
+
+#### HookOptions
+
+<TSDoc
+definition={`
+import type { HookOptions } from "workflow";
+export default HookOptions;`
+}
+/>
+
+### Mengembalikan
+
+<TSDoc
+definition={`
+import { createHook } from "workflow";
+export default createHook;`}
+showSections={['returns']}
+/>
+
+#### Hook
+
+<TSDoc
+definition={`
+import type { Hook } from "workflow";
+export default Hook;`}
+/>
+
+Objek `Hook` yang dikembalikan juga mengimplementasikan `AsyncIterable<T>`, yang memungkinkan Anda untuk mengiterasi payload masuk menggunakan sintaks `for await...of`.
+
+## Contoh
+
+### Penggunaan Dasar
+
+Saat membuat sebuah hook, Anda dapat menentukan tipe payload yang akan digunakan untuk keamanan tipe secara otomatis.
+
+```typescript lineNumbers
+import { createHook } from "workflow"
+
+export async function approvalWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ approved: boolean; comment: string }>(); // [!code highlight]
+  console.log("Send approval to token:", hook.token);
+
+  const result = await hook;
+
+  if (result.approved) {
+    console.log("Approved with comment:", result.comment);
+  }
+}
+```
+
+### Menyesuaikan Token
+
+Token digunakan untuk mengidentifikasi hook tertentu. Anda dapat menyesuaikan token agar lebih spesifik terhadap suatu kasus penggunaan.
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function slackBotWorkflow(channelId: string) {
+  "use workflow";
+
+  // Token constructed from channel ID
+  const hook = createHook<SlackMessage>({ // [!code highlight]
+    token: `slack_webhook:${channelId}`, // [!code highlight]
+  }); // [!code highlight]
+
+  for await (const message of hook) {
+    if (message.text === "/stop") {
+      break;
+    }
+    await processMessage(message);
+  }
+}
+```
+
+### Menunggu Beberapa Payload
+
+Anda juga dapat menunggu beberapa payload dengan menggunakan sintaks `for await...of`.
+
+```typescript lineNumbers
+import { createHook } from "workflow"
+
+export async function collectHookWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ message: string; done?: boolean }>();
+
+  const payloads = [];
+  for await (const payload of hook) { // [!code highlight]
+    payloads.push(payload);
+
+    if (payload.done) break;
+  }
+
+  return payloads;
+}
+```
+
+## Fungsi Terkait
+
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - Pembantu hook yang aman-bertipe
+- [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) - Melanjutkan hook dengan payload
+- [`createWebhook()`](/docs/api-reference/workflow/create-webhook) - Abstraksi webhook HTTP tingkat tinggi

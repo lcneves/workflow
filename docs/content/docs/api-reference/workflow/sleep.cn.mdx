@@ -1,0 +1,59 @@
+---
+title: sleep
+---
+
+在指定的持续时间内或直到某个结束日期暂停工作流，而不会消耗任何资源。一旦持续时间或结束日期到期，工作流将恢复执行。
+
+当您想在某个持续时间或日期之后恢复工作流时，这很有用。
+
+<Callout>
+`sleep` 是一种*特殊*的步骤函数类型，应直接在工作流函数内调用。
+</Callout>
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("10s") // [!code highlight]
+}
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { sleep } from "workflow";
+export default sleep;`}
+showSections={['parameters']}
+/>
+
+## 示例
+
+### 按持续时间暂停
+
+您可以为 `sleep` 指定一个持续时间，以将工作流暂停固定的时间。
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("1d") // [!code highlight]
+}
+```
+
+### 暂停直到结束日期
+
+您可以为 `sleep` 指定一个未来的 `Date` 对象，以将工作流暂停到指定的日期。
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep(new Date(Date.now() + 10_000)) // [!code highlight]
+}
+```

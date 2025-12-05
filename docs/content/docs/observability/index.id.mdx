@@ -1,0 +1,53 @@
+---
+title: Observabilitas
+---
+
+Workflow DevKit menyediakan alat yang kuat untuk memeriksa, memantau, dan men-debug alur kerja Anda melalui CLI dan Antarmuka Web. Alat-alat ini memungkinkan Anda untuk memeriksa eksekusi alur kerja, langkah-langkah, webhooks, event, dan aliran output.
+
+## Mulai Cepat
+
+```bash
+npx workflow
+```
+
+CLI sudah terpasang sebelumnya bersama Workflow DevKit dan mendaftarkan perintah `workflow`. Jika paket `workflow` belum terinstal, `npx workflow` akan menginstalnya secara global, atau menggunakan versi yang terpasang secara lokal jika tersedia.
+
+Mulai memeriksa alur kerja lokal Anda:
+
+```bash
+# See all available commands
+npx workflow inspect --help
+
+# List recent workflow runs
+npx workflow inspect runs
+```
+
+## Antarmuka Web
+
+Workflow DevKit dikirimkan dengan Antarmuka Web lokal untuk memeriksa alur kerja Anda. CLI akan menyajikan Antarmuka Web secara lokal saat menggunakan flag `--web`.
+
+```bash
+# Launch Web UI for visual exploration
+npx workflow inspect runs --web
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+## Backend
+
+CLI Workflow DevKit dapat memeriksa data dari setiap [World](/docs/deploying#what-are-worlds). Secara default, ia memeriksa data di lingkungan pengembangan lokal Anda. Sebagai contoh, jika Anda menggunakan Next.js untuk mengembangkan alur kerja secara lokal, CLI akan menemukan data di direktori `.next/workflow-data/` Anda.
+
+Jika Anda menerapkan alur kerja ke lingkungan produksi, tetapi ingin memeriksa data menggunakan CLI, Anda dapat menentukan world yang Anda gunakan dengan mengatur flag `--backend` ke nama world atau nama paket Anda, mis. `vercel`.
+
+<Callout>
+Backend mungkin memerlukan konfigurasi tambahan. Jika Anda kekurangan variabel lingkungan, paket World seharusnya menyediakan petunjuk tentang cara mengkonfigurasinya.
+</Callout>
+
+### Backend Vercel
+
+Untuk memeriksa alur kerja yang berjalan di Vercel, pastikan Anda masuk ke Vercel CLI dan telah menautkan proyek Anda. Lihat [Vercel CLI authentication and project linking docs](https://vercel.com/docs/cli/project-linking) untuk informasi lebih lanjut. Kemudian, cukup tentukan backend sebagai `vercel`.
+
+```bash
+# Inspect workflows running on Vercel
+npx workflow inspect runs --backend vercel
+```

@@ -1,0 +1,139 @@
+---
+title: fetch
+---
+
+ワークフロー内から HTTP リクエストを実行します。これは標準の `fetch` API をラップする特別なステップ関数で、シリアライゼーションを自動的に処理し、リトライのセマンティクスを提供します。
+
+ワークフロー内から外部の API やサービスを呼び出す必要がある場合に便利です。
+
+<Callout>
+`fetch` は提供される *特別な* タイプのステップ関数であり、ワークフロー関数の内部で直接呼び出す必要があります。
+</Callout>
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    return await response.json()
+}
+```
+
+## API シグネチャ
+
+### パラメータ
+
+web の [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) と同じ引数を受け取ります
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['parameters']}
+/>
+
+### 戻り値
+
+web の [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) と同じレスポンスを返します
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['returns']}
+/>
+
+## 例
+
+### 基本的な使い方
+
+ワークフロー内で `fetch` を使用する簡単な例を示します。
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    const data = await response.json()
+
+    // Make a POST request
+    const postResponse = await fetch("https://api.example.com/create", { // [!code highlight]
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: "test" })
+    })
+
+    return data
+}
+```
+
+標準の fetch API と同様に、URL と任意のリクエストオプションを指定して `fetch()` を呼び出します。ワークフローランタイムがレスポンスのシリアライズを自動的に処理します。
+
+この API はワークフロー内で `fetch` を簡単に使えるようにするための便宜的なものですが、より強力なエラーハンドリングやリトライロジックのために独自の fetch を拡張・実装したくなることが多いでしょう。
+
+### Fetch の挙動のカスタマイズ
+
+以下は、カスタムのリトライロジックを含むより洗練されたエラーハンドリングを提供するカスタム fetch ラッパーの例です。
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow"
+
+export async function customFetch(
+    url: string,
+    init?: RequestInit
+) {
+    "use step"
+
+    const response = await fetch(url, init)
+
+    // Handle client errors (4xx) - don't retry
+    if (response.status >= 400 && response.status < 500) {
+        if (response.status === 429) {
+            // Rate limited - retry with backoff from Retry-After header
+            const retryAfter = response.headers.get("Retry-After")
+
+            if (retryAfter) {
+                // The Retry-After header is either a number (seconds) or an RFC 7231 date string
+                const retryAfterValue = /^\d+$/.test(retryAfter)
+                    ? parseInt(retryAfter) * 1000  // Convert seconds to milliseconds
+                    : new Date(retryAfter);        // Parse RFC 7231 date format
+
+                // Use `RetryableError` to customize the retry
+                throw new RetryableError( // [!code highlight]
+                    `Rate limited by ${url}`, // [!code highlight]
+                    { retryAfter: retryAfterValue } // [!code highlight]
+                ) // [!code highlight]
+            }
+        }
+
+        // Other client errors are fatal (400, 401, 403, 404, etc.)
+        throw new FatalError( // [!code highlight]
+            `Client error ${response.status}: ${response.statusText}` // [!code highlight]
+        ) // [!code highlight]
+    }
+
+    // Handle server errors (5xx) - will retry automatically
+    if (!response.ok) {
+        throw new Error(
+            `Server error ${response.status}: ${response.statusText}`
+        )
+    }
+
+    return response
+}
+```
+
+この例は次の点を示しています:
+
+- カスタムの `maxRetries` を 5 回に設定すること。
+- クライアントエラー（400–499）に対してリトライを防ぐために [`FatalError`](/docs/api-reference/workflow/fatal-error) を投げること。
+- `Retry-After` ヘッダーを読み取って 429 のレート制限に対処し、[`RetryableError`](/docs/api-reference/workflow/retryable-error) を使用すること。
+- サーバーエラー（5xx）に対して自動的にリトライを許可すること。

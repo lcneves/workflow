@@ -1,0 +1,181 @@
+---
+title: Erros e Retentativas
+---
+
+Por padrão, erros lançados dentro de etapas são retentados. Além disso, o Workflow DevKit fornece dois novos tipos de erros que você pode usar para customizar as retentativas.
+
+## Retentativas Padrão
+
+Por padrão, as etapas tentam novamente até 3 vezes em caso de erros arbitrários. Você pode customizar o número de retentativas adicionando a propriedade `maxRetries` à função de etapa.
+
+```typescript lineNumbers
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!"); // [!code highlight]
+  }
+
+  return response.json();
+}
+
+callApi.maxRetries = 5; // Set a custom number of retries
+```
+
+As etapas são enfileiradas imediatamente após uma falha. Continue lendo para ver como isso pode ser personalizado.
+
+<Callout type="info">
+  Quando uma etapa retentada executa efeitos colaterais externos (pagamentos, e-mails, gravações na API), garanta que essas chamadas sejam <strong>idempotentes</strong> para evitar efeitos colaterais duplicados. Veja <a href="/docs/foundations/idempotency">Idempotência</a> para mais informações.
+</Callout>
+
+## Erros Intencionais
+
+Quando sua etapa precisa lançar intencionalmente um erro e pular as retentativas, simplesmente lance um [`FatalError`](/docs/api-reference/workflow/fatal-error).
+
+```typescript lineNumbers
+import { FatalError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries."); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## Personalizar o Comportamento de Retentativas
+
+Quando você precisa customizar o atraso em uma retentativa, use [`RetryableError`](/docs/api-reference/workflow/retryable-error) e defina a propriedade `retryAfter`.
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", { // [!code highlight]
+      retryAfter: "1m", // Duration string // [!code highlight]
+    }); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## Exemplo Avançado
+
+Este exemplo final combina tudo o que aprendemos, juntamente com [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata).
+
+```typescript lineNumbers
+import { FatalError, RetryableError, getStepMetadata } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const metadata = getStepMetadata();
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Exponential backoffs
+    throw new RetryableError("Backing off...", {
+      retryAfter: (metadata.attempt ** 2) * 1000,  // [!code highlight]
+    });
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", {
+      retryAfter: new Date(Date.now() + 60000),  // Date instance // [!code highlight]
+    });
+  }
+
+  return response.json();
+}
+callApi.maxRetries = 5;
+```
+
+## Reverter Etapas com Falha
+
+Quando um workflow falha no meio do processo, ele pode deixar o sistema em um estado inconsistente.
+Um padrão comum para lidar com isso é as "reversões": para cada etapa bem-sucedida, registre uma ação de reversão correspondente que possa desfazê-la.
+Se uma etapa posterior falhar, execute as reversões em ordem inversa para desfazer.
+
+Diretrizes principais:
+
+- Faça com que as reversões também sejam etapas, para que sejam duráveis e se beneficiem de retentativas.
+- Garanta que as reversões sejam [idempotentes](/docs/foundations/idempotency); elas podem ser executadas mais de uma vez.
+- Enfileire uma compensação somente depois que sua etapa correspondente for bem-sucedida.
+
+```typescript lineNumbers
+// Forward steps
+async function reserveInventory(orderId: string) {
+  "use step";
+  // ... call inventory service to reserve ...
+}
+
+async function chargePayment(orderId: string) {
+  "use step";
+  // ... charge the customer ...
+}
+
+// Rollback steps
+async function releaseInventory(orderId: string) {
+  "use step";
+  // ... undo inventory reservation ...
+}
+
+async function refundPayment(orderId: string) {
+  "use step";
+  // ... refund the charge ...
+}
+
+export async function placeOrderSaga(orderId: string) {
+  "use workflow";
+
+  const rollbacks: Array<() => Promise<void>> = [];
+
+  try {
+    await reserveInventory(orderId);
+    rollbacks.push(() => releaseInventory(orderId));
+
+    await chargePayment(orderId);
+    rollbacks.push(() => refundPayment(orderId));
+
+    // ... more steps & rollbacks ...
+  } catch (e) {
+    for (const rollback of rollbacks.reverse()) {
+      await rollback();
+    }
+    // Rethrow so the workflow records the failure after rollbacks
+    throw e;
+  }
+}
+```

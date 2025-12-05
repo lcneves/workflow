@@ -1,0 +1,196 @@
+---
+title: ワークフローとステップ
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+Workflows（別名: *デュラブル関数*）は、再起動、障害、またはユーザーイベントにわたって実行状態を維持できる、長時間実行されるステートフルなアプリケーションロジックを構築するためのプログラミングモデルです。従来のサーバーレス関数が終了時にすべての状態を失うのとは異なり、ワークフローは進行状況を永続化し、中断した箇所から正確に再開できます。
+
+さらに、ワークフローを使うことで複雑なマルチステップのプロセスをシンプルでエレガントなコードで簡単にモデリングできます。これを実現するために、以下の2つの基本的なエンティティを導入します。
+
+1. **ワークフロー関数**: ステップをオーケストレーション／整理する関数
+2. **ステップ関数**: 実際の作業を実行する関数
+
+## ワークフロー関数
+
+*ディレクティブ: `"use workflow"`*
+
+ワークフロー関数はワークフローのエントリポイントを定義し、ステップ関数の呼び出し方を整理します。この種類の関数は Node.js ランタイムへのアクセスがなく、利用可能な `npm` パッケージも制限されています。
+
+一見制約に思えるかもしれませんが、この機能はワークフローの実行を一時停止し、正確に再開するために重要です。
+
+ワークフロー関数は完全な JavaScript ランタイムというよりも、条件分岐、ループ、try/catch ハンドラ、`Promise.all`、その他の言語プリミティブを使って様々なステップを「つなぎ合わせる」ように考えるとわかりやすいでしょう。
+
+```typescript lineNumbers
+export async function processOrderWorkflow(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // Orchestrate multiple steps
+  const order = await fetchOrder(orderId);
+  const payment = await chargePayment(order);
+
+  return { orderId, status: "completed" };
+}
+```
+
+**主な特性:**
+
+- フルな Node.js アクセスがないサンドボックス環境で実行される
+- すべてのステップ結果はイベントログに永続化される
+- 障害からの再開を可能にするために**決定性が必要**である
+
+ワークフローの決定性は、中断からワークフローを再開するために必要です。実際には、ワークフローのコードはライフサイクル中に何度も再実行され、それぞれイベントログを使ってワークフローを正しい位置に復元します。
+
+ワークフローが実行されるサンドボックス環境はすでに決定性を保証しています。たとえば、`Math.random` や `Date` コンストラクタはワークフロー実行時に固定されるため、それらを使用しても安全であり、フレームワークはリプレイ間で値が変わらないようにします。
+
+## ステップ関数
+
+*ディレクティブ: `"use step"`*
+
+ステップ関数はワークフロー内で実際の作業を行い、フルランタイムアクセスを持ちます。
+
+```typescript lineNumbers
+async function chargePayment(order: Order) {
+  "use step"; // [!code highlight]
+
+  // Full Node.js access - use any npm package
+  const stripe = new Stripe(process.env.STRIPE_KEY);
+
+  const charge = await stripe.charges.create({
+    amount: order.total,
+    currency: "usd",
+    source: order.paymentToken
+  });
+
+  return { chargeId: charge.id };
+}
+```
+
+**主な特性:**
+
+- フルな Node.js ランタイムおよび npm パッケージへのアクセス
+- エラー時の自動再試行
+- リプレイのために結果が永続化される
+
+デフォルトでは、ステップは失敗してワークフローにエラーを伝播する前に最大3回まで再試行されます。エラーと再試行の詳細については [エラーと再試行](/docs/foundations/errors-and-retries) のページを参照してください。
+
+<Callout type="warning">
+**重要:** シリアライズの都合上、パラメータは**参照ではなく値で渡されます**。オブジェクトや配列をステップに渡してそれを変更した場合、その変更はワークフローのコンテキストに**反映されません**。ステップ関数からは常に変更後のデータを返すようにしてください。詳細と例は [値渡しのセマンティクス](/docs/foundations/serialization#pass-by-value-semantics) を参照してください。
+</Callout>
+
+<Callout type="info">
+ステップ関数は主にワークフロー内で使用することを想定しています。
+</Callout>
+
+ワークフローの外部または別のステップからステップを呼び出すと、実質的に通常の関数のように同じプロセス内でステップが実行されます（言い換えれば、`use step` ディレクティブは無効になります）。つまり、ビジネスロジックを重複させることなく、コードベースの他の部分でステップ関数を再利用できます。
+
+
+```typescript lineNumbers
+async function updateUser(userId: string) {
+  "use step";
+  await db.insert(...);
+}
+
+// Used inside a workflow
+export async function userOnboardingWorkflow(userId: string) {
+  "use workflow";
+  await updateUser(userId);
+  // ... more steps
+}
+
+// Used directly outside a workflow
+export async function POST() {
+  await updateUser("123");
+  // ... more logic
+}
+```
+
+<Callout type="info">
+ワークフロー関数の外部でステップ関数を呼び出すと、再試行のセマンティクスは適用されず、可観測性もありません。さらに、[`getStepMetadata()`](/docs/api-reference/workflow/get-step-metadata) のようなワークフロー固有の関数は、ワークフロー外から呼ばれたステップ内で使用するとエラーを投げます。
+</Callout>
+
+### 中断と再開
+
+ワークフロー関数は、非同期作業を待つ間に自動的に一時停止することができます。一時停止中は、ワークフローの状態はイベントログに保存され、ワークフローが再開されるまでコンピュートリソースは消費されません。
+
+ワークフローが中断される方法はいくつかあります:
+
+- ステップ関数を待つ: ステップがステップランタイムで実行されている間、ワークフローはイールドします。
+- `sleep()` を使用して一定期間一時停止する。
+- 外部システムがワークフローにデータを渡すと再開する [`createWebhook()`](/docs/api-reference/workflow/create-webhook) が返す Promise を await する。
+
+```typescript lineNumbers
+import { sleep, createWebhook } from "workflow";
+
+export async function documentReviewProcess(userId: string) {
+  "use workflow";
+
+  await sleep("1 month"); // Sleep will suspend without consuming any resources [!code highlight]
+
+  // Create a webhook for external workflow resumption
+  const webhook = createWebhook();
+
+  // Send the webhook url to some external service or in an email, etc.
+  await sendHumanApprovalEmail("Click this link to accept the review", webhook.url)
+
+  const data = await webhook; // The workflow suspends till the URL is resumed [!code highlight]
+
+  console.log("Document reviewed!")
+}
+```
+
+## ワークフローの作成
+
+### 基本構造
+
+最も単純なワークフローは、ワークフロー関数と1つ以上のステップ関数で構成されます。
+
+```typescript lineNumbers
+// Workflow function (orchestrates the steps)
+export async function greetingWorkflow(name: string) {
+  "use workflow";
+
+  const message = await greet(name);
+  return { message };
+}
+
+// Step function (does the actual work)
+async function greet(name: string) {
+  "use step";
+
+  // Access Node.js APIs
+  const message = `Hello ${name} at ${new Date().toISOString()}`;
+  console.log(message);
+  return message;
+}
+```
+
+### プロジェクト構成
+
+ワークフローおよびステップ関数は好きなように整理できますが、大規模なプロジェクトではある程度の構成を持たせると有益です:
+<Files>
+  <Folder name="workflows" defaultOpen disabled>
+    <Folder name="userOnboarding" defaultOpen disabled>
+      <File name="index.ts" />
+      <File name="steps.ts" />
+    </Folder>
+    <Folder name="aiVideoGeneration" defaultOpen disabled>
+      <File name="index.ts" />
+      <Folder name="steps" defaultOpen disabled>
+        <File name="transcribeUpload.ts" />
+        <File name="generateVideo.ts" />
+        <File name="notifyUser.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="shared" defaultOpen disabled>
+      <File name="validateInput.ts" />
+      <File name="logActivity.ts" />
+    </Folder>
+  </Folder>
+</Files>
+
+ステップを単一の `steps.ts` ファイルにまとめるか、`steps` フォルダ内の個別ファイルに分けるかは選択できます。複数のワークフローで使用される共通のステップは `shared` フォルダに置くのが適切です。
+
+<Callout type="info">
+ステップとワークフローを分割することで、Workflow DevKit に関連するほとんどのバンドラ関連のバグを回避するのにも役立ちます。
+</Callout>

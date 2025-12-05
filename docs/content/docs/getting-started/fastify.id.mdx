@@ -1,0 +1,246 @@
+---
+title: Fastify
+---
+
+Panduan ini akan menjelaskan cara menyiapkan alur kerja (workflow) pertama Anda dalam aplikasi Fastify. Sepanjang panduan, Anda akan mempelajari lebih lanjut tentang konsep-konsep yang mendasar untuk menggunakan development kit dalam proyek Anda sendiri.
+
+---
+
+<Steps>
+
+<Step>
+## Buat Proyek Fastify Anda
+
+Mulailah dengan membuat proyek Fastify baru.
+
+```bash
+mkdir my-workflow-app
+```
+
+Masuk ke direktori yang baru dibuat:
+
+```bash
+cd my-workflow-app
+```
+
+Inisialisasi proyek:
+
+```bash
+npm init --y
+```
+
+### Instal `workflow`, `fastify` dan `nitro`
+
+```package-install
+npm i workflow fastify nitro rollup
+```
+
+<Callout>
+Secara default, Fastify tidak menyertakan sistem build. Nitro menambahkannya sehingga memungkinkan mengompilasi workflow, menjalankan run, dan melakukan deploy untuk pengembangan serta produksi. Pelajari lebih lanjut tentang [Nitro](https://v3.nitro.build).
+</Callout>
+
+Jika menggunakan TypeScript, Anda perlu menginstal paket `@types/node` dan `typescript`
+
+```bash
+npm i -D @types/node typescript
+```
+
+### Konfigurasikan Nitro
+
+Buat file baru `nitro.config.ts` untuk konfigurasi Nitro Anda dengan modul `workflow/nitro`. Ini memungkinkan penggunaan direktif `"use workflow"` dan `"use step"`
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineNitroConfig } from "nitro/config";
+
+export default defineNitroConfig({
+	modules: ["workflow/nitro"],
+	vercel: { entryFormat: "node" },
+	routes: {
+		"/**": { handler: "./src/index.ts", format: "node" },
+	},
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Siapkan IntelliSense untuk TypeScript (Opsional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Untuk mengaktifkan petunjuk yang membantu di IDE Anda, atur plugin workflow di `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+### Perbarui `package.json`
+
+Untuk menggunakan builder Nitro, perbarui `package.json` Anda untuk menyertakan skrip berikut:
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## Buat Workflow Pertama Anda
+
+Buat file baru untuk workflow pertama kita:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Kita akan mengisi fungsi-fungsi tersebut selanjutnya, tetapi mari lihat kode ini:
+
+- Kita mendefinisikan sebuah fungsi **alur kerja** dengan direktif "use workflow". Anggap fungsi workflow sebagai _orchestrator_ dari **langkah-langkah** individual.
+- Fungsi `sleep` dari Workflow DevKit memungkinkan kita menghentikan eksekusi workflow tanpa menggunakan sumber daya. Sebuah sleep dapat berlangsung beberapa detik, jam, hari, atau bahkan bulan.
+## Buat Langkah-Langkah Workflow Anda
+
+Sekarang mari kita definisikan fungsi-fungsi yang hilang tersebut:
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+  console.log(`Creating user with email: ${email}`);
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+  console.log(`Sending welcome email to user: ${user.id}`);
+  if (Math.random() < 0.3) {
+    // Steps retry on unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+  if (!user.email.includes("@")) {
+    // FatalError skips retries
+    throw new FatalError("Invalid Email");
+  }
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+Melihat kode ini:
+
+- Logika bisnis berada di dalam **langkah-langkah**. Ketika sebuah langkah dipanggil di dalam sebuah **workflow**, langkah tersebut akan dimasukkan ke antrean untuk dijalankan pada permintaan terpisah sementara workflow ditangguhkan, sama seperti `sleep`.
+- Jika sebuah langkah melempar error, seperti pada `sendWelcomeEmail`, langkah tersebut akan otomatis dicoba ulang sampai berhasil (atau mencapai jumlah retry maksimal langkah tersebut).
+- Langkah-langkah dapat melempar `FatalError` jika error tersebut disengaja dan tidak boleh dicoba ulang.
+
+<Callout>
+  Kita akan membahas lebih dalam tentang workflow, langkah-langkah, dan cara lain untuk menangguhkan atau menangani events di [Dasar-dasar](/docs/foundations).
+</Callout>
+</Step>
+
+<Step>
+
+## Buat Handler Route Anda
+
+Untuk memanggil workflow baru Anda, kita akan membuat aplikasi Fastify dan handler route API baru di `src/index.ts` dengan kode berikut:
+
+```typescript title="src/index.ts"
+import Fastify from "fastify";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = Fastify({ logger: true });
+app.post("/api/signup", async (req, reply) => {
+  const { email } = req.body as { email: string };
+  await start(handleUserSignup, [email]);
+  return reply.send({ message: "User signup workflow started" });
+});
+
+// Wait for Fastify to be ready before handling requests
+await app.ready();
+
+
+export default (req: any, res: any) => {
+  app.server.emit("request", req, res);
+};
+```
+Handler route ini membuat endpoint permintaan `POST` di `/api/signup` yang akan memicu alur kerja Anda.
+</Step>
+
+<Step>
+
+## Jalankan di lingkungan pengembangan
+
+Untuk memulai server pengembangan Anda, jalankan perintah berikut di terminal pada direktori root Fastify:
+
+```bash
+npm run dev
+```
+
+Setelah server pengembangan Anda berjalan, Anda dapat memicu workflow dengan menjalankan perintah ini di terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Periksa log server pengembangan Fastify untuk melihat eksekusi alur kerja Anda serta langkah-langkah yang sedang diproses.
+
+Selain itu, Anda dapat menggunakan [CLI atau Antarmuka Web Workflow DevKit](/docs/observability) untuk memeriksa eksekusi dan langkah alur kerja secara rinci.
+
+```bash
+npx workflow inspect runs # add '--web' for an interactive Web based UI
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+---
+
+## Menyebarkan ke produksi
+
+Aplikasi Workflow DevKit saat ini bekerja paling baik ketika disebarkan ke [Vercel](https://vercel.com/home) dan tidak memerlukan konfigurasi khusus.
+
+Lihat bagian [Penyebaran](/docs/deploying) untuk mempelajari bagaimana alur kerja Anda dapat disebarkan di tempat lain.
+
+## Langkah Selanjutnya
+
+- Pelajari lebih lanjut tentang [Dasar-dasar](/docs/foundations).
+- Periksa [Kesalahan](/docs/errors) jika Anda menemukan masalah.
+- Jelajahi [Referensi API](/docs/api-reference).

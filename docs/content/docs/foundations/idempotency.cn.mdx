@@ -1,0 +1,53 @@
+---
+title: 幂等性
+---
+
+幂等性是操作的一种属性，确保可以安全地重试而不会产生重复的副作用。
+
+在分布式系统（调用外部 API）中，仅凭操作是否成功并不能总是确保该操作只执行了一次。假设有一个向用户收取 $10 的支付 API，但由于网络故障，确认响应丢失。当步骤重试（因为先前的尝试被视为失败）时，它会再次向用户收费。
+
+为防止这种情况，许多外部 API 支持幂等键。幂等键是操作的唯一标识符，可用于对请求进行去重。
+
+## 核心模式：使用步骤 ID 作为你的幂等键
+
+每次步骤调用都有一个稳定的 `stepId`，在重试期间保持不变。在调用第三方 API 时使用它作为幂等键。
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+
+  const { stepId } = getStepMetadata();
+
+  // Example: Stripe-style idempotency key
+  // This guarantees only one charge is created even if the step retries
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: stepId, // [!code highlight]
+    }
+  );
+}
+```
+
+为什么这有效：
+
+- **在重试间保持稳定**：`stepId` 在不同尝试间不会改变。
+- **每个步骤全局唯一**：满足幂等键的唯一性要求。
+
+## 最佳实践
+
+- **始终为步骤中那些非幂等的外部副作用提供幂等键**（支付、邮件、短信、队列）。
+- **优先使用 `stepId` 作为你的键**；它在重试间稳定且每个步骤唯一。
+- **保持键的确定性**；避免包含时间戳或尝试计数器。
+- **优雅地处理 409/冲突 响应**；如果先前尝试已完成，则将其视为成功。
+
+## 相关文档
+
+- 了解重试，请参阅 [错误与重试](/docs/foundations/errors-and-retries)
+- API 参考：[`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)

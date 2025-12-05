@@ -1,0 +1,102 @@
+---
+title: 对用户消息进行排队
+---
+
+在使用 [多回合工作流](/docs/ai/chat-session-modeling#multi-turn-workflows) 时，消息通常在代理回合之间到达。工作流在一个钩子处等待，接收消息，然后开始一个新的回合。但有时你需要在代理的回合*期间*注入消息，在工具调用完成之前或模型推理过程中。
+
+`DurableAgent` 的 `prepareStep` 回调通过在代理循环的每一步之前运行来实现这一点，使你有机会将排队的消息注入对话。`prepareStep` 还允许你在回合中修改模型选择和现有消息，详见 AI SDK 的 [prepareStep 回调](https://ai-sdk.dev/docs/agents/loop-control#prepare-step)。
+
+## 何时使用此功能
+
+消息排队在以下情况下很有用：
+
+- 用户在代理仍在搜索航班或处理预订时发送后续消息
+- 外部系统需要在回合中注入上下文（例如，航班状态 webhook 在处理期间触发）
+- 你希望消息影响代理的下一步，而不是等待当前回合完成
+
+<Callout type="info">
+如果你仅需要在回合之间到达消息的基本多回合对话，请参见 [聊天会话建模](/docs/ai/chat-session-modeling)。本指南涵盖在回合*期间*注入消息的更高级情况。
+</Callout>
+
+## `prepareStep` 回调
+
+`prepareStep` 回调在代理循环的每一步之前运行。它接收当前状态并可以修改发送给模型的消息：
+
+```typescript lineNumbers
+interface PrepareStepInfo {
+  model: string | (() => Promise<LanguageModelV2>);  // Current model
+  stepNumber: number;                                // 0-indexed step count
+  steps: StepResult[];                               // Previous step results
+  messages: LanguageModelV2Prompt;                   // Messages to be sent
+}
+
+interface PrepareStepResult {
+  model?: string | (() => Promise<LanguageModelV2>); // Override model
+  messages?: LanguageModelV2Prompt;                  // Override messages
+}
+```
+
+## 注入排队消息
+
+一旦你有了 [多回合工作流](/docs/ai/chat-session-modeling#multi-turn-workflows)，你可以将消息队列与 `prepareStep` 结合，以注入在处理期间到达的消息：
+
+```typescript title="workflows/chat/workflow.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import type { UIMessageChunk } from "ai";
+import { getWritable } from "workflow";
+import { chatMessageHook } from "./hooks/chat-message";
+import { flightBookingTools, FLIGHT_ASSISTANT_PROMPT } from "./steps/tools";
+
+export async function chatWorkflow(threadId: string, initialMessage: string) {
+  "use workflow";
+
+  const writable = getWritable<UIMessageChunk>();
+  const messageQueue: Array<{ role: "user"; content: string }> = []; // [!code highlight]
+
+  const agent = new DurableAgent({
+    model: "bedrock/claude-4-5-haiku-20251001-v1",
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+
+  // Listen for messages in background (non-blocking) // [!code highlight]
+  const hook = chatMessageHook.create({ token: `thread:${threadId}` }); // [!code highlight]
+  hook.then(({ message }) => { // [!code highlight]
+    messageQueue.push({ role: "user", content: message }); // [!code highlight]
+  }); // [!code highlight]
+
+  await agent.stream({
+    messages: [{ role: "user", content: initialMessage }],
+    writable,
+    prepareStep: ({ messages: currentMessages }) => { // [!code highlight]
+      // Inject any queued messages before the next LLM call // [!code highlight]
+      if (messageQueue.length > 0) { // [!code highlight]
+        const newMessages = messageQueue.splice(0); // Drain queue // [!code highlight]
+        return { // [!code highlight]
+          messages: [ // [!code highlight]
+            ...currentMessages, // [!code highlight]
+            ...newMessages.map(m => ({ // [!code highlight]
+              role: m.role, // [!code highlight]
+              content: [{ type: "text" as const, text: m.content }], // [!code highlight]
+            })), // [!code highlight]
+          ], // [!code highlight]
+        }; // [!code highlight]
+      } // [!code highlight]
+      return {}; // [!code highlight]
+    }, // [!code highlight]
+  });
+}
+```
+
+通过 `chatMessageHook.resume()` 发送的消息会累积到队列中，并在下一步之前被注入，无论下一步是工具调用还是另一次 LLM 请求。
+
+<Callout type="info">
+`prepareStep` 回调接收 `LanguageModelV2Prompt` 格式的消息（带内容数组），这是 AI SDK 使用的内部格式。
+</Callout>
+
+## 相关文档
+
+- [聊天会话建模](/docs/ai/chat-session-modeling) - 单回合与多回合模式
+- [构建持久化 AI 代理](/docs/ai) - 创建持久化代理的完整指南
+- [`DurableAgent` API 参考](/docs/api-reference/workflow-ai/durable-agent) - 完整的 API 文档
+- [`defineHook()` API 参考](/docs/api-reference/workflow/define-hook) - 钩子配置选项

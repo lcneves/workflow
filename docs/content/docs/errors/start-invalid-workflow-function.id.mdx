@@ -1,0 +1,100 @@
+---
+title: start-fungsi-workflow-tidak-valid
+---
+
+Kesalahan ini terjadi ketika Anda mencoba memanggil `start()` dengan fungsi yang bukan fungsi workflow yang valid atau ketika Workflow DevKit tidak dikonfigurasi dengan benar.
+
+## Pesan Kesalahan
+
+```
+'start' received an invalid workflow function. Ensure the Workflow DevKit
+is configured correctly and the function includes a 'use workflow' directive.
+```
+
+## Mengapa Ini Terjadi
+
+Fungsi `start()` mengharapkan sebuah fungsi workflow yang telah diproses dengan benar oleh sistem build Workflow DevKit. Selama proses build, fungsi-fungsi workflow diubah dan ditandai dengan metadata khusus yang digunakan `start()` untuk mengidentifikasi dan mengeksekusinya.
+
+Kesalahan ini biasanya terjadi ketika:
+
+* Fungsi tidak memiliki direktif `"use workflow"`
+* workflow tidak dibangun/ditransformasikan dengan benar
+* Fungsi tidak diekspor dari file workflow
+* Fungsi yang salah diimpor
+
+## Penyebab Umum
+
+### Direktif `"use workflow"` Hilang
+
+```typescript lineNumbers title="workflows/order.ts"
+// Error - missing directive
+export async function processOrder(orderId: string) { // [!code highlight]
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+**Solusi:** Tambahkan direktif `"use workflow"`.
+
+```typescript lineNumbers title="workflows/order.ts"
+// Fixed - includes directive
+export async function processOrder(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+### Impor yang Salah
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Error - importing step function instead of workflow
+import { processStep } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processStep, ["order-123"]); // Error! // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+**Solusi:** Impor fungsi workflow yang benar.
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Fixed - import workflow function
+import { processOrder } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processOrder, ["order-123"]); // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+### Konfigurasi Next.js Hilang
+
+```typescript lineNumbers title="next.config.ts"
+// Error - missing withWorkflow wrapper
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default nextConfig;
+```
+
+**Solusi:** Bungkus dengan `withWorkflow()`.
+
+```typescript lineNumbers title="next.config.ts"
+// Fixed - includes withWorkflow
+import { withWorkflow } from "workflow/next"; // [!code highlight}
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default withWorkflow(nextConfig); // [!code highlight]
+```

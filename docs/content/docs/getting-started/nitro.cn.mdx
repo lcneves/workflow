@@ -1,0 +1,225 @@
+---
+title: Nitro
+description: 本指南将引导你在 Nitro v3 项目中设置你的第一个工作流。沿途你将了解更多在项目中使用开发工具包的基本概念。
+---
+
+<Steps>
+
+<Step>
+## 创建你的 Nitro 项目
+
+首先创建一个新的 [Nitro v3 项目](https://v3.nitro.build/)。此命令会创建一个名为 `nitro-app` 的新目录，并在其中设置一个 Nitro 项目。
+
+```bash
+npx create-nitro-app
+```
+
+进入新创建的目录：
+
+```bash
+cd nitro-app
+```
+
+### 安装 `workflow`
+
+```package-install
+npm i workflow
+```
+
+### 配置 Nitro
+
+在你的 `nitro.config.ts` 中添加 `workflow/nitro` 模块。这将启用 `"use workflow"` 和 `"use step"` 指令的使用。
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  serverDir: "./server",
+  modules: ["workflow/nitro"],
+});
+
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      为 TypeScript 设置 IntelliSense（可选）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+要在你的 IDE 中启用有用的提示，请在 `tsconfig.json` 中设置 workflow 插件：
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 创建你的第一个工作流
+
+为我们的第一个工作流创建一个新文件：
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+我们稍后会补充这些函数，但先来看看这段代码：
+
+- 我们使用指令 `"use workflow"` 定义了一个 **workflow** 函数。可以将 workflow 函数视为各个 **步骤** 的 _协调者_。
+- Workflow DevKit 的 `sleep` 函数允许我们在不消耗任何资源的情况下暂停工作流的执行。一次 sleep 可以持续几秒、几小时、几天，甚至几个月。
+
+## 创建你的工作流步骤
+
+现在让我们定义那些缺失的函数。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+看看这段代码：
+
+- 业务逻辑位于 **步骤** 内。当一个步骤在 **workflow** 内被调用时，它会被排队在单独的请求中运行，而工作流则被挂起，就像 `sleep` 一样。
+- 如果一个步骤抛出错误（比如在 `sendWelcomeEmail` 中），该步骤会自动重试直到成功（或达到步骤的最大重试次数）。
+- 如果错误是有意的且不应重试，步骤可以抛出 `FatalError`。
+
+<Callout>
+  我们将在 [基础](/docs/foundations) 中更深入地探讨工作流、步骤以及其他暂停或处理事件的方式。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 创建你的路由处理器
+
+要调用你的新工作流，我们将在 `server/api/signup.post.ts` 创建一个新的 API 路由处理器，代码如下：
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+此路由处理器在 `/api/signup` 创建了一个 `POST` 请求端点，用于触发你的工作流。
+
+<Callout>
+  工作流可以从 API 路由或任何服务端代码触发。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 在开发环境运行
+
+在 Nitro 根目录的终端中运行以下命令以启动开发服务器：
+
+```bash
+npm run dev
+```
+
+一旦开发服务器运行起来，你可以在终端运行以下命令来触发工作流：
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+查看 Nitro 开发服务器日志以查看工作流执行情况以及正在处理的步骤。
+
+此外，你可以使用 [Workflow DevKit CLI 或 Web UI](/docs/observability) 详细检查你的工作流运行和步骤。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit Web 界面" />
+
+</Step>
+
+</Steps>
+
+## 部署到生产环境
+
+Workflow DevKit 应用在部署到 [Vercel](https://vercel.com/home) 时目前表现最佳，并且不需要特殊配置。
+
+查看 [部署](/docs/deploying) 部分以了解如何将你的工作流部署到其他平台。
+
+## 下一步
+
+- 了解更多关于 [基础](/docs/foundations)。
+- 如果遇到问题，请查看 [错误](/docs/errors)。
+- 浏览 [API 参考](/docs/api-reference)。

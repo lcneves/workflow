@@ -1,0 +1,171 @@
+---
+title: Postgres 世界
+---
+
+PostgreSQL 世界是一个对 [World](/docs/deploying/world) 的参考实现，完全由 PostgreSQL 驱动，包括作业处理（使用 [pg-boss](https://github.com/timgit/pg-boss)）和流处理（使用 PostgreSQL 的 NOTIFY 和 LISTEN）。
+
+这个 world 旨在用于长时间运行的进程，因此它可以从 PostgreSQL 数据库接收并分发事件，因此不适合部署在像 Vercel 这样的无服务器平台上。
+
+<Steps>
+
+<Step>
+
+## 安装
+
+安装 `@workflow/world-postgres` 包：
+
+```package-install
+@workflow/world-postgres
+```
+
+</Step>
+
+<Step>
+
+## 添加环境变量
+
+将以下为工作流所需的环境变量添加到你的 `.env` 文件中：
+
+```bash
+WORKFLOW_TARGET_WORLD="@workflow/world-postgres"
+WORKFLOW_POSTGRES_URL="postgres://postgres:password@db.yourdb.co:5432/postgres"
+WORKFLOW_POSTGRES_JOB_PREFIX="workflow_"
+WORKFLOW_POSTGRES_WORKER_CONCURRENCY=10
+```
+
+world 配置会自动从环境变量中读取：
+
+- `WORKFLOW_TARGET_WORLD` - 必需，指定要使用的 world 实现
+- `WORKFLOW_POSTGRES_URL` - PostgreSQL 连接字符串（默认为 `postgres://world:world@localhost:5432/world`）
+- `WORKFLOW_POSTGRES_JOB_PREFIX` - 队列作业名称的前缀
+- `WORKFLOW_POSTGRES_WORKER_CONCURRENCY` - 并发工作线程数量（如果未指定，默认为 `10`）
+
+
+</Step>
+
+<Step>
+
+## 设置数据库架构
+
+运行设置脚本以创建所需的数据库表：
+
+```bash
+pnpm exec workflow-postgres-setup
+```
+
+这将在你的 PostgreSQL 数据库中创建以下表：
+
+- `workflow_runs` - 存储工作流执行状态
+- `workflow_events` - 存储工作流事件
+- `workflow_steps` - 存储工作流步骤状态
+- `workflow_hooks` - 存储工作流钩子
+- `workflow_stream_chunks` - 存储流式数据
+
+你应该会看到如下输出：
+
+```
+🔧 Setting up database schema...
+📍 Connection: postgres://postgres:****@db.yourcloudprovider.co:5432/postgres
+✅ Database schema created successfully!
+```
+
+</Step>
+
+<Step>
+
+## 初始化 PostgreSQL 世界
+
+在不同框架中启动 PostgreSQL World 的方式有所不同。主要思想是在服务器启动时启动 PostgreSQL World。
+
+下面是一些可能的示例：
+
+### Next.js
+
+在项目根目录创建一个 `instrumentation.ts` 文件以初始化并启动 world：
+
+```ts title="instrumentation.ts" lineNumbers
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== "edge") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+}
+```
+
+<Callout>
+  了解有关 [Next.js 插装](https://nextjs.org/docs/app/guides/instrumentation) 的更多信息。
+</Callout>
+
+### SvelteKit
+
+创建文件 `src/hooks.server.ts`：
+
+```ts title="src/hooks.server.ts" lineNumbers
+import type { ServerInit } from "@sveltejs/kit";
+
+export const init: ServerInit = async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    const { getWorld } = await import("workflow/runtime");
+    console.log("Starting Postgres World...");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+};
+```
+
+<Callout>
+  了解有关 [SvelteKit 钩子](https://svelte.dev/docs/kit/hooks) 的更多信息。
+</Callout>
+
+### 基于 Nitro 的应用
+
+创建一个插件以在 Nitro 服务器启动时启动 PostgreSQL World。该插件将在 Nitro 服务器启动时被调用。
+
+```ts title="plugins/start-pg-world.ts" lineNumbers
+import { defineNitroPlugin } from "nitro/~internal/runtime/plugin";
+
+export default defineNitroPlugin(async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+});
+```
+
+将该插件添加到你的 `nitro.config.ts` 文件中以启用插件：
+
+```ts title="nitro.config.ts"
+import { defineNitroConfig } from "nitropack";
+
+export default defineNitroConfig({
+  // ... your nitro config
+  modules: ["workflow/nitro"],
+  plugins: ["plugins/start-pg-world.ts"],
+});
+```
+
+<Callout>
+  了解有关 [Nitro 插件](https://v3.nitro.build/docs/plugins) 的更多信息。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 工作原理
+
+Postgres World 使用 PostgreSQL 作为工作流执行的持久化后端：
+
+- **作业队列**：使用 [pg-boss](https://github.com/timgit/pg-boss) 以实现可靠的作业处理
+- **事件流**：利用 PostgreSQL 的 NOTIFY/LISTEN 进行实时事件分发
+- **状态持久化**：所有工作流状态都存储在 PostgreSQL 表中
+- **工作管理**：支持可配置的并发工作线程来处理作业
+
+该设置可确保你的工作流能够在应用重启和故障中存活，所有状态可靠地持久化到 PostgreSQL 数据库中。

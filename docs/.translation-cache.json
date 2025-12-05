@@ -1,0 +1,1718 @@
+{
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/observability/index.mdx": {
+    "cn": {
+      "hash": "9adf11c3c16d418d671988d678600d2adb359f3bed802b9a8e65400bf56b6a82",
+      "translatedAt": "2025-12-05T16:34:00.667Z"
+    },
+    "es": {
+      "hash": "9adf11c3c16d418d671988d678600d2adb359f3bed802b9a8e65400bf56b6a82",
+      "translatedAt": "2025-12-05T16:34:00.668Z"
+    },
+    "jp": {
+      "hash": "9adf11c3c16d418d671988d678600d2adb359f3bed802b9a8e65400bf56b6a82",
+      "translatedAt": "2025-12-05T16:34:00.669Z"
+    },
+    "fr": {
+      "hash": "9adf11c3c16d418d671988d678600d2adb359f3bed802b9a8e65400bf56b6a82",
+      "translatedAt": "2025-12-05T16:34:00.669Z"
+    },
+    "id": {
+      "hash": "9adf11c3c16d418d671988d678600d2adb359f3bed802b9a8e65400bf56b6a82",
+      "translatedAt": "2025-12-05T16:34:00.670Z"
+    },
+    "pt": {
+      "hash": "9adf11c3c16d418d671988d678600d2adb359f3bed802b9a8e65400bf56b6a82",
+      "translatedAt": "2025-12-05T16:34:00.670Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/how-it-works/understanding-directives.mdx": {
+    "cn": {
+      "hash": "faa5647d95879b78c38b4f88fb612b36e4bdf6d8738c7dd8553d81f2af8b3520",
+      "translatedAt": "2025-12-05T16:36:58.635Z"
+    },
+    "pt": {
+      "hash": "faa5647d95879b78c38b4f88fb612b36e4bdf6d8738c7dd8553d81f2af8b3520",
+      "translatedAt": "2025-12-05T16:36:58.637Z"
+    },
+    "fr": {
+      "hash": "faa5647d95879b78c38b4f88fb612b36e4bdf6d8738c7dd8553d81f2af8b3520",
+      "translatedAt": "2025-12-05T16:36:58.637Z"
+    },
+    "es": {
+      "hash": "faa5647d95879b78c38b4f88fb612b36e4bdf6d8738c7dd8553d81f2af8b3520",
+      "translatedAt": "2025-12-05T16:36:58.637Z"
+    },
+    "jp": {
+      "hash": "faa5647d95879b78c38b4f88fb612b36e4bdf6d8738c7dd8553d81f2af8b3520",
+      "translatedAt": "2025-12-05T16:36:58.638Z"
+    },
+    "id": {
+      "hash": "faa5647d95879b78c38b4f88fb612b36e4bdf6d8738c7dd8553d81f2af8b3520",
+      "translatedAt": "2025-12-05T16:36:58.638Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/how-it-works/framework-integrations.mdx": {
+    "jp": {
+      "hash": "f966b084601e67723b8f054773c5ba54e80e6329055ec34edd48464e677a6f6e",
+      "translatedAt": "2025-12-05T16:38:48.013Z"
+    },
+    "pt": {
+      "hash": "f966b084601e67723b8f054773c5ba54e80e6329055ec34edd48464e677a6f6e",
+      "translatedAt": "2025-12-05T16:38:48.015Z"
+    },
+    "es": {
+      "hash": "f966b084601e67723b8f054773c5ba54e80e6329055ec34edd48464e677a6f6e",
+      "translatedAt": "2025-12-05T16:38:48.016Z"
+    },
+    "id": {
+      "hash": "f966b084601e67723b8f054773c5ba54e80e6329055ec34edd48464e677a6f6e",
+      "translatedAt": "2025-12-05T16:38:48.016Z"
+    },
+    "fr": {
+      "hash": "f966b084601e67723b8f054773c5ba54e80e6329055ec34edd48464e677a6f6e",
+      "translatedAt": "2025-12-05T16:38:48.017Z"
+    },
+    "cn": {
+      "hash": "f966b084601e67723b8f054773c5ba54e80e6329055ec34edd48464e677a6f6e",
+      "translatedAt": "2025-12-05T16:38:48.018Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/how-it-works/code-transform.mdx": {
+    "id": {
+      "hash": "b48bfd9687cb58e31a3e1c5ad9d1cf5f5cda03a531a495d851263b8a2f65ca98",
+      "translatedAt": "2025-12-05T16:40:40.111Z"
+    },
+    "es": {
+      "hash": "b48bfd9687cb58e31a3e1c5ad9d1cf5f5cda03a531a495d851263b8a2f65ca98",
+      "translatedAt": "2025-12-05T16:40:40.112Z"
+    },
+    "cn": {
+      "hash": "b48bfd9687cb58e31a3e1c5ad9d1cf5f5cda03a531a495d851263b8a2f65ca98",
+      "translatedAt": "2025-12-05T16:40:40.113Z"
+    },
+    "fr": {
+      "hash": "b48bfd9687cb58e31a3e1c5ad9d1cf5f5cda03a531a495d851263b8a2f65ca98",
+      "translatedAt": "2025-12-05T16:40:40.114Z"
+    },
+    "pt": {
+      "hash": "b48bfd9687cb58e31a3e1c5ad9d1cf5f5cda03a531a495d851263b8a2f65ca98",
+      "translatedAt": "2025-12-05T16:40:40.114Z"
+    },
+    "jp": {
+      "hash": "b48bfd9687cb58e31a3e1c5ad9d1cf5f5cda03a531a495d851263b8a2f65ca98",
+      "translatedAt": "2025-12-05T16:40:40.115Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/worlds/index.mdx": {
+    "pt": {
+      "hash": "a2fa6f5add3b008269784a14c4b8d431b789349aaa69c18261d1ba7f913f66c7",
+      "translatedAt": "2025-12-05T16:41:29.933Z"
+    },
+    "es": {
+      "hash": "a2fa6f5add3b008269784a14c4b8d431b789349aaa69c18261d1ba7f913f66c7",
+      "translatedAt": "2025-12-05T16:41:29.935Z"
+    },
+    "id": {
+      "hash": "a2fa6f5add3b008269784a14c4b8d431b789349aaa69c18261d1ba7f913f66c7",
+      "translatedAt": "2025-12-05T16:41:29.935Z"
+    },
+    "fr": {
+      "hash": "a2fa6f5add3b008269784a14c4b8d431b789349aaa69c18261d1ba7f913f66c7",
+      "translatedAt": "2025-12-05T16:41:29.936Z"
+    },
+    "jp": {
+      "hash": "a2fa6f5add3b008269784a14c4b8d431b789349aaa69c18261d1ba7f913f66c7",
+      "translatedAt": "2025-12-05T16:41:29.937Z"
+    },
+    "cn": {
+      "hash": "a2fa6f5add3b008269784a14c4b8d431b789349aaa69c18261d1ba7f913f66c7",
+      "translatedAt": "2025-12-05T16:41:29.938Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/vite.mdx": {
+    "cn": {
+      "hash": "9cd25eaf980cab628c27023041d7c73abae94f160d2c058a111bcdc55f9001e0",
+      "translatedAt": "2025-12-05T16:43:38.397Z"
+    },
+    "es": {
+      "hash": "9cd25eaf980cab628c27023041d7c73abae94f160d2c058a111bcdc55f9001e0",
+      "translatedAt": "2025-12-05T16:43:38.398Z"
+    },
+    "pt": {
+      "hash": "9cd25eaf980cab628c27023041d7c73abae94f160d2c058a111bcdc55f9001e0",
+      "translatedAt": "2025-12-05T16:43:38.399Z"
+    },
+    "id": {
+      "hash": "9cd25eaf980cab628c27023041d7c73abae94f160d2c058a111bcdc55f9001e0",
+      "translatedAt": "2025-12-05T16:43:38.400Z"
+    },
+    "fr": {
+      "hash": "9cd25eaf980cab628c27023041d7c73abae94f160d2c058a111bcdc55f9001e0",
+      "translatedAt": "2025-12-05T16:43:38.400Z"
+    },
+    "jp": {
+      "hash": "9cd25eaf980cab628c27023041d7c73abae94f160d2c058a111bcdc55f9001e0",
+      "translatedAt": "2025-12-05T16:43:38.401Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/sveltekit.mdx": {
+    "jp": {
+      "hash": "444791390087f2b1011c69dc6c53d8d02055aa6508b56efb10f3da500572194d",
+      "translatedAt": "2025-12-05T16:45:35.094Z"
+    },
+    "es": {
+      "hash": "444791390087f2b1011c69dc6c53d8d02055aa6508b56efb10f3da500572194d",
+      "translatedAt": "2025-12-05T16:45:35.095Z"
+    },
+    "id": {
+      "hash": "444791390087f2b1011c69dc6c53d8d02055aa6508b56efb10f3da500572194d",
+      "translatedAt": "2025-12-05T16:45:35.096Z"
+    },
+    "pt": {
+      "hash": "444791390087f2b1011c69dc6c53d8d02055aa6508b56efb10f3da500572194d",
+      "translatedAt": "2025-12-05T16:45:35.096Z"
+    },
+    "cn": {
+      "hash": "444791390087f2b1011c69dc6c53d8d02055aa6508b56efb10f3da500572194d",
+      "translatedAt": "2025-12-05T16:45:35.097Z"
+    },
+    "fr": {
+      "hash": "444791390087f2b1011c69dc6c53d8d02055aa6508b56efb10f3da500572194d",
+      "translatedAt": "2025-12-05T16:45:35.098Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/nuxt.mdx": {
+    "fr": {
+      "hash": "5612a64499403bc5cb3544df0f8f5675bf166c6275a58776f83edd9b04002005",
+      "translatedAt": "2025-12-05T16:47:29.881Z"
+    },
+    "cn": {
+      "hash": "5612a64499403bc5cb3544df0f8f5675bf166c6275a58776f83edd9b04002005",
+      "translatedAt": "2025-12-05T16:47:29.884Z"
+    },
+    "pt": {
+      "hash": "5612a64499403bc5cb3544df0f8f5675bf166c6275a58776f83edd9b04002005",
+      "translatedAt": "2025-12-05T16:47:29.885Z"
+    },
+    "es": {
+      "hash": "5612a64499403bc5cb3544df0f8f5675bf166c6275a58776f83edd9b04002005",
+      "translatedAt": "2025-12-05T16:47:29.886Z"
+    },
+    "jp": {
+      "hash": "5612a64499403bc5cb3544df0f8f5675bf166c6275a58776f83edd9b04002005",
+      "translatedAt": "2025-12-05T16:47:29.886Z"
+    },
+    "id": {
+      "hash": "5612a64499403bc5cb3544df0f8f5675bf166c6275a58776f83edd9b04002005",
+      "translatedAt": "2025-12-05T16:47:29.887Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/nitro.mdx": {
+    "jp": {
+      "hash": "e5e3223edc76a025bdf7683833a77f0b573c1d44ad99cde0bff39f46d2496c92",
+      "translatedAt": "2025-12-05T16:48:57.077Z"
+    },
+    "cn": {
+      "hash": "e5e3223edc76a025bdf7683833a77f0b573c1d44ad99cde0bff39f46d2496c92",
+      "translatedAt": "2025-12-05T16:48:57.078Z"
+    },
+    "es": {
+      "hash": "e5e3223edc76a025bdf7683833a77f0b573c1d44ad99cde0bff39f46d2496c92",
+      "translatedAt": "2025-12-05T16:48:57.080Z"
+    },
+    "fr": {
+      "hash": "e5e3223edc76a025bdf7683833a77f0b573c1d44ad99cde0bff39f46d2496c92",
+      "translatedAt": "2025-12-05T16:48:57.081Z"
+    },
+    "id": {
+      "hash": "e5e3223edc76a025bdf7683833a77f0b573c1d44ad99cde0bff39f46d2496c92",
+      "translatedAt": "2025-12-05T16:48:57.081Z"
+    },
+    "pt": {
+      "hash": "e5e3223edc76a025bdf7683833a77f0b573c1d44ad99cde0bff39f46d2496c92",
+      "translatedAt": "2025-12-05T16:48:57.082Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/next.mdx": {
+    "cn": {
+      "hash": "4d133eb5134ba26e70267a4e90db9c4190edaeeeeb64203b6b4b686166eee951",
+      "translatedAt": "2025-12-05T16:50:35.388Z"
+    },
+    "pt": {
+      "hash": "4d133eb5134ba26e70267a4e90db9c4190edaeeeeb64203b6b4b686166eee951",
+      "translatedAt": "2025-12-05T16:50:35.390Z"
+    },
+    "fr": {
+      "hash": "4d133eb5134ba26e70267a4e90db9c4190edaeeeeb64203b6b4b686166eee951",
+      "translatedAt": "2025-12-05T16:50:35.390Z"
+    },
+    "jp": {
+      "hash": "4d133eb5134ba26e70267a4e90db9c4190edaeeeeb64203b6b4b686166eee951",
+      "translatedAt": "2025-12-05T16:50:35.391Z"
+    },
+    "es": {
+      "hash": "4d133eb5134ba26e70267a4e90db9c4190edaeeeeb64203b6b4b686166eee951",
+      "translatedAt": "2025-12-05T16:50:35.392Z"
+    },
+    "id": {
+      "hash": "4d133eb5134ba26e70267a4e90db9c4190edaeeeeb64203b6b4b686166eee951",
+      "translatedAt": "2025-12-05T16:50:35.393Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/index.mdx": {
+    "cn": {
+      "hash": "c97981c640c3239c860ddad1c0209d2007590702408e4f8a792a09baf80f57bb",
+      "translatedAt": "2025-12-05T16:51:11.357Z"
+    },
+    "pt": {
+      "hash": "c97981c640c3239c860ddad1c0209d2007590702408e4f8a792a09baf80f57bb",
+      "translatedAt": "2025-12-05T16:51:11.359Z"
+    },
+    "es": {
+      "hash": "c97981c640c3239c860ddad1c0209d2007590702408e4f8a792a09baf80f57bb",
+      "translatedAt": "2025-12-05T16:51:11.360Z"
+    },
+    "id": {
+      "hash": "c97981c640c3239c860ddad1c0209d2007590702408e4f8a792a09baf80f57bb",
+      "translatedAt": "2025-12-05T16:51:11.361Z"
+    },
+    "fr": {
+      "hash": "c97981c640c3239c860ddad1c0209d2007590702408e4f8a792a09baf80f57bb",
+      "translatedAt": "2025-12-05T16:51:11.362Z"
+    },
+    "jp": {
+      "hash": "c97981c640c3239c860ddad1c0209d2007590702408e4f8a792a09baf80f57bb",
+      "translatedAt": "2025-12-05T16:51:11.364Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/workflows-and-steps.mdx": {
+    "es": {
+      "hash": "dc6d528022a0a0ca9160e5afc7ebbc8e04fe1e099b8beb74fdc77ee8ed04d97f",
+      "translatedAt": "2025-12-05T18:08:31.575Z"
+    },
+    "fr": {
+      "hash": "dc6d528022a0a0ca9160e5afc7ebbc8e04fe1e099b8beb74fdc77ee8ed04d97f",
+      "translatedAt": "2025-12-05T18:08:31.577Z"
+    },
+    "cn": {
+      "hash": "dc6d528022a0a0ca9160e5afc7ebbc8e04fe1e099b8beb74fdc77ee8ed04d97f",
+      "translatedAt": "2025-12-05T18:08:31.578Z"
+    },
+    "jp": {
+      "hash": "dc6d528022a0a0ca9160e5afc7ebbc8e04fe1e099b8beb74fdc77ee8ed04d97f",
+      "translatedAt": "2025-12-05T18:08:31.579Z"
+    },
+    "pt": {
+      "hash": "dc6d528022a0a0ca9160e5afc7ebbc8e04fe1e099b8beb74fdc77ee8ed04d97f",
+      "translatedAt": "2025-12-05T18:08:31.580Z"
+    },
+    "id": {
+      "hash": "dc6d528022a0a0ca9160e5afc7ebbc8e04fe1e099b8beb74fdc77ee8ed04d97f",
+      "translatedAt": "2025-12-05T18:08:31.580Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/streaming.mdx": {
+    "cn": {
+      "hash": "82b13565534fdcfbf431cfa9b4ceebe4c34d6b298943658de114dc4a65392c60",
+      "translatedAt": "2025-12-05T18:15:19.989Z"
+    },
+    "jp": {
+      "hash": "82b13565534fdcfbf431cfa9b4ceebe4c34d6b298943658de114dc4a65392c60",
+      "translatedAt": "2025-12-05T18:30:07.435Z"
+    },
+    "es": {
+      "hash": "82b13565534fdcfbf431cfa9b4ceebe4c34d6b298943658de114dc4a65392c60",
+      "translatedAt": "2025-12-05T18:39:11.468Z"
+    },
+    "pt": {
+      "hash": "82b13565534fdcfbf431cfa9b4ceebe4c34d6b298943658de114dc4a65392c60",
+      "translatedAt": "2025-12-05T18:54:31.931Z"
+    },
+    "id": {
+      "hash": "82b13565534fdcfbf431cfa9b4ceebe4c34d6b298943658de114dc4a65392c60",
+      "translatedAt": "2025-12-05T19:15:12.915Z"
+    },
+    "fr": {
+      "hash": "82b13565534fdcfbf431cfa9b4ceebe4c34d6b298943658de114dc4a65392c60",
+      "translatedAt": "2025-12-05T19:24:57.274Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/starting-workflows.mdx": {
+    "cn": {
+      "hash": "7b2c8678868b5b5f50b1712d0223f1217ec81d29ce0316bbd4fc606c97229f40",
+      "translatedAt": "2025-12-05T18:16:06.209Z"
+    },
+    "jp": {
+      "hash": "7b2c8678868b5b5f50b1712d0223f1217ec81d29ce0316bbd4fc606c97229f40",
+      "translatedAt": "2025-12-05T18:29:33.021Z"
+    },
+    "es": {
+      "hash": "7b2c8678868b5b5f50b1712d0223f1217ec81d29ce0316bbd4fc606c97229f40",
+      "translatedAt": "2025-12-05T18:38:32.849Z"
+    },
+    "pt": {
+      "hash": "7b2c8678868b5b5f50b1712d0223f1217ec81d29ce0316bbd4fc606c97229f40",
+      "translatedAt": "2025-12-05T18:55:29.950Z"
+    },
+    "id": {
+      "hash": "7b2c8678868b5b5f50b1712d0223f1217ec81d29ce0316bbd4fc606c97229f40",
+      "translatedAt": "2025-12-05T19:15:18.616Z"
+    },
+    "fr": {
+      "hash": "7b2c8678868b5b5f50b1712d0223f1217ec81d29ce0316bbd4fc606c97229f40",
+      "translatedAt": "2025-12-05T19:24:39.205Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/serialization.mdx": {
+    "cn": {
+      "hash": "81879d10cfb4f73ccf9031ca117b863e680a3bb4ab7782cd89f25528a48dbc28",
+      "translatedAt": "2025-12-05T18:16:57.940Z"
+    },
+    "jp": {
+      "hash": "81879d10cfb4f73ccf9031ca117b863e680a3bb4ab7782cd89f25528a48dbc28",
+      "translatedAt": "2025-12-05T18:29:11.544Z"
+    },
+    "es": {
+      "hash": "81879d10cfb4f73ccf9031ca117b863e680a3bb4ab7782cd89f25528a48dbc28",
+      "translatedAt": "2025-12-05T18:38:44.179Z"
+    },
+    "pt": {
+      "hash": "81879d10cfb4f73ccf9031ca117b863e680a3bb4ab7782cd89f25528a48dbc28",
+      "translatedAt": "2025-12-05T19:07:50.386Z"
+    },
+    "id": {
+      "hash": "81879d10cfb4f73ccf9031ca117b863e680a3bb4ab7782cd89f25528a48dbc28",
+      "translatedAt": "2025-12-05T19:15:08.963Z"
+    },
+    "fr": {
+      "hash": "81879d10cfb4f73ccf9031ca117b863e680a3bb4ab7782cd89f25528a48dbc28",
+      "translatedAt": "2025-12-05T19:24:30.027Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/index.mdx": {
+    "cn": {
+      "hash": "5a47a1f62a216d6bd69cd56308b92f28597ed26fc82767802186e41522745448",
+      "translatedAt": "2025-12-05T18:17:30.533Z"
+    },
+    "jp": {
+      "hash": "5a47a1f62a216d6bd69cd56308b92f28597ed26fc82767802186e41522745448",
+      "translatedAt": "2025-12-05T18:28:59.813Z"
+    },
+    "es": {
+      "hash": "5a47a1f62a216d6bd69cd56308b92f28597ed26fc82767802186e41522745448",
+      "translatedAt": "2025-12-05T18:38:02.559Z"
+    },
+    "pt": {
+      "hash": "5a47a1f62a216d6bd69cd56308b92f28597ed26fc82767802186e41522745448",
+      "translatedAt": "2025-12-05T18:55:06.986Z"
+    },
+    "id": {
+      "hash": "5a47a1f62a216d6bd69cd56308b92f28597ed26fc82767802186e41522745448",
+      "translatedAt": "2025-12-05T19:14:34.358Z"
+    },
+    "fr": {
+      "hash": "5a47a1f62a216d6bd69cd56308b92f28597ed26fc82767802186e41522745448",
+      "translatedAt": "2025-12-05T19:24:05.652Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/idempotency.mdx": {
+    "cn": {
+      "hash": "f4040c188ecc3505eb47d00372144539ffc29d857909a009d7793dd36b86e16f",
+      "translatedAt": "2025-12-05T18:17:53.478Z"
+    },
+    "jp": {
+      "hash": "f4040c188ecc3505eb47d00372144539ffc29d857909a009d7793dd36b86e16f",
+      "translatedAt": "2025-12-05T18:30:40.973Z"
+    },
+    "es": {
+      "hash": "f4040c188ecc3505eb47d00372144539ffc29d857909a009d7793dd36b86e16f",
+      "translatedAt": "2025-12-05T18:38:28.128Z"
+    },
+    "pt": {
+      "hash": "f4040c188ecc3505eb47d00372144539ffc29d857909a009d7793dd36b86e16f",
+      "translatedAt": "2025-12-05T18:55:13.204Z"
+    },
+    "id": {
+      "hash": "f4040c188ecc3505eb47d00372144539ffc29d857909a009d7793dd36b86e16f",
+      "translatedAt": "2025-12-05T19:15:49.634Z"
+    },
+    "fr": {
+      "hash": "f4040c188ecc3505eb47d00372144539ffc29d857909a009d7793dd36b86e16f",
+      "translatedAt": "2025-12-05T19:24:14.312Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/errors/webhook-response-not-sent.mdx": {
+    "cn": {
+      "hash": "00f9b0cac9c34da12202f06b403b7ba73f750bcb6ead6af2a3ee36975779285c",
+      "translatedAt": "2025-12-05T18:23:02.137Z"
+    },
+    "jp": {
+      "hash": "00f9b0cac9c34da12202f06b403b7ba73f750bcb6ead6af2a3ee36975779285c",
+      "translatedAt": "2025-12-05T18:28:30.527Z"
+    },
+    "es": {
+      "hash": "00f9b0cac9c34da12202f06b403b7ba73f750bcb6ead6af2a3ee36975779285c",
+      "translatedAt": "2025-12-05T18:36:55.959Z"
+    },
+    "pt": {
+      "hash": "00f9b0cac9c34da12202f06b403b7ba73f750bcb6ead6af2a3ee36975779285c",
+      "translatedAt": "2025-12-05T18:53:44.256Z"
+    },
+    "id": {
+      "hash": "00f9b0cac9c34da12202f06b403b7ba73f750bcb6ead6af2a3ee36975779285c",
+      "translatedAt": "2025-12-05T19:13:38.569Z"
+    },
+    "fr": {
+      "hash": "00f9b0cac9c34da12202f06b403b7ba73f750bcb6ead6af2a3ee36975779285c",
+      "translatedAt": "2025-12-05T19:25:49.075Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/errors/start-invalid-workflow-function.mdx": {
+    "cn": {
+      "hash": "00f6b00c0fe23e80a70df896791b8cb48322f558fa491bcdb9983f63fd4a595f",
+      "translatedAt": "2025-12-05T18:23:06.040Z"
+    },
+    "jp": {
+      "hash": "00f6b00c0fe23e80a70df896791b8cb48322f558fa491bcdb9983f63fd4a595f",
+      "translatedAt": "2025-12-05T18:29:06.811Z"
+    },
+    "es": {
+      "hash": "00f6b00c0fe23e80a70df896791b8cb48322f558fa491bcdb9983f63fd4a595f",
+      "translatedAt": "2025-12-05T18:37:04.460Z"
+    },
+    "pt": {
+      "hash": "00f6b00c0fe23e80a70df896791b8cb48322f558fa491bcdb9983f63fd4a595f",
+      "translatedAt": "2025-12-05T18:53:39.330Z"
+    },
+    "id": {
+      "hash": "00f6b00c0fe23e80a70df896791b8cb48322f558fa491bcdb9983f63fd4a595f",
+      "translatedAt": "2025-12-05T19:15:02.734Z"
+    },
+    "fr": {
+      "hash": "00f6b00c0fe23e80a70df896791b8cb48322f558fa491bcdb9983f63fd4a595f",
+      "translatedAt": "2025-12-05T19:25:46.420Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/errors/fetch-in-workflow.mdx": {
+    "cn": {
+      "hash": "46a5cd5c65c55ed59e6c15190b384530a7c74e4e578a22ce146e32103de94e29",
+      "translatedAt": "2025-12-05T18:23:10.858Z"
+    },
+    "jp": {
+      "hash": "46a5cd5c65c55ed59e6c15190b384530a7c74e4e578a22ce146e32103de94e29",
+      "translatedAt": "2025-12-05T18:29:04.461Z"
+    },
+    "es": {
+      "hash": "46a5cd5c65c55ed59e6c15190b384530a7c74e4e578a22ce146e32103de94e29",
+      "translatedAt": "2025-12-05T18:37:01.123Z"
+    },
+    "pt": {
+      "hash": "46a5cd5c65c55ed59e6c15190b384530a7c74e4e578a22ce146e32103de94e29",
+      "translatedAt": "2025-12-05T18:53:52.330Z"
+    },
+    "id": {
+      "hash": "46a5cd5c65c55ed59e6c15190b384530a7c74e4e578a22ce146e32103de94e29",
+      "translatedAt": "2025-12-05T19:14:40.164Z"
+    },
+    "fr": {
+      "hash": "46a5cd5c65c55ed59e6c15190b384530a7c74e4e578a22ce146e32103de94e29",
+      "translatedAt": "2025-12-05T19:25:38.011Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/errors/index.mdx": {
+    "cn": {
+      "hash": "295200db95fe82f64afcfcca80b9738d4ce4e7bf141036c81b6ea9daf18a223b",
+      "translatedAt": "2025-12-05T18:23:13.380Z"
+    },
+    "jp": {
+      "hash": "295200db95fe82f64afcfcca80b9738d4ce4e7bf141036c81b6ea9daf18a223b",
+      "translatedAt": "2025-12-05T18:29:24.766Z"
+    },
+    "es": {
+      "hash": "295200db95fe82f64afcfcca80b9738d4ce4e7bf141036c81b6ea9daf18a223b",
+      "translatedAt": "2025-12-05T18:36:53.544Z"
+    },
+    "pt": {
+      "hash": "295200db95fe82f64afcfcca80b9738d4ce4e7bf141036c81b6ea9daf18a223b",
+      "translatedAt": "2025-12-05T18:53:32.364Z"
+    },
+    "id": {
+      "hash": "295200db95fe82f64afcfcca80b9738d4ce4e7bf141036c81b6ea9daf18a223b",
+      "translatedAt": "2025-12-05T19:14:41.898Z"
+    },
+    "fr": {
+      "hash": "295200db95fe82f64afcfcca80b9738d4ce4e7bf141036c81b6ea9daf18a223b",
+      "translatedAt": "2025-12-05T19:25:41.382Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/errors/node-js-module-in-workflow.mdx": {
+    "cn": {
+      "hash": "07c2e91c885d6a10fe5781019566a87b80a8ff7e58b88d5c486417f0d678b541",
+      "translatedAt": "2025-12-05T18:23:19.701Z"
+    },
+    "jp": {
+      "hash": "07c2e91c885d6a10fe5781019566a87b80a8ff7e58b88d5c486417f0d678b541",
+      "translatedAt": "2025-12-05T18:29:26.135Z"
+    },
+    "es": {
+      "hash": "07c2e91c885d6a10fe5781019566a87b80a8ff7e58b88d5c486417f0d678b541",
+      "translatedAt": "2025-12-05T18:37:15.141Z"
+    },
+    "pt": {
+      "hash": "07c2e91c885d6a10fe5781019566a87b80a8ff7e58b88d5c486417f0d678b541",
+      "translatedAt": "2025-12-05T18:53:40.455Z"
+    },
+    "id": {
+      "hash": "07c2e91c885d6a10fe5781019566a87b80a8ff7e58b88d5c486417f0d678b541",
+      "translatedAt": "2025-12-05T19:14:45.211Z"
+    },
+    "fr": {
+      "hash": "07c2e91c885d6a10fe5781019566a87b80a8ff7e58b88d5c486417f0d678b541",
+      "translatedAt": "2025-12-05T19:25:42.668Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/errors/serialization-failed.mdx": {
+    "cn": {
+      "hash": "7ae256645b296656ff142377786ef9e530b6abf156f8d55af2056281160b9cc6",
+      "translatedAt": "2025-12-05T18:23:19.929Z"
+    },
+    "jp": {
+      "hash": "7ae256645b296656ff142377786ef9e530b6abf156f8d55af2056281160b9cc6",
+      "translatedAt": "2025-12-05T18:29:04.742Z"
+    },
+    "es": {
+      "hash": "7ae256645b296656ff142377786ef9e530b6abf156f8d55af2056281160b9cc6",
+      "translatedAt": "2025-12-05T18:37:04.135Z"
+    },
+    "pt": {
+      "hash": "7ae256645b296656ff142377786ef9e530b6abf156f8d55af2056281160b9cc6",
+      "translatedAt": "2025-12-05T18:53:38.916Z"
+    },
+    "id": {
+      "hash": "7ae256645b296656ff142377786ef9e530b6abf156f8d55af2056281160b9cc6",
+      "translatedAt": "2025-12-05T19:15:02.043Z"
+    },
+    "fr": {
+      "hash": "7ae256645b296656ff142377786ef9e530b6abf156f8d55af2056281160b9cc6",
+      "translatedAt": "2025-12-05T19:25:36.859Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/control-flow-patterns.mdx": {
+    "cn": {
+      "hash": "b23560cee3865b33730a023f3999bbdeff6380b4b8e7e73d8fbed63412b6a320",
+      "translatedAt": "2025-12-05T18:23:42.135Z"
+    },
+    "jp": {
+      "hash": "b23560cee3865b33730a023f3999bbdeff6380b4b8e7e73d8fbed63412b6a320",
+      "translatedAt": "2025-12-05T18:30:45.826Z"
+    },
+    "es": {
+      "hash": "b23560cee3865b33730a023f3999bbdeff6380b4b8e7e73d8fbed63412b6a320",
+      "translatedAt": "2025-12-05T18:38:21.995Z"
+    },
+    "pt": {
+      "hash": "b23560cee3865b33730a023f3999bbdeff6380b4b8e7e73d8fbed63412b6a320",
+      "translatedAt": "2025-12-05T18:55:21.285Z"
+    },
+    "id": {
+      "hash": "b23560cee3865b33730a023f3999bbdeff6380b4b8e7e73d8fbed63412b6a320",
+      "translatedAt": "2025-12-05T19:16:01.596Z"
+    },
+    "fr": {
+      "hash": "b23560cee3865b33730a023f3999bbdeff6380b4b8e7e73d8fbed63412b6a320",
+      "translatedAt": "2025-12-05T19:25:40.118Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/errors-and-retries.mdx": {
+    "cn": {
+      "hash": "918d91c87f9e95cf39a1b3ddc5cce66adb4c842202beb8923439d69d2811a7bf",
+      "translatedAt": "2025-12-05T18:23:45.821Z"
+    },
+    "jp": {
+      "hash": "918d91c87f9e95cf39a1b3ddc5cce66adb4c842202beb8923439d69d2811a7bf",
+      "translatedAt": "2025-12-05T18:30:47.864Z"
+    },
+    "es": {
+      "hash": "918d91c87f9e95cf39a1b3ddc5cce66adb4c842202beb8923439d69d2811a7bf",
+      "translatedAt": "2025-12-05T18:38:32.003Z"
+    },
+    "pt": {
+      "hash": "918d91c87f9e95cf39a1b3ddc5cce66adb4c842202beb8923439d69d2811a7bf",
+      "translatedAt": "2025-12-05T18:55:32.329Z"
+    },
+    "id": {
+      "hash": "918d91c87f9e95cf39a1b3ddc5cce66adb4c842202beb8923439d69d2811a7bf",
+      "translatedAt": "2025-12-05T19:16:09.128Z"
+    },
+    "fr": {
+      "hash": "918d91c87f9e95cf39a1b3ddc5cce66adb4c842202beb8923439d69d2811a7bf",
+      "translatedAt": "2025-12-05T19:24:26.333Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/errors/webhook-invalid-respond-with-value.mdx": {
+    "cn": {
+      "hash": "4e6593d44a5b42ff47798692f8102f1254f25dc5c3f609d5b2f565252b3d7355",
+      "translatedAt": "2025-12-05T18:23:48.415Z"
+    },
+    "jp": {
+      "hash": "4e6593d44a5b42ff47798692f8102f1254f25dc5c3f609d5b2f565252b3d7355",
+      "translatedAt": "2025-12-05T18:29:17.078Z"
+    },
+    "es": {
+      "hash": "4e6593d44a5b42ff47798692f8102f1254f25dc5c3f609d5b2f565252b3d7355",
+      "translatedAt": "2025-12-05T18:37:41.677Z"
+    },
+    "pt": {
+      "hash": "4e6593d44a5b42ff47798692f8102f1254f25dc5c3f609d5b2f565252b3d7355",
+      "translatedAt": "2025-12-05T18:53:31.036Z"
+    },
+    "id": {
+      "hash": "4e6593d44a5b42ff47798692f8102f1254f25dc5c3f609d5b2f565252b3d7355",
+      "translatedAt": "2025-12-05T19:14:45.805Z"
+    },
+    "fr": {
+      "hash": "4e6593d44a5b42ff47798692f8102f1254f25dc5c3f609d5b2f565252b3d7355",
+      "translatedAt": "2025-12-05T19:25:37.508Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/foundations/hooks.mdx": {
+    "cn": {
+      "hash": "ee2111b678d8717cc8c9b2d395d546fdb867edb23272715b14065adb061ae60f",
+      "translatedAt": "2025-12-05T18:24:11.171Z"
+    },
+    "jp": {
+      "hash": "ee2111b678d8717cc8c9b2d395d546fdb867edb23272715b14065adb061ae60f",
+      "translatedAt": "2025-12-05T18:31:23.976Z"
+    },
+    "es": {
+      "hash": "ee2111b678d8717cc8c9b2d395d546fdb867edb23272715b14065adb061ae60f",
+      "translatedAt": "2025-12-05T18:38:55.609Z"
+    },
+    "pt": {
+      "hash": "ee2111b678d8717cc8c9b2d395d546fdb867edb23272715b14065adb061ae60f",
+      "translatedAt": "2025-12-05T18:56:06.060Z"
+    },
+    "id": {
+      "hash": "ee2111b678d8717cc8c9b2d395d546fdb867edb23272715b14065adb061ae60f",
+      "translatedAt": "2025-12-05T19:16:44.045Z"
+    },
+    "fr": {
+      "hash": "ee2111b678d8717cc8c9b2d395d546fdb867edb23272715b14065adb061ae60f",
+      "translatedAt": "2025-12-05T19:24:36.375Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/index.mdx": {
+    "cn": {
+      "hash": "846315e36e5ec55841238d1cc9808dae87b6f0ef9037833f89d4c5c491fb0ab0",
+      "translatedAt": "2025-12-05T18:24:39.113Z"
+    },
+    "jp": {
+      "hash": "846315e36e5ec55841238d1cc9808dae87b6f0ef9037833f89d4c5c491fb0ab0",
+      "translatedAt": "2025-12-05T18:30:33.049Z"
+    },
+    "es": {
+      "hash": "846315e36e5ec55841238d1cc9808dae87b6f0ef9037833f89d4c5c491fb0ab0",
+      "translatedAt": "2025-12-05T18:39:35.224Z"
+    },
+    "pt": {
+      "hash": "846315e36e5ec55841238d1cc9808dae87b6f0ef9037833f89d4c5c491fb0ab0",
+      "translatedAt": "2025-12-05T18:54:59.714Z"
+    },
+    "id": {
+      "hash": "846315e36e5ec55841238d1cc9808dae87b6f0ef9037833f89d4c5c491fb0ab0",
+      "translatedAt": "2025-12-05T19:13:19.136Z"
+    },
+    "fr": {
+      "hash": "846315e36e5ec55841238d1cc9808dae87b6f0ef9037833f89d4c5c491fb0ab0",
+      "translatedAt": "2025-12-05T19:25:32.298Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/message-queueing.mdx": {
+    "cn": {
+      "hash": "b4a2a507e734de897b8585ff9659b296de40608876f4c0d59df09b94163138f7",
+      "translatedAt": "2025-12-05T18:24:54.310Z"
+    },
+    "jp": {
+      "hash": "b4a2a507e734de897b8585ff9659b296de40608876f4c0d59df09b94163138f7",
+      "translatedAt": "2025-12-05T18:33:33.857Z"
+    },
+    "es": {
+      "hash": "b4a2a507e734de897b8585ff9659b296de40608876f4c0d59df09b94163138f7",
+      "translatedAt": "2025-12-05T18:39:48.840Z"
+    },
+    "pt": {
+      "hash": "b4a2a507e734de897b8585ff9659b296de40608876f4c0d59df09b94163138f7",
+      "translatedAt": "2025-12-05T19:07:44.540Z"
+    },
+    "id": {
+      "hash": "b4a2a507e734de897b8585ff9659b296de40608876f4c0d59df09b94163138f7",
+      "translatedAt": "2025-12-05T19:15:54.547Z"
+    },
+    "fr": {
+      "hash": "b4a2a507e734de897b8585ff9659b296de40608876f4c0d59df09b94163138f7",
+      "translatedAt": "2025-12-05T19:27:04.970Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/hono.mdx": {
+    "cn": {
+      "hash": "fc58121308cfaf5eb562dec5f171d84252c673ad5641d229c874bfe45057b3cf",
+      "translatedAt": "2025-12-05T18:25:01.645Z"
+    },
+    "jp": {
+      "hash": "fc58121308cfaf5eb562dec5f171d84252c673ad5641d229c874bfe45057b3cf",
+      "translatedAt": "2025-12-05T18:31:16.525Z"
+    },
+    "es": {
+      "hash": "fc58121308cfaf5eb562dec5f171d84252c673ad5641d229c874bfe45057b3cf",
+      "translatedAt": "2025-12-05T18:38:52.280Z"
+    },
+    "pt": {
+      "hash": "fc58121308cfaf5eb562dec5f171d84252c673ad5641d229c874bfe45057b3cf",
+      "translatedAt": "2025-12-05T18:52:42.535Z"
+    },
+    "id": {
+      "hash": "fc58121308cfaf5eb562dec5f171d84252c673ad5641d229c874bfe45057b3cf",
+      "translatedAt": "2025-12-05T19:13:47.525Z"
+    },
+    "fr": {
+      "hash": "fc58121308cfaf5eb562dec5f171d84252c673ad5641d229c874bfe45057b3cf",
+      "translatedAt": "2025-12-05T19:23:28.161Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/express.mdx": {
+    "cn": {
+      "hash": "452eb35c9f4865e7721c49ce71f657cb94468b1b3d09b6ffed96c051eea6a600",
+      "translatedAt": "2025-12-05T18:25:01.855Z"
+    },
+    "jp": {
+      "hash": "452eb35c9f4865e7721c49ce71f657cb94468b1b3d09b6ffed96c051eea6a600",
+      "translatedAt": "2025-12-05T18:31:59.017Z"
+    },
+    "es": {
+      "hash": "452eb35c9f4865e7721c49ce71f657cb94468b1b3d09b6ffed96c051eea6a600",
+      "translatedAt": "2025-12-05T18:40:38.536Z"
+    },
+    "pt": {
+      "hash": "452eb35c9f4865e7721c49ce71f657cb94468b1b3d09b6ffed96c051eea6a600",
+      "translatedAt": "2025-12-05T18:54:18.697Z"
+    },
+    "id": {
+      "hash": "452eb35c9f4865e7721c49ce71f657cb94468b1b3d09b6ffed96c051eea6a600",
+      "translatedAt": "2025-12-05T19:14:00.513Z"
+    },
+    "fr": {
+      "hash": "452eb35c9f4865e7721c49ce71f657cb94468b1b3d09b6ffed96c051eea6a600",
+      "translatedAt": "2025-12-05T19:24:17.230Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/resumable-streams.mdx": {
+    "cn": {
+      "hash": "8f590698ae178ceef846cc00fef0a795264d6e3b1c5fe7e347aea6b65503f770",
+      "translatedAt": "2025-12-05T18:25:03.866Z"
+    },
+    "jp": {
+      "hash": "8f590698ae178ceef846cc00fef0a795264d6e3b1c5fe7e347aea6b65503f770",
+      "translatedAt": "2025-12-05T18:33:10.933Z"
+    },
+    "es": {
+      "hash": "8f590698ae178ceef846cc00fef0a795264d6e3b1c5fe7e347aea6b65503f770",
+      "translatedAt": "2025-12-05T18:40:34.991Z"
+    },
+    "pt": {
+      "hash": "8f590698ae178ceef846cc00fef0a795264d6e3b1c5fe7e347aea6b65503f770",
+      "translatedAt": "2025-12-05T19:07:53.835Z"
+    },
+    "id": {
+      "hash": "8f590698ae178ceef846cc00fef0a795264d6e3b1c5fe7e347aea6b65503f770",
+      "translatedAt": "2025-12-05T19:20:39.525Z"
+    },
+    "fr": {
+      "hash": "8f590698ae178ceef846cc00fef0a795264d6e3b1c5fe7e347aea6b65503f770",
+      "translatedAt": "2025-12-05T19:26:56.869Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/sleep-and-delays.mdx": {
+    "cn": {
+      "hash": "8fc0021d60e7fddc705a23c217fb54704aa65be006079c7d0f7080833a232358",
+      "translatedAt": "2025-12-05T18:25:22.181Z"
+    },
+    "jp": {
+      "hash": "8fc0021d60e7fddc705a23c217fb54704aa65be006079c7d0f7080833a232358",
+      "translatedAt": "2025-12-05T18:32:49.937Z"
+    },
+    "es": {
+      "hash": "8fc0021d60e7fddc705a23c217fb54704aa65be006079c7d0f7080833a232358",
+      "translatedAt": "2025-12-05T18:40:07.154Z"
+    },
+    "pt": {
+      "hash": "8fc0021d60e7fddc705a23c217fb54704aa65be006079c7d0f7080833a232358",
+      "translatedAt": "2025-12-05T19:07:53.579Z"
+    },
+    "id": {
+      "hash": "8fc0021d60e7fddc705a23c217fb54704aa65be006079c7d0f7080833a232358",
+      "translatedAt": "2025-12-05T19:16:01.542Z"
+    },
+    "fr": {
+      "hash": "8fc0021d60e7fddc705a23c217fb54704aa65be006079c7d0f7080833a232358",
+      "translatedAt": "2025-12-05T19:27:01.886Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/astro.mdx": {
+    "cn": {
+      "hash": "53bee1d7523b865b7a18053f720e15e8e5297e77a32991ae28eb84e3e469b9ec",
+      "translatedAt": "2025-12-05T18:25:27.384Z"
+    },
+    "jp": {
+      "hash": "53bee1d7523b865b7a18053f720e15e8e5297e77a32991ae28eb84e3e469b9ec",
+      "translatedAt": "2025-12-05T18:30:57.578Z"
+    },
+    "es": {
+      "hash": "53bee1d7523b865b7a18053f720e15e8e5297e77a32991ae28eb84e3e469b9ec",
+      "translatedAt": "2025-12-05T18:40:38.134Z"
+    },
+    "pt": {
+      "hash": "53bee1d7523b865b7a18053f720e15e8e5297e77a32991ae28eb84e3e469b9ec",
+      "translatedAt": "2025-12-05T18:54:26.636Z"
+    },
+    "id": {
+      "hash": "53bee1d7523b865b7a18053f720e15e8e5297e77a32991ae28eb84e3e469b9ec",
+      "translatedAt": "2025-12-05T19:13:43.613Z"
+    },
+    "fr": {
+      "hash": "53bee1d7523b865b7a18053f720e15e8e5297e77a32991ae28eb84e3e469b9ec",
+      "translatedAt": "2025-12-05T19:24:57.074Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/streaming-updates-from-tools.mdx": {
+    "cn": {
+      "hash": "cf36e8b2534bf87e56a2119eaa499dbb3f02b71face53b735253e5351a22e9b7",
+      "translatedAt": "2025-12-05T18:25:27.896Z"
+    },
+    "jp": {
+      "hash": "cf36e8b2534bf87e56a2119eaa499dbb3f02b71face53b735253e5351a22e9b7",
+      "translatedAt": "2025-12-05T18:32:44.956Z"
+    },
+    "es": {
+      "hash": "cf36e8b2534bf87e56a2119eaa499dbb3f02b71face53b735253e5351a22e9b7",
+      "translatedAt": "2025-12-05T18:40:17.676Z"
+    },
+    "pt": {
+      "hash": "cf36e8b2534bf87e56a2119eaa499dbb3f02b71face53b735253e5351a22e9b7",
+      "translatedAt": "2025-12-05T18:55:47.884Z"
+    },
+    "id": {
+      "hash": "cf36e8b2534bf87e56a2119eaa499dbb3f02b71face53b735253e5351a22e9b7",
+      "translatedAt": "2025-12-05T19:20:29.781Z"
+    },
+    "fr": {
+      "hash": "cf36e8b2534bf87e56a2119eaa499dbb3f02b71face53b735253e5351a22e9b7",
+      "translatedAt": "2025-12-05T19:26:46.122Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/getting-started/fastify.mdx": {
+    "cn": {
+      "hash": "d200371085e38633f723ff360f2a6a824b13f2e642eec6b211342a77dc35bdb1",
+      "translatedAt": "2025-12-05T18:25:32.812Z"
+    },
+    "jp": {
+      "hash": "d200371085e38633f723ff360f2a6a824b13f2e642eec6b211342a77dc35bdb1",
+      "translatedAt": "2025-12-05T18:31:31.820Z"
+    },
+    "es": {
+      "hash": "d200371085e38633f723ff360f2a6a824b13f2e642eec6b211342a77dc35bdb1",
+      "translatedAt": "2025-12-05T18:38:51.686Z"
+    },
+    "pt": {
+      "hash": "d200371085e38633f723ff360f2a6a824b13f2e642eec6b211342a77dc35bdb1",
+      "translatedAt": "2025-12-05T18:52:47.032Z"
+    },
+    "id": {
+      "hash": "d200371085e38633f723ff360f2a6a824b13f2e642eec6b211342a77dc35bdb1",
+      "translatedAt": "2025-12-05T19:13:54.231Z"
+    },
+    "fr": {
+      "hash": "d200371085e38633f723ff360f2a6a824b13f2e642eec6b211342a77dc35bdb1",
+      "translatedAt": "2025-12-05T19:25:07.503Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/deploying/index.mdx": {
+    "cn": {
+      "hash": "e98fd5e73d3f83cca86d5e43584946c5b525e38e1e6289deba80840657035b17",
+      "translatedAt": "2025-12-05T18:25:33.269Z"
+    },
+    "jp": {
+      "hash": "e98fd5e73d3f83cca86d5e43584946c5b525e38e1e6289deba80840657035b17",
+      "translatedAt": "2025-12-05T18:31:04.650Z"
+    },
+    "es": {
+      "hash": "e98fd5e73d3f83cca86d5e43584946c5b525e38e1e6289deba80840657035b17",
+      "translatedAt": "2025-12-05T18:40:17.779Z"
+    },
+    "pt": {
+      "hash": "e98fd5e73d3f83cca86d5e43584946c5b525e38e1e6289deba80840657035b17",
+      "translatedAt": "2025-12-05T18:55:53.244Z"
+    },
+    "id": {
+      "hash": "e98fd5e73d3f83cca86d5e43584946c5b525e38e1e6289deba80840657035b17",
+      "translatedAt": "2025-12-05T19:14:09.688Z"
+    },
+    "fr": {
+      "hash": "e98fd5e73d3f83cca86d5e43584946c5b525e38e1e6289deba80840657035b17",
+      "translatedAt": "2025-12-05T19:26:12.768Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-next/index.mdx": {
+    "cn": {
+      "hash": "04ea79778127a687d25e99f76299cfe970ad535e2a5454c7a83c72e4861f58c2",
+      "translatedAt": "2025-12-05T18:25:58.286Z"
+    },
+    "jp": {
+      "hash": "04ea79778127a687d25e99f76299cfe970ad535e2a5454c7a83c72e4861f58c2",
+      "translatedAt": "2025-12-05T18:34:28.321Z"
+    },
+    "es": {
+      "hash": "04ea79778127a687d25e99f76299cfe970ad535e2a5454c7a83c72e4861f58c2",
+      "translatedAt": "2025-12-05T18:41:27.642Z"
+    },
+    "pt": {
+      "hash": "04ea79778127a687d25e99f76299cfe970ad535e2a5454c7a83c72e4861f58c2",
+      "translatedAt": "2025-12-05T19:09:05.072Z"
+    },
+    "id": {
+      "hash": "04ea79778127a687d25e99f76299cfe970ad535e2a5454c7a83c72e4861f58c2",
+      "translatedAt": "2025-12-05T19:19:57.094Z"
+    },
+    "fr": {
+      "hash": "04ea79778127a687d25e99f76299cfe970ad535e2a5454c7a83c72e4861f58c2",
+      "translatedAt": "2025-12-05T19:27:53.905Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-next/with-workflow.mdx": {
+    "cn": {
+      "hash": "828f0f97e1c79bcb628101e8093f0e4ce5f8026f5ae5100e2763d946523bffa2",
+      "translatedAt": "2025-12-05T18:26:01.707Z"
+    },
+    "jp": {
+      "hash": "828f0f97e1c79bcb628101e8093f0e4ce5f8026f5ae5100e2763d946523bffa2",
+      "translatedAt": "2025-12-05T18:34:16.988Z"
+    },
+    "es": {
+      "hash": "828f0f97e1c79bcb628101e8093f0e4ce5f8026f5ae5100e2763d946523bffa2",
+      "translatedAt": "2025-12-05T18:41:26.510Z"
+    },
+    "pt": {
+      "hash": "828f0f97e1c79bcb628101e8093f0e4ce5f8026f5ae5100e2763d946523bffa2",
+      "translatedAt": "2025-12-05T19:09:11.693Z"
+    },
+    "id": {
+      "hash": "828f0f97e1c79bcb628101e8093f0e4ce5f8026f5ae5100e2763d946523bffa2",
+      "translatedAt": "2025-12-05T19:20:00.349Z"
+    },
+    "fr": {
+      "hash": "828f0f97e1c79bcb628101e8093f0e4ce5f8026f5ae5100e2763d946523bffa2",
+      "translatedAt": "2025-12-05T19:27:51.373Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/deploying/world/index.mdx": {
+    "cn": {
+      "hash": "2acac186206b2b9d99548d9729f216f03b589d8b9d2b263085a713077097dc50",
+      "translatedAt": "2025-12-05T18:26:10.424Z"
+    },
+    "jp": {
+      "hash": "2acac186206b2b9d99548d9729f216f03b589d8b9d2b263085a713077097dc50",
+      "translatedAt": "2025-12-05T18:34:54.092Z"
+    },
+    "es": {
+      "hash": "2acac186206b2b9d99548d9729f216f03b589d8b9d2b263085a713077097dc50",
+      "translatedAt": "2025-12-05T18:42:10.658Z"
+    },
+    "pt": {
+      "hash": "2acac186206b2b9d99548d9729f216f03b589d8b9d2b263085a713077097dc50",
+      "translatedAt": "2025-12-05T19:10:02.922Z"
+    },
+    "id": {
+      "hash": "2acac186206b2b9d99548d9729f216f03b589d8b9d2b263085a713077097dc50",
+      "translatedAt": "2025-12-05T19:20:28.398Z"
+    },
+    "fr": {
+      "hash": "2acac186206b2b9d99548d9729f216f03b589d8b9d2b263085a713077097dc50",
+      "translatedAt": "2025-12-05T19:28:07.430Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/deploying/world/local-world.mdx": {
+    "cn": {
+      "hash": "c81bd29615f671046c7a345be86de39cebd92d22652ff1f5ebfdd0d4c5f32d1b",
+      "translatedAt": "2025-12-05T18:26:15.334Z"
+    },
+    "jp": {
+      "hash": "c81bd29615f671046c7a345be86de39cebd92d22652ff1f5ebfdd0d4c5f32d1b",
+      "translatedAt": "2025-12-05T18:34:42.200Z"
+    },
+    "es": {
+      "hash": "c81bd29615f671046c7a345be86de39cebd92d22652ff1f5ebfdd0d4c5f32d1b",
+      "translatedAt": "2025-12-05T18:41:53.346Z"
+    },
+    "pt": {
+      "hash": "c81bd29615f671046c7a345be86de39cebd92d22652ff1f5ebfdd0d4c5f32d1b",
+      "translatedAt": "2025-12-05T19:09:25.957Z"
+    },
+    "id": {
+      "hash": "c81bd29615f671046c7a345be86de39cebd92d22652ff1f5ebfdd0d4c5f32d1b",
+      "translatedAt": "2025-12-05T19:20:28.315Z"
+    },
+    "fr": {
+      "hash": "c81bd29615f671046c7a345be86de39cebd92d22652ff1f5ebfdd0d4c5f32d1b",
+      "translatedAt": "2025-12-05T19:28:30.158Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/defining-tools.mdx": {
+    "cn": {
+      "hash": "1dd1eef1c396b047df6f99ea28fe9970ae1daa9456608a722dca6b4e362cef4e",
+      "translatedAt": "2025-12-05T18:26:17.968Z"
+    },
+    "jp": {
+      "hash": "1dd1eef1c396b047df6f99ea28fe9970ae1daa9456608a722dca6b4e362cef4e",
+      "translatedAt": "2025-12-05T18:32:48.637Z"
+    },
+    "es": {
+      "hash": "1dd1eef1c396b047df6f99ea28fe9970ae1daa9456608a722dca6b4e362cef4e",
+      "translatedAt": "2025-12-05T18:41:40.959Z"
+    },
+    "pt": {
+      "hash": "1dd1eef1c396b047df6f99ea28fe9970ae1daa9456608a722dca6b4e362cef4e",
+      "translatedAt": "2025-12-05T19:07:29.858Z"
+    },
+    "id": {
+      "hash": "1dd1eef1c396b047df6f99ea28fe9970ae1daa9456608a722dca6b4e362cef4e",
+      "translatedAt": "2025-12-05T19:20:14.883Z"
+    },
+    "fr": {
+      "hash": "1dd1eef1c396b047df6f99ea28fe9970ae1daa9456608a722dca6b4e362cef4e",
+      "translatedAt": "2025-12-05T19:26:38.424Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/deploying/world/vercel-world.mdx": {
+    "cn": {
+      "hash": "ba533c6610f972fb1afafaec14220abeea293c5bc31eaba5e5653b50ceed95f9",
+      "translatedAt": "2025-12-05T18:26:31.692Z"
+    },
+    "jp": {
+      "hash": "ba533c6610f972fb1afafaec14220abeea293c5bc31eaba5e5653b50ceed95f9",
+      "translatedAt": "2025-12-05T18:32:48.698Z"
+    },
+    "es": {
+      "hash": "ba533c6610f972fb1afafaec14220abeea293c5bc31eaba5e5653b50ceed95f9",
+      "translatedAt": "2025-12-05T18:41:52.353Z"
+    },
+    "pt": {
+      "hash": "ba533c6610f972fb1afafaec14220abeea293c5bc31eaba5e5653b50ceed95f9",
+      "translatedAt": "2025-12-05T19:07:56.438Z"
+    },
+    "id": {
+      "hash": "ba533c6610f972fb1afafaec14220abeea293c5bc31eaba5e5653b50ceed95f9",
+      "translatedAt": "2025-12-05T19:20:24.149Z"
+    },
+    "fr": {
+      "hash": "ba533c6610f972fb1afafaec14220abeea293c5bc31eaba5e5653b50ceed95f9",
+      "translatedAt": "2025-12-05T19:26:49.497Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/deploying/world/postgres-world.mdx": {
+    "cn": {
+      "hash": "c87954b1d18d660803f1ee59548a6180df5585ef5f3c7ab654b8d338fa068f11",
+      "translatedAt": "2025-12-05T18:26:35.680Z"
+    },
+    "jp": {
+      "hash": "c87954b1d18d660803f1ee59548a6180df5585ef5f3c7ab654b8d338fa068f11",
+      "translatedAt": "2025-12-05T18:33:07.238Z"
+    },
+    "es": {
+      "hash": "c87954b1d18d660803f1ee59548a6180df5585ef5f3c7ab654b8d338fa068f11",
+      "translatedAt": "2025-12-05T18:42:01.453Z"
+    },
+    "pt": {
+      "hash": "c87954b1d18d660803f1ee59548a6180df5585ef5f3c7ab654b8d338fa068f11",
+      "translatedAt": "2025-12-05T19:08:11.572Z"
+    },
+    "id": {
+      "hash": "c87954b1d18d660803f1ee59548a6180df5585ef5f3c7ab654b8d338fa068f11",
+      "translatedAt": "2025-12-05T19:20:22.522Z"
+    },
+    "fr": {
+      "hash": "c87954b1d18d660803f1ee59548a6180df5585ef5f3c7ab654b8d338fa068f11",
+      "translatedAt": "2025-12-05T19:27:00.318Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/chat-session-modeling.mdx": {
+    "cn": {
+      "hash": "405cc25339c29f66d46dd41230e44138c79f74d05c86e0add91f061936696f62",
+      "translatedAt": "2025-12-05T18:26:36.765Z"
+    },
+    "jp": {
+      "hash": "405cc25339c29f66d46dd41230e44138c79f74d05c86e0add91f061936696f62",
+      "translatedAt": "2025-12-05T18:33:58.188Z"
+    },
+    "es": {
+      "hash": "405cc25339c29f66d46dd41230e44138c79f74d05c86e0add91f061936696f62",
+      "translatedAt": "2025-12-05T18:43:28.143Z"
+    },
+    "pt": {
+      "hash": "405cc25339c29f66d46dd41230e44138c79f74d05c86e0add91f061936696f62",
+      "translatedAt": "2025-12-05T19:08:06.368Z"
+    },
+    "id": {
+      "hash": "405cc25339c29f66d46dd41230e44138c79f74d05c86e0add91f061936696f62",
+      "translatedAt": "2025-12-05T19:20:40.943Z"
+    },
+    "fr": {
+      "hash": "405cc25339c29f66d46dd41230e44138c79f74d05c86e0add91f061936696f62",
+      "translatedAt": "2025-12-05T19:27:34.457Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/human-in-the-loop.mdx": {
+    "cn": {
+      "hash": "789c89180905ad6d1cf07a6e4dc44df23f9c5085013adef21583a3ac139c09c8",
+      "translatedAt": "2025-12-05T18:26:44.240Z"
+    },
+    "jp": {
+      "hash": "789c89180905ad6d1cf07a6e4dc44df23f9c5085013adef21583a3ac139c09c8",
+      "translatedAt": "2025-12-05T18:33:09.667Z"
+    },
+    "es": {
+      "hash": "789c89180905ad6d1cf07a6e4dc44df23f9c5085013adef21583a3ac139c09c8",
+      "translatedAt": "2025-12-05T18:40:45.037Z"
+    },
+    "pt": {
+      "hash": "789c89180905ad6d1cf07a6e4dc44df23f9c5085013adef21583a3ac139c09c8",
+      "translatedAt": "2025-12-05T19:08:06.061Z"
+    },
+    "id": {
+      "hash": "789c89180905ad6d1cf07a6e4dc44df23f9c5085013adef21583a3ac139c09c8",
+      "translatedAt": "2025-12-05T19:16:30.868Z"
+    },
+    "fr": {
+      "hash": "789c89180905ad6d1cf07a6e4dc44df23f9c5085013adef21583a3ac139c09c8",
+      "translatedAt": "2025-12-05T19:27:14.909Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/ai/index.mdx": {
+    "cn": {
+      "hash": "73b65998dfb2e4900aed9089c81ee42daf5a4543b951b93a2127c2d375e9bb6e",
+      "translatedAt": "2025-12-05T18:26:56.019Z"
+    },
+    "jp": {
+      "hash": "73b65998dfb2e4900aed9089c81ee42daf5a4543b951b93a2127c2d375e9bb6e",
+      "translatedAt": "2025-12-05T18:33:54.116Z"
+    },
+    "es": {
+      "hash": "73b65998dfb2e4900aed9089c81ee42daf5a4543b951b93a2127c2d375e9bb6e",
+      "translatedAt": "2025-12-05T18:40:55.304Z"
+    },
+    "pt": {
+      "hash": "73b65998dfb2e4900aed9089c81ee42daf5a4543b951b93a2127c2d375e9bb6e",
+      "translatedAt": "2025-12-05T19:08:47.076Z"
+    },
+    "id": {
+      "hash": "73b65998dfb2e4900aed9089c81ee42daf5a4543b951b93a2127c2d375e9bb6e",
+      "translatedAt": "2025-12-05T19:17:01.014Z"
+    },
+    "fr": {
+      "hash": "73b65998dfb2e4900aed9089c81ee42daf5a4543b951b93a2127c2d375e9bb6e",
+      "translatedAt": "2025-12-05T19:27:19.109Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-ai/index.mdx": {
+    "cn": {
+      "hash": "3ec90b18a712f9eb3fc98abdb815fa534af36571722bcaa940be7dfa410f9961",
+      "translatedAt": "2025-12-05T18:27:08.617Z"
+    },
+    "jp": {
+      "hash": "3ec90b18a712f9eb3fc98abdb815fa534af36571722bcaa940be7dfa410f9961",
+      "translatedAt": "2025-12-05T18:34:13.188Z"
+    },
+    "es": {
+      "hash": "3ec90b18a712f9eb3fc98abdb815fa534af36571722bcaa940be7dfa410f9961",
+      "translatedAt": "2025-12-05T18:41:14.674Z"
+    },
+    "pt": {
+      "hash": "3ec90b18a712f9eb3fc98abdb815fa534af36571722bcaa940be7dfa410f9961",
+      "translatedAt": "2025-12-05T19:09:07.146Z"
+    },
+    "id": {
+      "hash": "3ec90b18a712f9eb3fc98abdb815fa534af36571722bcaa940be7dfa410f9961",
+      "translatedAt": "2025-12-05T19:21:19.176Z"
+    },
+    "fr": {
+      "hash": "3ec90b18a712f9eb3fc98abdb815fa534af36571722bcaa940be7dfa410f9961",
+      "translatedAt": "2025-12-05T19:28:01.821Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-api/index.mdx": {
+    "cn": {
+      "hash": "1f3d97e9e5515405bc6e4fe0c87d57326575af38f4873a19f735f51a970f72ac",
+      "translatedAt": "2025-12-05T18:27:11.925Z"
+    },
+    "jp": {
+      "hash": "1f3d97e9e5515405bc6e4fe0c87d57326575af38f4873a19f735f51a970f72ac",
+      "translatedAt": "2025-12-05T18:35:33.301Z"
+    },
+    "es": {
+      "hash": "1f3d97e9e5515405bc6e4fe0c87d57326575af38f4873a19f735f51a970f72ac",
+      "translatedAt": "2025-12-05T18:44:02.955Z"
+    },
+    "pt": {
+      "hash": "1f3d97e9e5515405bc6e4fe0c87d57326575af38f4873a19f735f51a970f72ac",
+      "translatedAt": "2025-12-05T19:12:20.176Z"
+    },
+    "id": {
+      "hash": "1f3d97e9e5515405bc6e4fe0c87d57326575af38f4873a19f735f51a970f72ac",
+      "translatedAt": "2025-12-05T19:21:18.921Z"
+    },
+    "fr": {
+      "hash": "1f3d97e9e5515405bc6e4fe0c87d57326575af38f4873a19f735f51a970f72ac",
+      "translatedAt": "2025-12-05T19:29:24.124Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/retryable-error.mdx": {
+    "cn": {
+      "hash": "ab1c086f8e55a52b782761ec6cfb630e4a72691b9e6622e8c5dbd265ad7d213d",
+      "translatedAt": "2025-12-05T18:27:15.144Z"
+    },
+    "jp": {
+      "hash": "ab1c086f8e55a52b782761ec6cfb630e4a72691b9e6622e8c5dbd265ad7d213d",
+      "translatedAt": "2025-12-05T18:35:36.806Z"
+    },
+    "es": {
+      "hash": "ab1c086f8e55a52b782761ec6cfb630e4a72691b9e6622e8c5dbd265ad7d213d",
+      "translatedAt": "2025-12-05T18:44:07.533Z"
+    },
+    "pt": {
+      "hash": "ab1c086f8e55a52b782761ec6cfb630e4a72691b9e6622e8c5dbd265ad7d213d",
+      "translatedAt": "2025-12-05T19:12:33.705Z"
+    },
+    "id": {
+      "hash": "ab1c086f8e55a52b782761ec6cfb630e4a72691b9e6622e8c5dbd265ad7d213d",
+      "translatedAt": "2025-12-05T19:21:11.238Z"
+    },
+    "fr": {
+      "hash": "ab1c086f8e55a52b782761ec6cfb630e4a72691b9e6622e8c5dbd265ad7d213d",
+      "translatedAt": "2025-12-05T19:29:16.559Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/sleep.mdx": {
+    "cn": {
+      "hash": "bc9794b4ec73b2ce6fb0acc5d27a389dc592f23f3c4a03e93ccb29de6b738ade",
+      "translatedAt": "2025-12-05T18:27:17.307Z"
+    },
+    "jp": {
+      "hash": "bc9794b4ec73b2ce6fb0acc5d27a389dc592f23f3c4a03e93ccb29de6b738ade",
+      "translatedAt": "2025-12-05T18:35:32.159Z"
+    },
+    "es": {
+      "hash": "bc9794b4ec73b2ce6fb0acc5d27a389dc592f23f3c4a03e93ccb29de6b738ade",
+      "translatedAt": "2025-12-05T18:43:58.958Z"
+    },
+    "pt": {
+      "hash": "bc9794b4ec73b2ce6fb0acc5d27a389dc592f23f3c4a03e93ccb29de6b738ade",
+      "translatedAt": "2025-12-05T19:12:22.438Z"
+    },
+    "id": {
+      "hash": "bc9794b4ec73b2ce6fb0acc5d27a389dc592f23f3c4a03e93ccb29de6b738ade",
+      "translatedAt": "2025-12-05T19:21:16.994Z"
+    },
+    "fr": {
+      "hash": "bc9794b4ec73b2ce6fb0acc5d27a389dc592f23f3c4a03e93ccb29de6b738ade",
+      "translatedAt": "2025-12-05T19:29:20.440Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-api/get-run.mdx": {
+    "cn": {
+      "hash": "136cba21fca4361e53522bcb95891f94e0adba7ed60f435c21c5118463d91338",
+      "translatedAt": "2025-12-05T18:27:17.411Z"
+    },
+    "jp": {
+      "hash": "136cba21fca4361e53522bcb95891f94e0adba7ed60f435c21c5118463d91338",
+      "translatedAt": "2025-12-05T18:35:51.898Z"
+    },
+    "es": {
+      "hash": "136cba21fca4361e53522bcb95891f94e0adba7ed60f435c21c5118463d91338",
+      "translatedAt": "2025-12-05T18:44:05.829Z"
+    },
+    "pt": {
+      "hash": "136cba21fca4361e53522bcb95891f94e0adba7ed60f435c21c5118463d91338",
+      "translatedAt": "2025-12-05T19:12:26.809Z"
+    },
+    "id": {
+      "hash": "136cba21fca4361e53522bcb95891f94e0adba7ed60f435c21c5118463d91338",
+      "translatedAt": "2025-12-05T19:21:03.727Z"
+    },
+    "fr": {
+      "hash": "136cba21fca4361e53522bcb95891f94e0adba7ed60f435c21c5118463d91338",
+      "translatedAt": "2025-12-05T19:29:13.779Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-api/start.mdx": {
+    "cn": {
+      "hash": "31a295ddd813d696c416faa30b0e1e68985b3e627fefb24411407f978abd3e1c",
+      "translatedAt": "2025-12-05T18:27:25.016Z"
+    },
+    "jp": {
+      "hash": "31a295ddd813d696c416faa30b0e1e68985b3e627fefb24411407f978abd3e1c",
+      "translatedAt": "2025-12-05T18:34:40.080Z"
+    },
+    "es": {
+      "hash": "31a295ddd813d696c416faa30b0e1e68985b3e627fefb24411407f978abd3e1c",
+      "translatedAt": "2025-12-05T18:44:30.833Z"
+    },
+    "pt": {
+      "hash": "31a295ddd813d696c416faa30b0e1e68985b3e627fefb24411407f978abd3e1c",
+      "translatedAt": "2025-12-05T19:09:28.013Z"
+    },
+    "id": {
+      "hash": "31a295ddd813d696c416faa30b0e1e68985b3e627fefb24411407f978abd3e1c",
+      "translatedAt": "2025-12-05T19:21:20.073Z"
+    },
+    "fr": {
+      "hash": "31a295ddd813d696c416faa30b0e1e68985b3e627fefb24411407f978abd3e1c",
+      "translatedAt": "2025-12-05T19:28:17.816Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-api/resume-hook.mdx": {
+    "cn": {
+      "hash": "03879155ac459d6a4e36117922bb9a1e5d8bd32cb793cf1e1a3935326d22f1d5",
+      "translatedAt": "2025-12-05T18:27:34.778Z"
+    },
+    "jp": {
+      "hash": "03879155ac459d6a4e36117922bb9a1e5d8bd32cb793cf1e1a3935326d22f1d5",
+      "translatedAt": "2025-12-05T18:34:40.284Z"
+    },
+    "es": {
+      "hash": "03879155ac459d6a4e36117922bb9a1e5d8bd32cb793cf1e1a3935326d22f1d5",
+      "translatedAt": "2025-12-05T18:44:16.776Z"
+    },
+    "pt": {
+      "hash": "03879155ac459d6a4e36117922bb9a1e5d8bd32cb793cf1e1a3935326d22f1d5",
+      "translatedAt": "2025-12-05T19:09:28.079Z"
+    },
+    "id": {
+      "hash": "03879155ac459d6a4e36117922bb9a1e5d8bd32cb793cf1e1a3935326d22f1d5",
+      "translatedAt": "2025-12-05T19:21:16.589Z"
+    },
+    "fr": {
+      "hash": "03879155ac459d6a4e36117922bb9a1e5d8bd32cb793cf1e1a3935326d22f1d5",
+      "translatedAt": "2025-12-05T19:28:12.199Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-api/resume-webhook.mdx": {
+    "cn": {
+      "hash": "f42e5fbbf7be2af308cda1d1310e34b0fc3a348012233db90b506aa22e20ef23",
+      "translatedAt": "2025-12-05T18:27:38.643Z"
+    },
+    "jp": {
+      "hash": "f42e5fbbf7be2af308cda1d1310e34b0fc3a348012233db90b506aa22e20ef23",
+      "translatedAt": "2025-12-05T18:34:50.235Z"
+    },
+    "es": {
+      "hash": "f42e5fbbf7be2af308cda1d1310e34b0fc3a348012233db90b506aa22e20ef23",
+      "translatedAt": "2025-12-05T18:44:49.766Z"
+    },
+    "pt": {
+      "hash": "f42e5fbbf7be2af308cda1d1310e34b0fc3a348012233db90b506aa22e20ef23",
+      "translatedAt": "2025-12-05T19:09:56.739Z"
+    },
+    "id": {
+      "hash": "f42e5fbbf7be2af308cda1d1310e34b0fc3a348012233db90b506aa22e20ef23",
+      "translatedAt": "2025-12-05T19:21:31.242Z"
+    },
+    "fr": {
+      "hash": "f42e5fbbf7be2af308cda1d1310e34b0fc3a348012233db90b506aa22e20ef23",
+      "translatedAt": "2025-12-05T19:28:04.873Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-ai/workflow-chat-transport.mdx": {
+    "cn": {
+      "hash": "6524e6cbe742fc4bce23c842d8bf437a5df75d03bc2fc4975c1735f54b9930ab",
+      "translatedAt": "2025-12-05T18:27:47.135Z"
+    },
+    "jp": {
+      "hash": "6524e6cbe742fc4bce23c842d8bf437a5df75d03bc2fc4975c1735f54b9930ab",
+      "translatedAt": "2025-12-05T18:34:58.406Z"
+    },
+    "es": {
+      "hash": "6524e6cbe742fc4bce23c842d8bf437a5df75d03bc2fc4975c1735f54b9930ab",
+      "translatedAt": "2025-12-05T18:42:12.238Z"
+    },
+    "pt": {
+      "hash": "6524e6cbe742fc4bce23c842d8bf437a5df75d03bc2fc4975c1735f54b9930ab",
+      "translatedAt": "2025-12-05T19:09:57.831Z"
+    },
+    "id": {
+      "hash": "6524e6cbe742fc4bce23c842d8bf437a5df75d03bc2fc4975c1735f54b9930ab",
+      "translatedAt": "2025-12-05T19:21:53.145Z"
+    },
+    "fr": {
+      "hash": "6524e6cbe742fc4bce23c842d8bf437a5df75d03bc2fc4975c1735f54b9930ab",
+      "translatedAt": "2025-12-05T19:28:32.046Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow-ai/durable-agent.mdx": {
+    "cn": {
+      "hash": "7bb78d828833912bb60043994592b25522221b9a21f7aa0d2ef84b3703d24e6a",
+      "translatedAt": "2025-12-05T18:27:47.880Z"
+    },
+    "jp": {
+      "hash": "7bb78d828833912bb60043994592b25522221b9a21f7aa0d2ef84b3703d24e6a",
+      "translatedAt": "2025-12-05T18:35:08.102Z"
+    },
+    "es": {
+      "hash": "7bb78d828833912bb60043994592b25522221b9a21f7aa0d2ef84b3703d24e6a",
+      "translatedAt": "2025-12-05T18:52:57.041Z"
+    },
+    "pt": {
+      "hash": "7bb78d828833912bb60043994592b25522221b9a21f7aa0d2ef84b3703d24e6a",
+      "translatedAt": "2025-12-05T19:11:43.257Z"
+    },
+    "id": {
+      "hash": "7bb78d828833912bb60043994592b25522221b9a21f7aa0d2ef84b3703d24e6a",
+      "translatedAt": "2025-12-05T19:22:04.010Z"
+    },
+    "fr": {
+      "hash": "7bb78d828833912bb60043994592b25522221b9a21f7aa0d2ef84b3703d24e6a",
+      "translatedAt": "2025-12-05T19:28:49.205Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/fatal-error.mdx": {
+    "cn": {
+      "hash": "eda183b56c099d3cd6d7e422ecfde9fc742ad0c6fe16d63d672e6a87b61aabe1",
+      "translatedAt": "2025-12-05T18:27:57.071Z"
+    },
+    "jp": {
+      "hash": "eda183b56c099d3cd6d7e422ecfde9fc742ad0c6fe16d63d672e6a87b61aabe1",
+      "translatedAt": "2025-12-05T18:35:20.647Z"
+    },
+    "es": {
+      "hash": "eda183b56c099d3cd6d7e422ecfde9fc742ad0c6fe16d63d672e6a87b61aabe1",
+      "translatedAt": "2025-12-05T18:52:11.661Z"
+    },
+    "pt": {
+      "hash": "eda183b56c099d3cd6d7e422ecfde9fc742ad0c6fe16d63d672e6a87b61aabe1",
+      "translatedAt": "2025-12-05T19:11:57.972Z"
+    },
+    "id": {
+      "hash": "eda183b56c099d3cd6d7e422ecfde9fc742ad0c6fe16d63d672e6a87b61aabe1",
+      "translatedAt": "2025-12-05T19:22:27.066Z"
+    },
+    "fr": {
+      "hash": "eda183b56c099d3cd6d7e422ecfde9fc742ad0c6fe16d63d672e6a87b61aabe1",
+      "translatedAt": "2025-12-05T19:29:05.061Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/get-workflow-metadata.mdx": {
+    "cn": {
+      "hash": "ba0f064ab4d108311bc2afe0b0911a9c5b65ad58fbfdf2b2ab6f65342fe50990",
+      "translatedAt": "2025-12-05T18:28:04.864Z"
+    },
+    "jp": {
+      "hash": "ba0f064ab4d108311bc2afe0b0911a9c5b65ad58fbfdf2b2ab6f65342fe50990",
+      "translatedAt": "2025-12-05T18:35:29.685Z"
+    },
+    "es": {
+      "hash": "ba0f064ab4d108311bc2afe0b0911a9c5b65ad58fbfdf2b2ab6f65342fe50990",
+      "translatedAt": "2025-12-05T18:52:06.461Z"
+    },
+    "pt": {
+      "hash": "ba0f064ab4d108311bc2afe0b0911a9c5b65ad58fbfdf2b2ab6f65342fe50990",
+      "translatedAt": "2025-12-05T19:12:14.297Z"
+    },
+    "id": {
+      "hash": "ba0f064ab4d108311bc2afe0b0911a9c5b65ad58fbfdf2b2ab6f65342fe50990",
+      "translatedAt": "2025-12-05T19:22:37.777Z"
+    },
+    "fr": {
+      "hash": "ba0f064ab4d108311bc2afe0b0911a9c5b65ad58fbfdf2b2ab6f65342fe50990",
+      "translatedAt": "2025-12-05T19:29:24.527Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/index.mdx": {
+    "cn": {
+      "hash": "908adeaf5899b5ab71a05c76f47d66ce4bedcc22b71d1671ac64a9c44272141f",
+      "translatedAt": "2025-12-05T18:28:12.085Z"
+    },
+    "jp": {
+      "hash": "908adeaf5899b5ab71a05c76f47d66ce4bedcc22b71d1671ac64a9c44272141f",
+      "translatedAt": "2025-12-05T18:36:04.823Z"
+    },
+    "es": {
+      "hash": "908adeaf5899b5ab71a05c76f47d66ce4bedcc22b71d1671ac64a9c44272141f",
+      "translatedAt": "2025-12-05T18:44:02.912Z"
+    },
+    "pt": {
+      "hash": "908adeaf5899b5ab71a05c76f47d66ce4bedcc22b71d1671ac64a9c44272141f",
+      "translatedAt": "2025-12-05T19:12:13.912Z"
+    },
+    "id": {
+      "hash": "908adeaf5899b5ab71a05c76f47d66ce4bedcc22b71d1671ac64a9c44272141f",
+      "translatedAt": "2025-12-05T19:22:51.700Z"
+    },
+    "fr": {
+      "hash": "908adeaf5899b5ab71a05c76f47d66ce4bedcc22b71d1671ac64a9c44272141f",
+      "translatedAt": "2025-12-05T19:29:20.028Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/get-step-metadata.mdx": {
+    "cn": {
+      "hash": "0b848d06b6d5bdab59113d769549da453d0db6c26a446c1d1dfa90d6ba0235ea",
+      "translatedAt": "2025-12-05T18:28:13.591Z"
+    },
+    "jp": {
+      "hash": "0b848d06b6d5bdab59113d769549da453d0db6c26a446c1d1dfa90d6ba0235ea",
+      "translatedAt": "2025-12-05T18:36:01.905Z"
+    },
+    "es": {
+      "hash": "0b848d06b6d5bdab59113d769549da453d0db6c26a446c1d1dfa90d6ba0235ea",
+      "translatedAt": "2025-12-05T18:52:19.338Z"
+    },
+    "pt": {
+      "hash": "0b848d06b6d5bdab59113d769549da453d0db6c26a446c1d1dfa90d6ba0235ea",
+      "translatedAt": "2025-12-05T19:12:30.565Z"
+    },
+    "id": {
+      "hash": "0b848d06b6d5bdab59113d769549da453d0db6c26a446c1d1dfa90d6ba0235ea",
+      "translatedAt": "2025-12-05T19:22:32.474Z"
+    },
+    "fr": {
+      "hash": "0b848d06b6d5bdab59113d769549da453d0db6c26a446c1d1dfa90d6ba0235ea",
+      "translatedAt": "2025-12-05T19:29:21.301Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/create-webhook.mdx": {
+    "cn": {
+      "hash": "0cdd419b36cd78588dc0f08ed5e66222d3acf75618af9cce9d3ef648756a9786",
+      "translatedAt": "2025-12-05T18:28:25.529Z"
+    },
+    "jp": {
+      "hash": "0cdd419b36cd78588dc0f08ed5e66222d3acf75618af9cce9d3ef648756a9786",
+      "translatedAt": "2025-12-05T18:37:22.239Z"
+    },
+    "es": {
+      "hash": "0cdd419b36cd78588dc0f08ed5e66222d3acf75618af9cce9d3ef648756a9786",
+      "translatedAt": "2025-12-05T18:52:42.289Z"
+    },
+    "pt": {
+      "hash": "0cdd419b36cd78588dc0f08ed5e66222d3acf75618af9cce9d3ef648756a9786",
+      "translatedAt": "2025-12-05T19:13:45.088Z"
+    },
+    "id": {
+      "hash": "0cdd419b36cd78588dc0f08ed5e66222d3acf75618af9cce9d3ef648756a9786",
+      "translatedAt": "2025-12-05T19:23:00.945Z"
+    },
+    "fr": {
+      "hash": "0cdd419b36cd78588dc0f08ed5e66222d3acf75618af9cce9d3ef648756a9786",
+      "translatedAt": "2025-12-05T19:30:37.379Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/get-writable.mdx": {
+    "cn": {
+      "hash": "6e48c4a6ea63fdb9f737e1ad3e66f907452db8fd1509da96c5ec8b842b8472ce",
+      "translatedAt": "2025-12-05T18:28:25.822Z"
+    },
+    "jp": {
+      "hash": "6e48c4a6ea63fdb9f737e1ad3e66f907452db8fd1509da96c5ec8b842b8472ce",
+      "translatedAt": "2025-12-05T18:36:17.942Z"
+    },
+    "es": {
+      "hash": "6e48c4a6ea63fdb9f737e1ad3e66f907452db8fd1509da96c5ec8b842b8472ce",
+      "translatedAt": "2025-12-05T18:44:24.057Z"
+    },
+    "pt": {
+      "hash": "6e48c4a6ea63fdb9f737e1ad3e66f907452db8fd1509da96c5ec8b842b8472ce",
+      "translatedAt": "2025-12-05T19:12:56.165Z"
+    },
+    "id": {
+      "hash": "6e48c4a6ea63fdb9f737e1ad3e66f907452db8fd1509da96c5ec8b842b8472ce",
+      "translatedAt": "2025-12-05T19:23:15.950Z"
+    },
+    "fr": {
+      "hash": "6e48c4a6ea63fdb9f737e1ad3e66f907452db8fd1509da96c5ec8b842b8472ce",
+      "translatedAt": "2025-12-05T19:29:35.949Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/create-hook.mdx": {
+    "cn": {
+      "hash": "ea8a688b75471b704805a041ad8c5f05ab7c50df93998cbfe25128ec0efb7492",
+      "translatedAt": "2025-12-05T18:28:30.083Z"
+    },
+    "jp": {
+      "hash": "ea8a688b75471b704805a041ad8c5f05ab7c50df93998cbfe25128ec0efb7492",
+      "translatedAt": "2025-12-05T18:37:10.651Z"
+    },
+    "es": {
+      "hash": "ea8a688b75471b704805a041ad8c5f05ab7c50df93998cbfe25128ec0efb7492",
+      "translatedAt": "2025-12-05T18:52:32.872Z"
+    },
+    "pt": {
+      "hash": "ea8a688b75471b704805a041ad8c5f05ab7c50df93998cbfe25128ec0efb7492",
+      "translatedAt": "2025-12-05T19:13:43.129Z"
+    },
+    "id": {
+      "hash": "ea8a688b75471b704805a041ad8c5f05ab7c50df93998cbfe25128ec0efb7492",
+      "translatedAt": "2025-12-05T19:22:38.051Z"
+    },
+    "fr": {
+      "hash": "ea8a688b75471b704805a041ad8c5f05ab7c50df93998cbfe25128ec0efb7492",
+      "translatedAt": "2025-12-05T19:30:39.798Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/define-hook.mdx": {
+    "cn": {
+      "hash": "ee296dc54579a85d8af963e3f05731f1466ed5dfe78ccf9d2ef0118e2f63ab20",
+      "translatedAt": "2025-12-05T18:28:30.820Z"
+    },
+    "jp": {
+      "hash": "ee296dc54579a85d8af963e3f05731f1466ed5dfe78ccf9d2ef0118e2f63ab20",
+      "translatedAt": "2025-12-05T18:37:31.851Z"
+    },
+    "es": {
+      "hash": "ee296dc54579a85d8af963e3f05731f1466ed5dfe78ccf9d2ef0118e2f63ab20",
+      "translatedAt": "2025-12-05T18:52:41.982Z"
+    },
+    "pt": {
+      "hash": "ee296dc54579a85d8af963e3f05731f1466ed5dfe78ccf9d2ef0118e2f63ab20",
+      "translatedAt": "2025-12-05T19:13:37.043Z"
+    },
+    "id": {
+      "hash": "ee296dc54579a85d8af963e3f05731f1466ed5dfe78ccf9d2ef0118e2f63ab20",
+      "translatedAt": "2025-12-05T19:22:55.504Z"
+    },
+    "fr": {
+      "hash": "ee296dc54579a85d8af963e3f05731f1466ed5dfe78ccf9d2ef0118e2f63ab20",
+      "translatedAt": "2025-12-05T19:30:34.316Z"
+    }
+  },
+  "/Users/haydenbleasel/GitHub/workflow/docs/content/docs/api-reference/workflow/fetch.mdx": {
+    "cn": {
+      "hash": "2ef6f990241a7ed1e2fbc5a45e0a92a094d954501af69926a0a73b8896d8e2c9",
+      "translatedAt": "2025-12-05T18:28:32.164Z"
+    },
+    "jp": {
+      "hash": "2ef6f990241a7ed1e2fbc5a45e0a92a094d954501af69926a0a73b8896d8e2c9",
+      "translatedAt": "2025-12-05T18:35:57.693Z"
+    },
+    "es": {
+      "hash": "2ef6f990241a7ed1e2fbc5a45e0a92a094d954501af69926a0a73b8896d8e2c9",
+      "translatedAt": "2025-12-05T18:52:34.402Z"
+    },
+    "pt": {
+      "hash": "2ef6f990241a7ed1e2fbc5a45e0a92a094d954501af69926a0a73b8896d8e2c9",
+      "translatedAt": "2025-12-05T19:12:50.339Z"
+    },
+    "id": {
+      "hash": "2ef6f990241a7ed1e2fbc5a45e0a92a094d954501af69926a0a73b8896d8e2c9",
+      "translatedAt": "2025-12-05T19:22:53.349Z"
+    },
+    "fr": {
+      "hash": "2ef6f990241a7ed1e2fbc5a45e0a92a094d954501af69926a0a73b8896d8e2c9",
+      "translatedAt": "2025-12-05T19:29:39.264Z"
+    }
+  }
+}

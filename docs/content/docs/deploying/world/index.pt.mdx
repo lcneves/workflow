@@ -1,0 +1,43 @@
+---
+title: Mundos
+---
+
+<Callout type="wip">
+
+Esta página está em desenvolvimento.
+
+</Callout>
+
+O fluxo de trabalho `World` é uma interface que abstrai como workflows e passos se comunicam com o mundo externo, permitindo que você crie adaptadores personalizados e os reutilize em diferentes ambientes, infraestruturas e provedores de hospedagem.
+
+## Escolhendo uma implementação de World
+
+* Por padrão, o Workflow usa o [Local World](/docs/deploying/world/local-world) para facilitar o desenvolvimento local.
+* Ao ser implantado no Vercel, o Workflow alterna para o [Vercel World](/docs/deploying/world/vercel-world).
+
+Se você quiser usar uma implementação de World diferente, defina a variável de ambiente `WORKFLOW_TARGET_WORLD` para o nome NPM do pacote World desejado:
+
+```bash
+export WORKFLOW_TARGET_WORLD=@my-namespace/my-npm-package
+export MY_WORLD_CONFIG=... # implementation-specific configuration
+```
+
+## Worlds integrados
+
+O Workflow DevKit fornece duas implementações de World integradas:
+
+- [Local World](/docs/deploying/world/local-world) - Baseado no sistema de arquivos para desenvolvimento local
+- [Vercel World](/docs/deploying/world/vercel-world) - Pronto para produção para implantações no Vercel
+
+## Worlds da comunidade
+
+> Esses Worlds são mantidos pela comunidade e testados em CI. Veja o [worlds-manifest.json](https://github.com/vercel/workflow/blob/main/worlds-manifest.json) para detalhes de configuração.
+
+- [Turso](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/turso) (`@workflow-worlds/turso`) - Turso/libSQL World para bancos de dados SQLite embutidos ou remotos
+- [MongoDB](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/mongodb) (`@workflow-worlds/mongodb`) - MongoDB World usando o driver nativo
+- [Redis](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/redis) (`@workflow-worlds/redis`) - Redis World usando BullMQ para filas, Redis Streams para saída
+
+### Outros Worlds da comunidade
+
+- [Postgres World](/docs/deploying/world/postgres-world) - Implementação de referência para um backend PostgreSQL multi-host.
+- [Jazz World](https://github.com/garden-co/workflow-world-jazz) - Uma implementação completa de World construída sobre o [Jazz](https://jazz.tools)

@@ -1,0 +1,179 @@
+---
+title: Erreurs et réessais
+---
+
+Par défaut, les erreurs levées à l'intérieur des étapes sont réessayées. De plus, Workflow DevKit fournit deux nouveaux types d'erreurs que vous pouvez utiliser pour personnaliser les réessais.
+
+## Réessais par défaut
+
+Par défaut, les étapes sont réessayées jusqu'à 3 fois en cas d'erreurs arbitraires. Vous pouvez personnaliser le nombre de réessais en ajoutant une propriété `maxRetries` à la fonction de l'étape.
+
+```typescript lineNumbers
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!"); // [!code highlight]
+  }
+
+  return response.json();
+}
+
+callApi.maxRetries = 5; // Set a custom number of retries
+```
+
+Les étapes sont mises en file d'attente immédiatement après un échec. Lisez la suite pour voir comment cela peut être personnalisé.
+
+<Callout type="info">
+  Lorsqu'une étape rejouée effectue des effets secondaires externes (paiements, e-mails, écritures API), assurez-vous que ces appels sont <strong>idempotents</strong> pour éviter des effets secondaires en double. Voir <a href="/docs/foundations/idempotency">Idempotence</a> pour plus d'informations.
+</Callout>
+
+## Erreurs intentionnelles
+
+Lorsque votre étape doit volontairement lancer une erreur et éviter le réessai, lancez simplement une [`FatalError`](/docs/api-reference/workflow/fatal-error).
+
+```typescript lineNumbers
+import { FatalError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries."); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## Personnaliser le comportement des réessais
+
+Lorsque vous devez personnaliser le délai avant un réessai, utilisez [`RetryableError`](/docs/api-reference/workflow/retryable-error) et définissez la propriété `retryAfter`.
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", { // [!code highlight]
+      retryAfter: "1m", // Duration string // [!code highlight]
+    }); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## Exemple avancé
+
+Cet exemple final combine tout ce que nous avons appris, ainsi que [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata).
+
+```typescript lineNumbers
+import { FatalError, RetryableError, getStepMetadata } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const metadata = getStepMetadata();
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Exponential backoffs
+    throw new RetryableError("Backing off...", {
+      retryAfter: (metadata.attempt ** 2) * 1000,  // [!code highlight]
+    });
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", {
+      retryAfter: new Date(Date.now() + 60000),  // Date instance // [!code highlight]
+    });
+  }
+
+  return response.json();
+}
+callApi.maxRetries = 5;
+```
+
+## Annulation des étapes échouées
+
+Lorsqu'un workflow échoue en cours d'exécution, il peut laisser le système dans un état incohérent. Un schéma courant pour y remédier est les « rollbacks » : pour chaque étape réussie, enregistrez une action d'annulation correspondante qui peut la défaire. Si une étape ultérieure échoue, exécutez les rollbacks dans l'ordre inverse pour annuler.
+
+Directives clés :
+
+- Implémentez les rollbacks comme des étapes également, afin qu'ils soient durables et bénéficient des réessais.
+- Assurez-vous que les rollbacks sont [idempotents](/docs/foundations/idempotency) ; ils peuvent s'exécuter plus d'une fois.
+- N'enfilez une compensation que lorsque l'étape correspondante en avant a réussi.
+
+```typescript lineNumbers
+// Forward steps
+async function reserveInventory(orderId: string) {
+  "use step";
+  // ... call inventory service to reserve ...
+}
+
+async function chargePayment(orderId: string) {
+  "use step";
+  // ... charge the customer ...
+}
+
+// Rollback steps
+async function releaseInventory(orderId: string) {
+  "use step";
+  // ... undo inventory reservation ...
+}
+
+async function refundPayment(orderId: string) {
+  "use step";
+  // ... refund the charge ...
+}
+
+export async function placeOrderSaga(orderId: string) {
+  "use workflow";
+
+  const rollbacks: Array<() => Promise<void>> = [];
+
+  try {
+    await reserveInventory(orderId);
+    rollbacks.push(() => releaseInventory(orderId));
+
+    await chargePayment(orderId);
+    rollbacks.push(() => refundPayment(orderId));
+
+    // ... more steps & rollbacks ...
+  } catch (e) {
+    for (const rollback of rollbacks.reverse()) {
+      await rollback();
+    }
+    // Rethrow so the workflow records the failure after rollbacks
+    throw e;
+  }
+}
+```

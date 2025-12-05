@@ -1,0 +1,44 @@
+---
+title: getWorkflowMetadata
+---
+
+返回当前工作流函数可用的附加元数据。
+
+当您需要时，您可能想使用此函数：
+
+* 记录工作流运行 ID
+* 访问工作流的计时信息
+
+<Callout>
+如果您需要访问步骤上下文，请查看 [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)。
+</Callout>
+
+```typescript lineNumbers
+import { getWorkflowMetadata } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+
+    const ctx = getWorkflowMetadata() // [!code highlight]
+    console.log(ctx.workflowRunId)
+}
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { getWorkflowMetadata } from "workflow";
+export default getWorkflowMetadata;`}
+showSections={['parameters']}
+/>
+
+### 返回值
+
+<TSDoc
+definition={`
+import type { WorkflowMetadata } from "workflow";
+export default WorkflowMetadata;`}
+/>

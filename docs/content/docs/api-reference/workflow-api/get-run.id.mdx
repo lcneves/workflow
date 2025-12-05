@@ -1,0 +1,78 @@
+---
+title: getRun
+---
+
+Mengambil metadata jalannya workflow dan informasi status untuk ID run yang diberikan. Fungsi ini menyediakan akses langsung ke detail jalannya workflow tanpa menunggu penyelesaian, sehingga ideal untuk pemeriksaan status dan pemantauan.
+
+Gunakan fungsi ini ketika Anda perlu memeriksa status workflow, mendapatkan informasi waktu, atau mengakses metadata workflow tanpa memblokir hingga workflow selesai.
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+const run = getRun("my-run-id");
+```
+
+## Tanda Tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { getRun } from "workflow/api";
+export default getRun;`}
+showSections={["parameters"]}
+/>
+
+### Mengembalikan
+
+Mengembalikan objek `Run`:
+
+<TSDoc
+definition={`
+import { Run } from "workflow/api";
+export default Run;`}
+showSections={["returns"]}
+/>
+
+#### WorkflowReadableStreamOptions
+
+<TSDoc
+definition={`
+import type { WorkflowReadableStreamOptions } from "workflow/api";
+export default WorkflowReadableStreamOptions;`}
+/>
+
+## Contoh
+
+### Pemeriksaan Status Dasar
+
+Periksa status saat ini dari sebuah jalannya workflow:
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const runId = url.searchParams.get("runId");
+
+  if (!runId) {
+    return Response.json({ error: "No runId provided" }, { status: 400 });
+  }
+
+  try {
+    const run = getRun(runId); // [!code highlight]
+    const status = await run.status;
+
+    return Response.json({ status });
+  } catch (error) {
+    return Response.json(
+      { error: "Workflow run not found" },
+      { status: 404 }
+    );
+  }
+}
+```
+
+## Fungsi Terkait
+
+- [`start()`](/docs/api-reference/workflow-api/start) - Mulai workflow baru dan dapatkan ID run-nya.

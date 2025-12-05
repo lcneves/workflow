@@ -1,0 +1,204 @@
+---
+title: Sleep, Suspense y programación
+---
+
+Los agentes de IA a veces necesitan pausar la ejecución para programar acciones recurrentes o futuras, esperar antes de reintentar una operación (por ejemplo, por limitación de tasa) o esperar a que esté disponible un estado externo.
+
+La función `sleep` de Workflow DevKit permite a los agentes pausar la ejecución sin consumir recursos y reanudar en un momento especificado, después de una duración determinada o en respuesta a un evento externo. Las operaciones de workflow que se suspenden sobrevivirán a reinicios, nuevos despliegues y cambios en la infraestructura, independientemente de si la suspensión dura segundos o meses.
+
+<Callout type="info">
+Consulta la [Referencia de la API de `sleep()`](/docs/api-reference/workflow/sleep) para la lista completa de formatos de duración compatibles y la documentación detallada de la API, y consulta la documentación de [hooks](/docs/foundations/hooks) para más información sobre cómo reanudar en respuesta a eventos externos.
+</Callout>
+
+## Agregar una herramienta sleep
+
+Sleep es una función incorporada en Workflow DevKit, por lo que exponerla como una herramienta es tan simple como envolverla en una definición de herramienta. Aprende más sobre cómo definir herramientas en [Patrones para definir herramientas](/docs/ai/defining-tools).
+
+<Steps>
+
+<Step>
+
+### Definir la herramienta
+
+Agrega una nueva herramienta "sleep" a las `tools` definidas en `workflows/chat/steps/tools.ts`:
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable, sleep } from "workflow"; // [!code highlight]
+
+// ... existing imports ...
+
+async function executeSleep( // [!code highlight]
+  { durationMs }: { durationMs: number }, // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - sleep is a workflow-level function // [!code highlight]
+  await sleep(durationMs); // [!code highlight]
+  return { message: `Slept for ${durationMs}ms` }; // [!code highlight]
+}
+
+// ... existing tool functions ...
+
+export const flightBookingTools = {
+ // ... existing tool definitions ...
+ sleep: { // [!code highlight]
+  description: "Pause execution for a specified duration", // [!code highlight]
+  inputSchema: z.object({ // [!code highlight]
+    durationMs: z.number().describe("Duration to sleep in milliseconds"), // [!code highlight]
+  }), // [!code highlight]
+  execute: executeSleep, // [!code highlight]
+ } // [!code highlight]
+}
+```
+
+<Callout type="info">
+  Ten en cuenta que la función `sleep()` debe llamarse desde el contexto de workflow, no desde dentro de un step. Por eso `executeSleep` no tiene "use step" — se ejecuta en el contexto del workflow donde `sleep()` está disponible.
+</Callout>
+
+ ¡Con esto ya estará disponible toda la funcionalidad de sleep para el agente!
+
+</Step>
+
+<Step>
+
+### Mostrar el estado de la herramienta en la interfaz de usuario (UI)
+
+Para completarlo, amplía la interfaz de usuario para mostrar el estado de la llamada a la herramienta. Esto se puede hacer mostrando la información de la llamada a la herramienta directamente, o emitiendo partes de datos personalizadas al stream (consulta [Actualizaciones en streaming desde herramientas](/docs/ai/streaming-updates-from-tools) para más detalles). En este caso, dado que no hay actualizaciones de progreso detalladas que mostrar, simplemente mostraremos la información de la llamada a la herramienta directamente:
+
+```typescript title="app/page.tsx" lineNumbers
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                        part.type === "tool-sleep" // [!code highlight]
+                      ) {
+                        // ...
+                      }
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+
+function renderToolOutput(part: any) {
+  // ...
+  switch (part.type) {
+    // ...
+    case "tool-sleep": { // [!code highlight]
+      return ( // [!code highlight]
+        <div className="space-y-2"> // [!code highlight]
+          <p className="text-sm font-medium">Sleeping for {part.input.durationMs}ms...</p> // [!code highlight]
+        </div> // [!code highlight]
+      ); // [!code highlight]
+    }
+    // ...
+}
+
+```
+
+</Step>
+
+</Steps>
+
+Ahora, prueba de nuevo el agente de reserva de vuelos y pídele que se duerma 10 segundos antes de comprobar cualquier vuelo. Verás que el agente se pausa y la interfaz refleja el estado de la llamada a la herramienta.
+
+## Casos de uso
+
+Además de proporcionar `sleep()` como herramienta, existen otros casos de uso para agentes que suelen requerir suspensión y reanudación.
+
+### Limitación de tasa
+
+Cuando se alcanzan los límites de tasa de la API, utiliza `RetryableError` con un retraso:
+
+```typescript lineNumbers
+async function callRateLimitedAPI(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After");
+    throw new RetryableError("Rate limited", {
+      retryAfter: retryAfter ? parseInt(retryAfter) * 1000 : "1m",
+    });
+  }
+
+  return response.json();
+}
+```
+
+### Sondeo con retroceso exponencial
+
+Consulta un resultado con retrasos crecientes:
+
+```typescript lineNumbers
+export async function pollForResult(jobId: string) {
+  "use workflow";
+
+  let attempt = 0;
+  const maxAttempts = 10;
+
+  while (attempt < maxAttempts) {
+    const result = await checkJobStatus(jobId);
+
+    if (result.status === "complete") {
+      return result.data;
+    }
+
+    attempt++;
+    await sleep(Math.min(1000 * 2 ** attempt, 60000)); // Exponential backoff, max 1 minute
+  }
+
+  throw new Error("Job did not complete in time");
+}
+
+async function checkJobStatus(jobId: string) {
+  "use step";
+  // Check job status...
+}
+```
+
+## Documentación relacionada
+
+- [Referencia de la API de `sleep()`](/docs/api-reference/workflow/sleep) - Documentación completa de la API con todos los formatos de duración
+- [Flujos de trabajo y pasos](/docs/foundations/workflows-and-steps) - Comprender el contexto del workflow
+- [Errores y reintentos](/docs/foundations/errors-and-retries) - Uso de `RetryableError` con retrasos

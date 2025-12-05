@@ -1,0 +1,79 @@
+---
+title: Penerapan
+icon: FlaskConical
+---
+
+<Callout>
+  Bagian ini saat ini bersifat eksperimental dan dapat berubah. Cobalah dan bagikan umpan balik Anda di [GitHub](https://github.com/vercel/workflow/discussions).
+</Callout>
+
+Workflows dapat berjalan pada infrastruktur apa pun melalui **Worlds**. Sebuah World adalah adapter yang bertanggung jawab untuk menangani penyimpanan workflow, antrean, autentikasi, dan streaming melalui backend tertentu.
+
+## Apa itu Worlds?
+
+Sebuah **World** menghubungkan workflows ke infrastruktur yang menjalankannya. Anggaplah ini sebagai "lingkungan" tempat workflows Anda berada dan dieksekusi. Antarmuka World mengabstraksi perbedaan antara pengembangan lokal dan penerapan produksi, memungkinkan kode workflow yang sama berjalan mulus di berbagai lingkungan.
+
+## Perilaku Default
+
+Worlds dikonfigurasi secara otomatis tergantung pada skenario:
+
+- **Pengembangan lokal** - Secara otomatis menggunakan Local World
+- **Penyebaran Vercel** - Secara otomatis menggunakan Vercel World
+
+Saat menggunakan Worlds lain, Anda dapat secara eksplisit mengatur konfigurasi melalui variabel lingkungan. Rujuk dokumentasi untuk World yang sesuai untuk detail konfigurasi.
+
+## Worlds Bawaan
+
+Workflow DevKit menyertakan dua implementasi World:
+
+<Cards>
+  <Card title="Local World" href="/docs/deploying/world/local-world">
+    Backend berbasis filesystem untuk pengembangan lokal, menyimpan data di direktori `.workflow-data/`.
+  </Card>
+  <Card title="Vercel World" href="/docs/deploying/world/vercel-world">
+    Backend siap produksi untuk penyebaran Vercel, terintegrasi dengan infrastruktur Vercel.
+    </Card>
+</Cards>
+
+## Membangun World
+
+Di atas Worlds bawaan yang disediakan oleh Workflow DevKit, Anda juga dapat membangun implementasi World baru untuk infrastruktur kustom:
+
+- Backend basis data (PostgreSQL, MySQL, MongoDB, dll.)
+- Penyedia cloud (AWS, GCP, Azure, dll.)
+- Sistem antrean kustom
+- Platform pihak ketiga
+
+Untuk membangun World kustom, gunakan `World` yang diimplementasikan komunitas, atau implementasikan antarmuka `World` sendiri. Antarmuka berikut diperlukan:
+
+- **Storage** - Menyimpan eksekusi workflow, langkah, hook, dan metadata
+- **Queue** - Menempatkan ke antrean dan memproses langkah workflow secara asinkron
+- **AuthProvider** - Menangani autentikasi untuk akses API
+- **Streamer** - Mengelola stream yang dapat dibaca dan ditulis
+
+Lihat [Referensi API World](/docs/deploying/world) untuk detail implementasi.
+
+### Menggunakan World pihak ketiga
+
+Untuk backend kustom dan implementasi World pihak ketiga, rujuk dokumentasi World spesifik untuk detail konfigurasi. Setiap World mungkin memiliki kumpulan variabel lingkungan yang diperlukan dan opsi konfigurasi sendiri.
+
+## Observabilitas
+
+[Alat Observabilitas](/docs/observability) (CLI dan Web UI) dapat terhubung ke backend World mana pun untuk memeriksa data workflow. Secara default, alat ini terhubung ke lingkungan lokal Anda, tetapi juga dapat dikonfigurasi untuk memeriksa lingkungan jarak jauh:
+
+```bash
+# Inspect local workflows
+npx workflow inspect runs
+
+# Inspect remote workflows (custom worlds)
+npx workflow inspect runs --backend <your-world-name>
+```
+
+Pelajari lebih lanjut tentang [Observabilitas](/docs/observability).
+
+## Pelajari Lebih Lanjut
+
+- [Local World](/docs/deploying/world/local-world) - Backend pengembangan lokal
+- [Vercel World](/docs/deploying/world/vercel-world) - Backend produksi untuk Vercel
+- [World API Reference](/docs/deploying/world) - Membangun World kustom
+- [Observability](/docs/observability) - Memeriksa data workflow

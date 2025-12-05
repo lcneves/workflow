@@ -1,0 +1,242 @@
+---
+title: Hono
+description: このガイドでは、Hono アプリで最初のワークフローを設定する手順を説明します。途中で、開発キットを自分のプロジェクトで使用するために基本となる概念について学びます。
+---
+
+<Steps>
+
+<Step>
+## Hono プロジェクトを作成する
+
+まず新しい Hono プロジェクトを作成します。このコマンドは `my-workflow-app` という名前の新しいディレクトリを作成し、その中に Hono プロジェクトをセットアップします。
+
+```bash
+npm create hono@latest my-workflow-app -- --template=nodejs
+```
+
+作成したディレクトリに入ります:
+
+```bash
+cd my-workflow-app
+```
+
+### `workflow`, `nitro`, `rollup` をインストール
+
+```package-install
+npm i workflow nitro rollup
+```
+
+<Callout>
+デフォルトでは、Hono にはビルドシステムが含まれていません。Nitro を追加するとワークフロー、ラン、およびデプロイを開発および本番用にコンパイルできるようになります。Nitro の詳細は[こちら](https://v3.nitro.build)を参照してください。
+</Callout>
+
+### Nitro を設定する
+
+`workflow/nitro` モジュールを使用するための Nitro 設定として、新しいファイル `nitro.config.ts` を作成します。これにより `"use workflow"` および `"use step"` ディレクティブが使用可能になります。
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  modules: ["workflow/nitro"],
+  routes: {
+    "/**": "./src/index.ts"
+  }
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      TypeScript の IntelliSense を設定する（任意）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+IDE で役立つヒントを有効にするには、`tsconfig.json` に workflow プラグインを設定します:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+### `package.json` を更新する
+
+Nitro ビルダーを使用するには、`package.json` を更新して次のスクリプトを含めます:
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## 最初のワークフローを作成する
+
+最初のワークフロー用の新しいファイルを作成します:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+これらの関数は次に実装しますが、このコードを見てみましょう:
+
+- ディレクティブ `"use workflow"` を使用して **workflow** 関数を定義します。workflow 関数は個々の **ステップ** の _オーケストレーター_ と考えてください。
+- Workflow DevKit の `sleep` 関数は、リソースを消費することなくワークフローの実行を中断できるようにします。sleep は数秒、数時間、数日、あるいは数か月に及ぶことがあります。
+
+## ワークフローステップを作成する
+
+ここで先ほどの不足している関数を定義します。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+このコードを見てみましょう:
+
+- ビジネスロジックは **ステップ** 内にあります。ステップが **workflow** の中で呼び出されると、`sleep` と同様にワークフローが中断されている間に別のリクエストで実行されるようキューに入れられます。
+- `sendWelcomeEmail` のようにステップがエラーを投げると、ステップは成功するまで（またはステップの最大再試行回数に達するまで）自動的に再試行されます。
+- 意図的なエラーで再試行すべきでない場合、ステップは `FatalError` をスローできます。
+
+<Callout>
+  ワークフロー、ステップ、およびイベントを中断または処理する他の方法については、[基礎](/docs/foundations) をさらに詳しく見ていきます。
+</Callout>
+
+</Step>
+
+<Step>
+
+## ルートハンドラーを作成する
+
+新しいワークフローを呼び出すために、`src/index.ts` に次のコードで API ルートハンドラーを作成します:
+
+```typescript title="src/index.ts"
+import { Hono } from "hono";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = new Hono();
+
+app.post("/api/signup", async (c) => {
+  const { email } = await c.req.json();
+  await start(handleUserSignup, [email]);
+  return c.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+このルートハンドラーは、ワークフローをトリガーする `/api/signup` の `POST` エンドポイントを作成します。
+
+</Step>
+
+<Step>
+
+## 開発環境で実行する
+
+開発サーバーを起動するには、Hono ルートディレクトリで次のコマンドを実行します:
+
+```bash
+npm run dev
+```
+
+開発サーバーが実行されている状態で、次のコマンドを実行するとワークフローをトリガーできます:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Hono 開発サーバーのログを確認して、ワークフローの実行や処理されているステップを確認してください。
+
+さらに、ワークフローの実行やステップを詳しく確認するには、[Workflow DevKit の CLI または Web UI](/docs/observability) を使用できます。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit の Web UI" />
+
+</Step>
+
+</Steps>
+
+## 本番環境へのデプロイ
+
+Workflow DevKit アプリは現在 [Vercel](https://vercel.com/home) へのデプロイ時に最適に動作し、特別な設定は不要です。
+
+ワークフローを他の環境にデプロイする方法については、[デプロイ](/docs/deploying) セクションを確認してください。
+
+## 次のステップ
+
+- [基礎](/docs/foundations) で詳細を学ぶ。
+- 問題が発生した場合は [エラー](/docs/errors) を確認する。
+- [API リファレンス](/docs/api-reference) を参照する。

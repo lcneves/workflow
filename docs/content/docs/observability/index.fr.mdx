@@ -1,0 +1,53 @@
+---
+title: Observabilité
+---
+
+Workflow DevKit fournit des outils puissants pour inspecter, surveiller et déboguer vos workflows via la CLI et l'Interface Web. Ces outils vous permettent d'examiner les exécutions de workflow, les étapes, les webhooks, les événements et de diffuser la sortie.
+
+## Démarrage rapide
+
+```bash
+npx workflow
+```
+
+La CLI est fournie avec Workflow DevKit et enregistre la commande `workflow`. Si le package `workflow` n'est pas déjà installé, `npx workflow` l'installera globalement, ou utilisera la version locale installée si disponible.
+
+Commencez à inspecter vos workflows locaux :
+
+```bash
+# See all available commands
+npx workflow inspect --help
+
+# List recent workflow runs
+npx workflow inspect runs
+```
+
+## Interface Web
+
+Workflow DevKit est fourni avec une interface Web locale pour inspecter vos workflows. La CLI servira localement l'Interface Web lorsque vous utilisez le flag `--web`.
+
+```bash
+# Launch Web UI for visual exploration
+npx workflow inspect runs --web
+```
+
+<img src="/o11y-ui.png" alt="Interface Web de Workflow DevKit" />
+
+## Backends
+
+La CLI de Workflow DevKit peut inspecter les données provenant de n'importe quel [World](/docs/deploying#what-are-worlds). Par défaut, elle inspecte les données de votre environnement de développement local. Par exemple, si vous utilisez Next.js pour développer des workflows localement, la CLI trouvera les données dans votre répertoire `.next/workflow-data/`.
+
+Si vous déployez des workflows dans un environnement de production, mais que vous souhaitez inspecter les données à l'aide de la CLI, vous pouvez spécifier le World que vous utilisez en définissant le flag `--backend` sur le nom de votre World ou le nom du package, par exemple `vercel`.
+
+<Callout>
+Les backends peuvent nécessiter une configuration supplémentaire. Si des variables d'environnement manquent, le package World devrait fournir des instructions sur la façon de le configurer.
+</Callout>
+
+### Vercel Backend
+
+Pour inspecter les workflows s'exécutant sur Vercel, assurez-vous d'être connecté à la CLI Vercel et d'avoir lié votre projet. Consultez les [Docs d'authentification et de liaison de projet de Vercel CLI](https://vercel.com/docs/cli/project-linking) pour plus d'informations. Ensuite, spécifiez simplement le backend comme `vercel`.
+
+```bash
+# Inspect workflows running on Vercel
+npx workflow inspect runs --backend vercel
+```

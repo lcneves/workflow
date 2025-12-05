@@ -1,0 +1,53 @@
+---
+title: 冪等性
+---
+
+冪等性は、操作が重複した副作用を生じることなく安全に再試行できる性質です。
+
+分散システム（外部APIの呼び出しなど）では、操作が成功したかどうかを見ただけでは、その操作が一度だけ実行されたことを保証できない場合があります。例えば、ユーザーに10ドルを請求する支払いAPIを考えてみてください。しかしネットワーク障害で確認応答が失われた場合、ステップが（前の試行が失敗と見なされて）再試行されると、ユーザーに再度請求が発生します。
+
+これを防ぐために、多くの外部APIは冪等性キーをサポートしています。冪等性キーは操作の一意の識別子であり、リクエストの重複を排除するために使用できます。
+
+## コアパターン: ステップIDを冪等性キーとして使用する
+
+各ステップ呼び出しには、再試行間で変わらない安定した `stepId` が付与されます。サードパーティのAPIを呼び出す際にはこれを冪等性キーとして使用してください。
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+
+  const { stepId } = getStepMetadata();
+
+  // Example: Stripe-style idempotency key
+  // This guarantees only one charge is created even if the step retries
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: stepId, // [!code highlight]
+    }
+  );
+}
+```
+
+Why this works:
+
+- **再試行間で安定している**: `stepId` は試行間で変わりません。
+- **ステップごとにグローバルで一意**: 冪等性キーに必要な一意性要件を満たします。
+
+## ベストプラクティス
+
+- **ステップ内で冪等ではない外部副作用に対しては常に冪等性キーを提供する**（支払い、メール、SMS、キューなど）。
+- **キーとして `stepId` を優先する**; 再試行間で安定しステップごとに一意です。
+- **キーを決定論的に保つ**; タイムスタンプや試行回数カウンターを含めないでください。
+- **409/Conflict レスポンスを優雅に処理する**; 前の試行が完了している場合は成功として扱ってください。
+
+## 関連ドキュメント
+
+- リトライについては [エラーと再試行](/docs/foundations/errors-and-retries) を参照してください
+- APIリファレンス: [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)

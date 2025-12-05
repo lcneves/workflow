@@ -1,0 +1,253 @@
+---
+title: WorkflowChatTransport
+---
+
+<Callout type="warn">
+`@workflow/ai` 包目前处于积极开发中，应被视为试验性。
+</Callout>
+
+一个为 AI SDK 提供的聊天传输实现，能够在被中断的流上提供可靠的消息流传输并自动重连。此传输可作为默认 AI SDK 传输的即插即用替代方案，实现从网络问题、页面刷新或 Vercel Function 超时的无缝恢复。
+
+<Callout>
+`WorkflowChatTransport` 实现了 AI SDK 的 [`ChatTransport`](https://ai-sdk.dev/docs/ai-sdk-ui/transport) 接口，并设计用于与基于工作流的聊天应用协同工作。它要求端点返回 `x-workflow-run-id` 响应头以启用流恢复。
+</Callout>
+
+```typescript lineNumbers
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+
+export default function Chat() {
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport(),
+  });
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>{m.content}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+## API 签名
+
+### 类
+
+<TSDoc
+definition={`
+import { WorkflowChatTransport } from "@workflow/ai";
+export default WorkflowChatTransport;`}
+/>
+
+### WorkflowChatTransportOptions
+
+<TSDoc
+definition={`
+import type { WorkflowChatTransportOptions } from "@workflow/ai";
+export default WorkflowChatTransportOptions;`}
+/>
+
+## 主要功能
+
+- **自动重连**: 自动从中断的流中恢复，并具有可配置的重试限制
+- **工作流集成**: 与提供 `x-workflow-run-id` 头的基于工作流的端点无缝配合
+- **可定制的请求**: 允许通过 `prepareSendMessagesRequest` 和 `prepareReconnectToStreamRequest` 拦截并修改请求
+- **流回调**: 提供用于通过 `onChatSendMessage` 和 `onChatEnd` 跟踪聊天生命周期的钩子
+- **自定义 Fetch**: 支持用于高级用例的自定义 fetch 实现
+
+## 注意事项
+
+- 该传输期望聊天端点在响应中返回 `x-workflow-run-id` 头以启用流恢复
+- 默认情况下，该传输将 POST 到 `/api/chat` 并通过 `/api/chat/{runId}/stream` 重新连接
+- `onChatSendMessage` 回调会收到完整的响应对象，允许您提取并存储工作流运行 ID 以便会话恢复
+- 当在初始响应中未收到 "finish" chunk 时，会自动检测到流中断
+- `maxConsecutiveErrors` 选项控制在放弃之前进行多少次重连尝试（默认：3）
+
+## 示例
+
+### 基本聊天设置
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useState } from "react";
+
+export default function BasicChat() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport(),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+### 带会话持久化与恢复
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useMemo, useState } from "react";
+
+export default function ChatWithResumption() {
+  const [input, setInput] = useState("");
+  const activeWorkflowRunId = useMemo(() => {
+    if (typeof window === "undefined") return;
+    return localStorage.getItem("active-workflow-run-id") ?? undefined;
+  }, []);
+
+  const { messages, sendMessage } = useChat({
+    resume: !!activeWorkflowRunId,
+    transport: new WorkflowChatTransport({
+      onChatSendMessage: (response, options) => {
+        // Save chat history to localStorage
+        localStorage.setItem(
+          "chat-history",
+          JSON.stringify(options.messages)
+        );
+
+        // Extract and store the workflow run ID for session resumption
+        const workflowRunId = response.headers.get("x-workflow-run-id");
+        if (workflowRunId) {
+          localStorage.setItem("active-workflow-run-id", workflowRunId);
+        }
+      },
+      onChatEnd: ({ chatId, chunkIndex }) => {
+        console.log(`Chat ${chatId} completed with ${chunkIndex} chunks`);
+        // Clear the active run ID when chat completes
+        localStorage.removeItem("active-workflow-run-id");
+      },
+    }),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+### 自定义请求配置
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useState } from "react";
+
+export default function ChatWithCustomConfig() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport({
+      prepareSendMessagesRequest: async (config) => {
+        return {
+          ...config,
+          api: "/api/chat",
+          headers: {
+            ...config.headers,
+            "Authorization": `Bearer ${process.env.NEXT_PUBLIC_API_TOKEN}`,
+            "X-Custom-Header": "custom-value",
+          },
+          credentials: "include",
+        };
+      },
+      prepareReconnectToStreamRequest: async (config) => {
+        return {
+          ...config,
+          headers: {
+            ...config.headers,
+            "Authorization": `Bearer ${process.env.NEXT_PUBLIC_API_TOKEN}`,
+          },
+          credentials: "include",
+        };
+      },
+      maxConsecutiveErrors: 5,
+    }),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+## 另请参阅
+
+- [DurableAgent](/docs/api-reference/workflow-ai/durable-agent) - 在工作流中构建持久化的 AI 代理
+- [AI SDK `useChat` Documentation](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat) - 在使用自定义传输时使用 `useChat`
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - 了解工作流基础
+- ["flight-booking-app" Example](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) - 一个使用 `WorkflowChatTransport` 的示例应用程序

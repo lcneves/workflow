@@ -1,0 +1,225 @@
+---
+title: Nuxt
+description: このガイドでは、Nuxt アプリで最初のワークフローを設定する方法を説明します。途中で、開発キットを自分のプロジェクトで使用するために必要な基本概念について学びます。
+---
+
+<Steps>
+
+<Step>
+## Nuxt プロジェクトを作成する
+
+まず新しい Nuxt プロジェクトを作成します。このコマンドは `nuxt-app` という名前の新しいディレクトリを作成し、その中に Nuxt プロジェクトをセットアップします。
+
+```bash
+npm create nuxt@latest nuxt-app
+```
+
+作成したディレクトリに移動します:
+
+```bash
+cd nuxt-app
+```
+
+### `workflow` をインストール
+
+```package-install
+npm i workflow
+```
+
+### Nuxt を設定する
+
+`nuxt.config.ts` に `workflow` を追加します。これにより Nitro 統合が自動的に構成され、 `"use workflow"` および `"use step"` ディレクティブの使用が可能になります。
+
+```typescript title="nuxt.config.ts" lineNumbers
+import { defineNuxtConfig } from "nuxt/config";
+
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"], // [!code highlight]
+  compatibilityDate: "latest",
+});
+```
+
+これにより TypeScript プラグインも自動的に有効になり、IDE 上で workflow および step 関数に関する便利な IntelliSense ヒントが提供されます。
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      TypeScript プラグインを無効にする（任意）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+TypeScript プラグインはデフォルトで有効になっています。無効にする必要がある場合は、`nuxt.config.ts` で次のように設定できます:
+
+```typescript title="nuxt.config.ts" lineNumbers
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"],
+  workflow: {
+    typescriptPlugin: false, // [!code highlight]
+  },
+  compatibilityDate: "latest",
+});
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 最初の workflow を作成する
+
+最初の workflow 用に新しいファイルを作成します:
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+次にこれらの関数を実装しますが、その前にこのコードを見てみましょう:
+
+- ディレクティブ `"use workflow"` を使って **workflow** 関数を定義します。workflow 関数は個々の **steps** のオーケストレーター（調整役）だと考えてください。
+- Workflow DevKit の `sleep` 関数を使うと、ワークフローの実行をリソースを消費することなく一時停止できます。sleep は数秒、数時間、数日、あるいは数か月に及ぶこともあります。
+
+## workflow のステップを作成する
+
+不足している関数を定義します。
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+このコードを見てわかること:
+
+- ビジネスロジックは **steps** の内部に存在します。step が workflow 内で呼び出されると、ワークフローが一時停止されている間に別のリクエストとして実行されるようにキューに追加されます（`sleep` と同様の挙動です）。
+- `sendWelcomeEmail` のように step がエラーをスローすると、その step は成功するまで（あるいは step の最大リトライ回数に達するまで）自動的に再試行されます。
+- 意図的なエラーで再試行を避けたい場合は、`FatalError` をスローすることができます。
+
+<Callout>
+  ワークフロー、steps、イベントの一時停止や処理方法の他の手段については、[基礎](/docs/foundations) を詳しく見ていきます。
+</Callout>
+
+</Step>
+
+<Step>
+
+## API ルートを作成する
+
+新しい workflow を呼び出すために、`server/api/signup.post.ts` に次のコードで API ルートハンドラを作成します:
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler, readBody } from "h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async (event) => {
+  const { email } = await readBody(event);
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+
+  return {
+    message: "User signup workflow started",
+  };
+});
+```
+
+この API ルートは `/api/signup` に `POST` リクエストのエンドポイントを作成し、ワークフローをトリガーします。
+
+<Callout>
+  Workflows は API ルートや任意のサーバーサイドコードからトリガーできます。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 開発環境で実行する
+
+開発サーバーを起動するには、Nuxt ルートディレクトリで次のコマンドをターミナルで実行します:
+
+```bash
+npm run dev
+```
+
+開発サーバーが起動したら、次のコマンドをターミナルで実行してワークフローをトリガーできます:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Nuxt の開発サーバーログを確認して、ワークフローの実行と処理されているステップを確認してください。
+
+さらに、ワークフロー実行やステップを詳細に検査するには、[Workflow DevKit の CLI または Web UI](/docs/observability) を使用できます。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit の Web UI" />
+
+</Step>
+
+</Steps>
+
+## 本番環境へのデプロイ
+
+Workflow DevKit アプリは現在 [Vercel](https://vercel.com/home) にデプロイした場合に最も安定して動作し、特別な設定を必要としません。
+
+ワークフローを他の環境にデプロイする方法については、[デプロイ](/docs/deploying) のセクションを確認してください。
+
+## 次のステップ
+
+- 詳細は [基礎](/docs/foundations) を参照してください。
+- 問題が発生した場合は [エラー](/docs/errors) を確認してください。
+- [API リファレンス](/docs/api-reference) を参照して詳しく調べてください。

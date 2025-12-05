@@ -1,0 +1,204 @@
+---
+title: スリープ、中断、スケジューリング
+---
+
+AI エージェントは、定期的または将来のアクションをスケジュールするために実行を一時停止したり、（例：レート制限のため）操作を再試行する前に待機したり、外部状態が利用可能になるのを待つ必要があることがあります。
+
+Workflow DevKit の `sleep` 関数を使用すると、エージェントはリソースを消費することなく実行を一時停止し、指定した時刻、指定した期間後、または外部イベントに応答して再開することができます。中断するワークフロー操作は、サスペンスが数秒であっても数か月であっても、再起動、新しいデプロイ、およびインフラの変更をまたいで持続します。
+
+<Callout type="info">
+詳細な期間フォーマットの一覧や API ドキュメント全体については、[`sleep()` API リファレンス](/docs/api-reference/workflow/sleep) を参照してください。外部イベントに応答して再開する方法の詳細については、[フック](/docs/foundations/hooks) のドキュメントを参照してください。
+</Callout>
+
+## スリープツールを追加する
+
+Sleep は Workflow DevKit に組み込まれた関数であるため、ツールとして公開するにはそれをツール定義でラップするだけで済みます。ツールの定義方法の詳細は、[ツール定義のパターン](/docs/ai/defining-tools) を参照してください。
+
+<Steps>
+
+<Step>
+
+### ツールを定義する
+
+`workflows/chat/steps/tools.ts` に定義された `tools` に新しい "sleep" ツールを追加します:
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable, sleep } from "workflow"; // [!code highlight]
+
+// ... existing imports ...
+
+async function executeSleep( // [!code highlight]
+  { durationMs }: { durationMs: number }, // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - sleep is a workflow-level function // [!code highlight]
+  await sleep(durationMs); // [!code highlight]
+  return { message: `Slept for ${durationMs}ms` }; // [!code highlight]
+}
+
+// ... existing tool functions ...
+
+export const flightBookingTools = {
+ // ... existing tool definitions ...
+ sleep: { // [!code highlight]
+  description: "Pause execution for a specified duration", // [!code highlight]
+  inputSchema: z.object({ // [!code highlight]
+    durationMs: z.number().describe("Duration to sleep in milliseconds"), // [!code highlight]
+  }), // [!code highlight]
+  execute: executeSleep, // [!code highlight]
+ } // [!code highlight]
+}
+```
+
+<Callout type="info">
+  注意: `sleep()` 関数はステップ内からではなくワークフローコンテキスト内から呼び出す必要があります。これが `executeSleep` に `"use step"` がない理由です — `sleep()` が利用可能なワークフローコンテキストで実行されます。
+</Callout>
+
+ これでエージェントは完全なスリープ機能を利用できるようになります！
+
+</Step>
+
+<Step>
+
+### UI にツールのステータスを表示する
+
+仕上げとして、ツール呼び出しのステータスを表示するように UI を拡張します。これはツール呼び出し情報を直接表示するか、ストリームにカスタムデータパーツを発行することで行えます（詳細は [ツールからのストリーミングアップデート](/docs/ai/streaming-updates-from-tools) を参照）。このケースでは表示する細かい進捗更新がないため、ツール呼び出し情報を直接表示します:
+
+```typescript title="app/page.tsx" lineNumbers
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                        part.type === "tool-sleep" // [!code highlight]
+                      ) {
+                        // ...
+                      }
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+
+function renderToolOutput(part: any) {
+  // ...
+  switch (part.type) {
+    // ...
+    case "tool-sleep": { // [!code highlight]
+      return ( // [!code highlight]
+        <div className="space-y-2"> // [!code highlight]
+          <p className="text-sm font-medium">Sleeping for {part.input.durationMs}ms...</p> // [!code highlight]
+        </div> // [!code highlight]
+      ); // [!code highlight]
+    }
+    // ...
+}
+
+```
+
+</Step>
+
+</Steps>
+
+もう一度フライト予約エージェントを試して、フライトを確認する前に 10 秒間スリープするように指示してください。エージェントが一時停止し、UI にツール呼び出しのステータスが反映されるのが確認できます。
+
+## ユースケース
+
+`sleep()` をツールとして提供することに加えて、エージェントが中断と再開を必要とする他の一般的なユースケースもあります。
+
+### レート制限
+
+API のレート制限に当たった場合は、遅延とともに `RetryableError` を使用します:
+
+```typescript lineNumbers
+async function callRateLimitedAPI(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After");
+    throw new RetryableError("Rate limited", {
+      retryAfter: retryAfter ? parseInt(retryAfter) * 1000 : "1m",
+    });
+  }
+
+  return response.json();
+}
+```
+
+### バックオフによるポーリング
+
+遅延を増加させながら結果をポーリングします:
+
+```typescript lineNumbers
+export async function pollForResult(jobId: string) {
+  "use workflow";
+
+  let attempt = 0;
+  const maxAttempts = 10;
+
+  while (attempt < maxAttempts) {
+    const result = await checkJobStatus(jobId);
+
+    if (result.status === "complete") {
+      return result.data;
+    }
+
+    attempt++;
+    await sleep(Math.min(1000 * 2 ** attempt, 60000)); // Exponential backoff, max 1 minute
+  }
+
+  throw new Error("Job did not complete in time");
+}
+
+async function checkJobStatus(jobId: string) {
+  "use step";
+  // Check job status...
+}
+```
+
+## 関連ドキュメント
+
+- [`sleep()` API リファレンス](/docs/api-reference/workflow/sleep) - すべての期間フォーマットを含む完全な API ドキュメント
+- [ワークフローとステップ](/docs/foundations/workflows-and-steps) - ワークフローコンテキストの理解
+- [エラーと再試行](/docs/foundations/errors-and-retries) - 遅延を伴う `RetryableError` の使用方法

@@ -1,0 +1,211 @@
+---
+title: ワークフローの開始
+---
+
+ワークフロー関数を定義したら、それらを実行開始するためにトリガーする必要があります。これは `workflow/api` の `start()` 関数を使用して行い、ワークフロー実行をキューに追加し、その進行状況を追跡するために使用できる `Run` オブジェクトを返します。
+
+## `start()` 関数
+
+[`start()`](/docs/api-reference/workflow-api/start) 関数は、API ルート、Server Actions、または任意のサーバーサイドコードのようなランタイムコンテキストからプログラム的にワークフロー実行をトリガーするために使用されます。
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { handleUserSignup } from "./workflows/user-signup";
+
+export async function POST(request: Request) {
+  const { email } = await request.json();
+
+  // Start the workflow
+  const run = await start(handleUserSignup, [email]); // [!code highlight]
+
+  return Response.json({
+    message: "Workflow started",
+    runId: run.runId
+  });
+}
+```
+
+**重要なポイント:**
+
+- `start()` はワークフローをキューに登録した後すぐに返します - 完了を待ちません
+- 最初の引数はワークフロー関数です
+- 2 番目の引数はワークフローに渡す引数の配列です（ワークフローが引数を取らない場合は省略可能）
+- すべての引数は [serializable](/docs/foundations/serialization) である必要があります
+
+**詳しくはこちら**: [`start()` APIリファレンス](/docs/api-reference/workflow-api/start)
+
+## `Run` オブジェクト
+
+`start()` を呼び出すと、ワークフローのステータスと結果にアクセスできる [`Run`](/docs/api-reference/workflow-api/start#returns) オブジェクトが返されます。
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { processOrder } from "./workflows/process-order";
+
+const run = await start(processOrder, [orderId]);
+
+// The run object has properties you can await
+console.log("Run ID:", run.runId);
+
+// Check the workflow status
+const status = await run.status; // "running" | "completed" | "failed"
+
+// Get the workflow's return value (blocks until completion)
+const result = await run.returnValue;
+```
+
+**主なプロパティ:**
+
+- `runId` - このワークフロー実行の一意の識別子
+- `status` - ワークフローの現在のステータス（非同期）
+- `returnValue` - ワークフロー関数が返す値（非同期、完了するまでブロックされる）
+- `readable` - ワークフローからの更新をストリーミングするための ReadableStream
+
+<Callout type="info">
+ほとんどの `Run` プロパティは Promise を返す非同期ゲッターです。値を取得するにはそれらを `await` する必要があります。プロパティとメソッドの完全な一覧は以下の API リファレンスを参照してください。
+</Callout>
+
+**詳しくはこちら**: [`Run` APIリファレンス](/docs/api-reference/workflow-api/start#returns)
+
+## 一般的なパターン
+
+### 起動して放置
+
+最も一般的なパターンは、ワークフローを開始してすぐにレスポンスを返し、バックグラウンドで実行させることです:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { sendNotifications } from "./workflows/notifications";
+
+export async function POST(request: Request) {
+  // Start workflow and don't wait for it
+  const run = await start(sendNotifications, [userId]);
+
+  // Return immediately
+  return Response.json({
+    message: "Notifications queued",
+    runId: run.runId
+  });
+}
+```
+
+### 完了を待つ
+
+レスポンスを返す前にワークフローの完了を待つ必要がある場合:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateReport } from "./workflows/reports";
+
+export async function POST(request: Request) {
+  const run = await start(generateReport, [reportId]);
+
+  // Wait for the workflow to complete
+  const report = await run.returnValue; // [!code highlight]
+
+  return Response.json({ report });
+}
+```
+
+<Callout type="warn">
+`returnValue` を待つ際は注意してください — ワークフローに時間がかかると、API ルートがタイムアウトする可能性があります。
+</Callout>
+
+### クライアントへ更新をストリーミングする
+
+完了を待たずに、ワークフローの実行中のリアルタイム更新をクライアントへストリーミングできます:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateAIContent } from "./workflows/ai-generation";
+
+export async function POST(request: Request) {
+  const { prompt } = await request.json();
+
+  // Start the workflow
+  const run = await start(generateAIContent, [prompt]);
+
+  // Get the readable stream (can also use run.readable as shorthand)
+  const stream = run.getReadable(); // [!code highlight]
+
+  // Return the stream immediately
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+    },
+  });
+}
+```
+
+Your workflow can write to the stream using [`getWritable()`](/docs/api-reference/workflow/get-writable):
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function generateAIContent(prompt: string) {
+  "use workflow";
+
+  const writable = getWritable(); // [!code highlight]
+
+  await streamContentToClient(writable, prompt);
+
+  return { status: "complete" };
+}
+
+async function streamContentToClient(
+  writable: WritableStream,
+  prompt: string
+) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Stream updates as they become available
+  for (let i = 0; i < 10; i++) {
+    const chunk = new TextEncoder().encode(`Update ${i}\n`);
+    await writer.write(chunk);
+  }
+
+  writer.releaseLock();
+}
+```
+
+<Callout type="info">
+ストリームは、ユーザーに進行状況をリアルタイムで表示したい AI ワークフローや、中間結果を生成する長時間実行されるプロセスに特に有用です。
+</Callout>
+
+**詳しくはこちら**: [ワークフローにおけるストリーミング](/docs/foundations/serialization#streaming)
+
+### 後でステータスを確認する
+
+`runId` を使って、後でワークフロー実行を取得できます（[`getRun()`](/docs/api-reference/workflow-api/get-run) を使用）:
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const runId = url.searchParams.get("runId");
+
+  // Retrieve the existing run
+  const run = getRun(runId); // [!code highlight]
+
+  // Check its status
+  const status = await run.status;
+
+  if (status === "completed") {
+    const result = await run.returnValue;
+    return Response.json({ result });
+  }
+
+  return Response.json({ status });
+}
+```
+
+## 次のステップ
+
+ワークフローの開始方法と実行の追跡方法について理解したら:
+
+- [制御フローパターン](/docs/foundations/control-flow-patterns) を学んで、複雑なワークフローを整理する
+- [エラーと再試行](/docs/foundations/errors-and-retries) を参照して失敗を適切に処理する
+- 詳細については [`start()` APIリファレンス](/docs/api-reference/workflow-api/start) を確認する

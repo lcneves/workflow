@@ -1,0 +1,138 @@
+---
+title: ツールからのストリーミング更新
+---
+
+After [耐久性のある AI エージェントを構築する](/docs/ai), we already get UI message chunks for displaying tool invocations and return values. However, for long-running steps, we may want to show progress updates, or stream step output to the user while it's being generated.
+
+Workflow DevKit enables this by letting step functions write custom chunks to the same stream the agent uses. These chunks appear as data parts in your messages, which you can render however you like.
+
+As an example, we'll extend out Flight Booking Agent to use emit more granular progress updates while searching for flights.
+
+<Steps>
+
+<Step>
+
+### データパートの型を定義する
+
+First, define a TypeScript type for your custom data part. This ensures type safety across your tool and client code:
+
+```typescript title="schemas/chat.ts" lineNumbers
+export interface FoundFlightDataPart {
+  type: "data-found-flight"; // [!code highlight]
+  id: string;
+  data: {
+    flightNumber: string;
+    from: string;
+    to: string;
+  };
+}
+```
+
+The `type` field must be a string starting with `data-` followed by your custom identifier. The `id` field should match the `toolCallId` so the client can associate the data with the correct tool invocation. Learn more about [データパーツ](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#data-parts-persistent) in the AI SDK documentation.
+
+</Step>
+
+<Step>
+
+### ツールからの更新を送信する
+
+Use [`getWritable()`](/docs/api-reference/workflow/get-writable) inside a step function to get a handle to the stream. This is the same stream that the LLM and other tools calls are writing to, so we can inject out own data packets directly.
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable } from "workflow"; // [!code highlight]
+import type { UIMessageChunk } from "ai";
+
+export async function searchFlights(
+  { from, to, date }: { from: string; to: string; date: string },
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) {
+  "use step";
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+
+  // ... existing logic to generate flights ...
+
+  for (const flight of generatedFlights) { // [!code highlight]
+
+    // Simulate the time it takes to find each flight
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // [!code highlight]
+
+    await writer.write({ // [!code highlight]
+      id: `${toolCallId}-${flight.flightNumber}`, // [!code highlight]
+      type: "data-found-flight", // [!code highlight]
+      data: flight, // [!code highlight]
+    }); // [!code highlight]
+  } // [!code highlight]
+
+  writer.releaseLock(); // [!code highlight]
+
+  return {
+    message: `Found ${generatedFlights.length} flights from ${from} to ${to} on ${date}`,
+    flights: generatedFlights.sort((a, b) => a.price - b.price), // Sort by price
+  };
+}
+```
+
+重要なポイント:
+
+- `getWritable<UIMessageChunk>()` を呼び出してストリームを取得する
+- `getWriter()` を使用してライターを取得する
+- `type`、`id`、`data` フィールドを持つオブジェクトを書き込む
+- 書き込みが終わったら必ず `releaseLock()` を呼び出す（[ストリーミング](/docs/foundations/streaming) を参照）
+
+</Step>
+
+<Step>
+### クライアントでデータパーツを処理する
+
+Update your chat component to detect and render the custom data parts. Data parts are stored in the message's `parts` array alongside text and tool invocation parts:
+
+```typescript title="app/page.tsx" lineNumbers
+{message.parts.map((part, partIndex) => {
+  // Render text parts
+  if (part.type === "text") {
+    return (
+      <Response key={`${message.id}-text-${partIndex}`}>
+        {part.text}
+      </Response>
+    );
+  }
+
+  // Render streaming flight data parts // [!code highlight]
+  if (part.type === "data-found-flight") { // [!code highlight]
+    const flight = part.data as { // [!code highlight]
+      flightNumber: string; // [!code highlight]
+      airline: string; // [!code highlight]
+      from: string; // [!code highlight]
+      to: string; // [!code highlight]
+    }; // [!code highlight]
+    return ( // [!code highlight]
+      <div key={`${part.id}-${flight.flightNumber}`} className="p-3 bg-muted rounded-md"> // [!code highlight]
+        <div className="font-medium">{flight.airline} - {flight.flightNumber}</div> // [!code highlight]
+        <div className="text-muted-foreground">{flight.from} → {flight.to}</div> // [!code highlight]
+      </div> // [!code highlight]
+    ); // [!code highlight]
+  } // [!code highlight]
+
+  // ... other rendering logic ...
+})}
+```
+
+パターンは次のとおりです:
+
+1. データパーツは `data-` で始まる `type` フィールドを持つ
+2. タイプをカスタム識別子に一致させる（例: `data-found-flight`）
+3. データパーツのペイロードを使用して進捗や中間結果を表示する
+
+</Step>
+
+</Steps>
+
+Now, when you run the agent to search for flights, you'll see the flight results pop up one after another. This will be most useful if you have tool calls that take minutes to complete, and you need to show granular progress updates to the user.
+
+## 関連ドキュメント
+
+- [耐久性のある AI エージェントを構築する](/docs/ai) - 耐久性のあるエージェントに関する完全ガイド
+- [`getWritable()` API Reference](/docs/api-reference/workflow/get-writable) - ストリーム API の詳細
+- [ストリーミング](/docs/foundations/streaming) - ワークフローストリームの理解

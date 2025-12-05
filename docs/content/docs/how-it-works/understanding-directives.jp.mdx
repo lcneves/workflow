@@ -1,0 +1,595 @@
+---
+title: ディレクティブの理解
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+<Callout>
+このガイドでは、JavaScript ディレクティブが Workflow DevKit の実行モデルをどのように可能にするかを説明します。ワークフローの始め方については、フレームワークごとの[はじめに](/docs/getting-started)ガイドを参照してください。
+</Callout>
+
+Workflow Development Kit は、持続可能な実行モデルの基盤として JavaScript ディレクティブ（`"use workflow"` と `"use step"`）を使用します。ディレクティブは、ワークフローがサスペンド、再開し、リプレイにわたって決定論的な挙動を維持するために必要なコンパイル時のセマンティック境界を提供します。
+
+このページでは、ディレクティブがこの実行モデルをどのように有効にするかと、そこに至る設計原則を解説します。
+
+ディレクティブがどのように動作するかを理解するために、まず Workflow DevKit におけるワークフローとステップが何であるかを理解しましょう。
+
+## ワークフローとステップの概要
+
+Workflow DevKit には 2 種類の関数があります：
+
+**ステップ関数（Step functions）** は副作用を伴う操作で、Node.js ランタイムへのフルアクセスを持ちます。名前付きの RPC 呼び出しのようなもので、1 回実行され、その結果が永続化され、失敗時に[リトライ可能](/docs/foundations/errors-and-retries)です。
+
+```typescript lineNumbers
+async function fetchUserData(userId: string) {
+  "use step";
+
+  // Full Node.js access: database calls, API requests, file I/O
+  const user = await db.query("SELECT * FROM users WHERE id = ?", [userId]);
+  return user;
+}
+```
+
+**ワークフロー関数（Workflow functions）** はステップを調整する決定論的なオーケストレーターです。これらは純粋関数でなければなりません — リプレイ時には同じステップ結果が常に同じ出力を生成する必要があります。これは、ワークフローがステップのキャッシュされた結果を使用してコードを先頭からリプレイすることで再開するために必要です。ワークフローは直接的な Node.js アクセスのないサンドボックス環境で実行されます：
+
+```typescript lineNumbers
+export async function onboardUser(userId: string) {
+  "use workflow";
+
+  const user = await fetchUserData(userId); // Calls step
+
+  // Non-deterministic code would break replay behavior // [!code highlight]
+  if (Math.random() > 0.5) { // [!code highlight]
+    await sendWelcomeEmail(user); // [!code highlight]
+  } // [!code highlight]
+
+  return `Onboarded ${user.name}!`;
+}
+```
+
+**重要な洞察:** ワークフローはサスペンドから再開する際、イベントログからのキャッシュされたステップ結果を用いてコードをリプレイします。`await fetchUserData(userId)` のようなステップが呼び出されると：
+
+- **既に実行済みであれば：** イベントログからキャッシュされた結果を直ちに返します
+- **未実行であれば：** ワークフローをサスペンドし、ステップをバックグラウンド実行のためにキューに入れ、その結果で後ほど再開します
+
+このリプレイ機構は決定論的なコードを要求します。もし `Math.random()` がシードされていなければ、最初の実行で `0.7`（メール送信）になっても、リプレイでは `0.3`（送信しない）になり、再開が破綻します。Workflow DevKit のサンドボックスは、リプレイ間で一貫した挙動を保証するためにシードされた `Math.random()` と `Date` を提供します。
+
+<Callout>
+ワークフローとステップの詳細については、[Workflows and Steps](/docs/foundations/workflows-and-steps) を参照してください。
+</Callout>
+
+## 中核的な課題
+
+この実行モデルは強力な耐久性機能を可能にします — ワークフローは数日間サスペンドでき、再起動に耐え、任意のポイントから再開できます。しかし同時に、コード内で実行セマンティクスが変化したことを **コンパイラ、ランタイム、開発者** に知らせるセマンティック境界が必要です。
+
+課題は：この境界をどのようにマークするかということです。次を満たす方法で：
+
+1. コンパイル時の変換と検証を可能にする
+2. 非決定論的な API の誤使用を防ぐ
+3. ワークフロー構造の静的解析を可能にする
+4. JavaScript 開発者にとって自然に感じられる
+
+これまでにディレクティブが使われてきた例と、検討した代替案を見てみましょう。
+
+## ディレクティブに関する先行事例
+
+JavaScript のディレクティブは、定義されたスコープ内で実行セマンティクスを変更するための先例があります：
+
+- `"use strict"`（ECMAScript 5、2009 年導入、TC39 標準） はランタイムルールを変更して実行をより高速に、安全で、予測可能にします。
+- `"use client"` と `"use server"`（[React Server Components](https://react.dev/reference/rsc/server-components) によって導入）は、コードがどこで実行されるかという明示的な境界を定義します — クライアント側ブラウザ JavaScript とサーバー側 Node.js の間。
+- `"use workflow"`（Workflow DevKit によって導入）は、コードがどこで実行されるか（決定論的なサンドボックス環境内）とどのように実行されるか（決定論的で再開可能なサンドボックス実行セマンティクス）の両方を定義します。
+
+ディレクティブはビルド時の契約を提供します。
+
+Workflow DevKit が `"use workflow"` を検出すると：
+
+- ワークフローとその依存関係をサンドボックスで実行できるコードにバンドルします
+- そのサンドボックス内で Node.js API へのアクセスを制限します
+- ビルドツールでのみ可能な将来の機能や最適化を有効にします
+  - たとえば、バンドルされたワークフローコードを静的解析してワークフローの UML 図／可視化を生成できます
+
+コンパイラにとって重要であることに加え、`"use workflow"` は開発者に対して実行モードが変わることを明示的に示します。
+
+<Callout type="info">
+`"use workflow"` ディレクティブは、Workflow DevKit に同梱される Language Server Plugin によって IDE に IntelliSense を提供するためにも使用されます。設定手順の詳細は、フレームワークごとの[はじめに](/docs/getting-started)を参照してください。
+</Callout>
+
+しかし、ここに至るまでには発見のプロセスがありました：
+
+## 我々が検討した代替案
+
+ディレクティブに決定する前に、いくつかの他のアプローチをプロトタイプしました。それぞれに重大な制約があり、本番運用には不適切でした。
+
+### ランタイム専用の "Suspense" API
+
+最初の概念実証は、ビルドステップを伴わないラッパーベースの API を使用しました：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(() => {
+  const message = run(async () => step());
+  return `${message}!`;
+});
+```
+
+この実装は「投げる Promise」（初期の React Suspense に類似）を使用して実行をサスペンドしました。ステップが必要なときに Promise を投げ、それをワークフロー境界でキャッチし、ステップを実行して結果でワークフローをリプレイしました。
+
+**問題点：**
+
+**1. あらゆる副作用をラップする必要があった**
+
+非決定論的な結果を生む可能性のある操作はすべて `run()` でラップする必要がありました：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // These would be non-deterministic without wrapping
+  const now = await run(() => Date.now()); // [!code highlight]
+  const random = await run(() => Math.random()); // [!code highlight]
+  const user = await run(() => fetchUser()); // [!code highlight]
+
+  return { now, random, user };
+});
+```
+
+これは冗長で、忘れやすかったです。さらに、開発者が `Date.now()` のような無害に見えるものをラップし忘れると、不安定なランタイム挙動を引き起こしました。
+
+例えば：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // Nothing stops you from doing this:
+  const now = Date.now(); // Non-deterministic, untracked! // [!code highlight]
+  const user = await run(() => fetchUser());
+
+  // This workflow would produce different results on replay // [!code highlight]
+  return { now, user };
+});
+```
+
+**2. クロージャとミューテーションが予測不可能になった**
+
+クロージャでキャプチャされた変数が、ステップがそれらを変異させたときに予期せぬ振る舞いをしました：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  let counter = 0;
+
+  await run(() => {
+    counter++; // This mutation happens during step execution // [!code highlight]
+    return saveToDatabase(counter);
+  });
+
+  console.log(counter); // What is counter here? // [!code highlight]
+  // During execution: 1 (mutation preserved) // [!code highlight]
+  // During replay: 0 (mutation lost) // [!code highlight]
+  // Inconsistent behavior! // [!code highlight]
+});
+```
+
+ワークフロー関数は複数回リプレイされますが、`run()` コールバック内のミューテーションはリプレイ間で永続化されませんでした。これにより状態の推論がほぼ不可能になりました。
+
+**3. エラーハンドリングが破綻した**
+
+制御フローに投げる Promise を使ったため、`try/catch` ブロックが信頼できなくなりました：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  try {
+    const result = await run(() => step());
+    return result;
+  } catch (error) { // [!code highlight]
+    // This could catch: // [!code highlight]
+    // 1. A real error from the step // [!code highlight]
+    // 2. The thrown promise used for suspension // [!code highlight]
+    // 3. An error during replay // [!code highlight]
+    // Hard to distinguish without special handling // [!code highlight]
+    console.error(error);
+  }
+});
+```
+
+### ジェネレーターベースの API
+
+Effect.ts のようなライブラリに触発されて、明示的なサスペンドポイントとしてジェネレーターを使うことを検討しました：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const message = yield* run(() => step());
+  return `${message}!`;
+});
+```
+
+<Callout type="info">
+私たちは [Effect.ts](https://effect.website/) と、エフェクト管理におけるジェネレーター駆動の API の力を高く評価しています。ただし、ワークフローオーケストレーションに関しては、ジェネレーターに不慣れな開発者にとって構文が重く感じられることがわかりました。
+</Callout>
+
+**問題点：**
+
+**1. 構文が JavaScript より DSL に近く感じられた**
+
+ジェネレーターは `async/await` と大きく異なるメンタルモデルを要求します。`yield*` 構文やジェネレーター委譲は多くの開発者にとって馴染みがありませんでした：
+
+```typescript lineNumbers
+// Standard async/await (familiar)
+const result = await fetchData();
+
+// Generator-based (unfamiliar)
+const result = yield* run(() => fetchData()); // [!code highlight]
+```
+
+複雑なワークフローは特に冗長で読みづらくなりました：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const user = yield* run(() => fetchUser());
+
+  // Can't use Promise.all directly - need sequential calls or custom helpers // [!code highlight]
+  const orders = yield* run(() => fetchOrders(user.id)); // [!code highlight]
+  const payments = yield* run(() => fetchPayments(user.id)); // [!code highlight]
+
+  // Or create a custom generator-aware parallel helper: // [!code highlight]
+  const [orders2, payments2] = yield* all([ // [!code highlight]
+    run(() => fetchOrders(user.id)), // [!code highlight]
+    run(() => fetchPayments(user.id)) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { user, orders, payments };
+});
+```
+
+**2. 依然としてコンパイル時のサンドボックス化はできない**
+
+ランタイム専用アプローチと同様に、ジェネレーターは非決定論的なコードを防げませんでした：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const now = Date.now(); // Still possible, still problematic // [!code highlight]
+  const user = yield* run(() => fetchUser());
+  return { now, user };
+});
+```
+
+ジェネレーター構文はサスペンドを扱えましたが、根本的なサンドボックス化の問題は解決しませんでした。
+
+### ファイルシステムベースの慣習
+
+ワークフローとステップを識別するためにファイルシステムの慣習を使うことを検討しました。これは近年のフレームワークがルーティングを扱う方法（Next.js、Hono、Nitro、SvelteKit）に似ています：
+
+<Files>
+  <Folder name="workflows" defaultOpen>
+    <File name="onboarding.ts" />
+    <File name="checkout.ts" />
+  </Folder>
+  <Folder name="steps" defaultOpen>
+    <File name="send-email.ts" />
+    <File name="charge-payment.ts" />
+  </Folder>
+</Files>
+
+このアプローチでは、`workflows/` ディレクトリ内の任意の関数がワークフローとして変換され、`steps/` の関数はステップになります。ディレクティブは不要で、ファイルの場所だけで足ります。
+
+**なぜこれが機能する可能性があるか：**
+
+- 関心の明確な分離
+- ファイルパスに基づくコンパイラ変換が可能
+- Next.js のようなファイルベースルーティングに慣れた開発者には親和的
+
+**なぜ採用しなかったか：**
+
+**1. 多様なエコシステムに対して強引すぎる**
+
+異なるフレームワークや開発者はプロジェクト構造について強い意見を持っています。特定のディレクトリ構成を強制すると、既存のコードベースではしばしば衝突を引き起こしました。
+
+**2. パッケージ化された再利用可能な関数のサポートがない**
+
+開発者がステップやワークフローのディレクティブを含むライブラリを npm に公開できることを望んでいます。理想的には、Workflow DevKit の有無にかかわらず等しく動作するアイソモルフィックなロジックです。ファイルシステムの慣習ではこれが不可能でした。
+
+**3. マイグレーションとコード再利用が困難になる**
+
+既存コードの移行はファイルの移動やプロジェクトの再構成を伴い、単一行の追加で済むようなケースとはならなかった。
+
+ディレクティブ方式はこれらの問題を解決しました：任意のプロジェクト構造で動作し、コードの再利用と移行をサポートし、npm パッケージ化を可能にし、関数が実行コンテキストに適応できるようにします。
+
+### デコレーター
+
+デコレーターも検討しましたが、技術的・ユーザビリティの両面で重大な課題がありました。
+
+**デコレーターは未標準でクラス中心**
+
+デコレーターはまだ標準構文ではありません（[TC39 提案](https://github.com/tc39/proposal-decorators)）し、現状ではクラスにしか適用できません。クラスデコレーターのアプローチは次のようになります：
+
+```typescript lineNumbers
+import {workflow, step} from "workflow";
+
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) { // [!code highlight]
+    const order = await this.fetchOrder(orderId);
+    const payment = await this.processPayment(order);
+    return { orderId, payment };
+  }
+
+  @step() // [!code highlight]
+  static async fetchOrder(orderId: string) { // [!code highlight]
+    // ...
+  }
+}
+```
+
+このアプローチには以下が必要でした：
+
+- 静的メソッドを含むクラスのボイラープレートを書くこと
+- クラスプロパティの保存/変更方法が明確ではない（ランタイム専用アプローチと同様のクロージャ/ミューテーション問題）
+- 関数中心のパターンに慣れた開発者には馴染まないクラスベースの構文
+
+JavaScript エコシステムが関数中心のプログラミングへ移行していること（React のクラスコンポーネントから関数/フックへのシフトに顕著）を考えると、クラスを強制するのは逆行しているように感じられ、私たち自身の好みと一致しませんでした。
+
+**核心的な問題：ワークフローを通常のランタイム値として提示してしまう**
+
+デコレーターはビルド時に扱うことができますが、ワークフロー関数を通常の組み合わせ可能な JavaScript コードのように見せてしまいます。しかし実際にはそれらはコンパイル時の宣言であり、特別な扱いが必要です。
+
+<Callout>
+以下の「Macro Wrapper」セクションで、このアプローチが具体例でどのように破綻するかを詳述しています。
+</Callout>
+
+### マクロラッパー方式
+
+ラッパー関数やデコレーターをコンパイル時に変換するマクロアプローチも検討しました：
+
+```typescript lineNumbers
+// Function wrapper approach
+import { useWorkflow } from "workflow"
+
+export const processOrder = useWorkflow(async (orderId: string) => { // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+});
+
+// Decorator approach (would work similarly)
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) {
+    const order = await fetchOrder(orderId);
+    return { orderId };
+  }
+
+  // ...
+}
+```
+
+コンパイラはこれらを WDK のディレクティブアプローチと等価になるように変換できます：
+
+```typescript lineNumbers
+export const processOrder = async (orderId: string) => {
+  "use workflow"; // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+};
+```
+
+マクロは型を強制し、LSP の「定義へ移動」などの機能を素の状態で提供できる利点があります。
+
+しかし、**根本的な問題は残る：ワークフローはランタイム値ではない**のです。
+
+根本的な問題は、ラッパーやデコレーターがワークフローを **第一級のランタイム値** のように見せてしまうことです。実際にはそれらは **コンパイル時の宣言** です。この構文と意味論の不一致が多数の失敗モードを生みます。
+
+**これが破綻する具体例：**
+
+```typescript lineNumbers
+// Someone writes a "helpful" utility
+function withRetry(fn: Function) {
+  return useWorkflow(async (...args) => { // Works with useWorkflow // [!code highlight]
+    try {
+      return await fn(...args);
+    } catch (error) {
+      return await fn(...args); // Retry once
+    }
+  });
+}
+
+// Note: the same utility would be written similarly for a decorator based syntax
+
+// Usage looks innocent in both cases
+export const processOrder = withRetry(async (orderId: string) => { // [!code highlight]
+  // Is this deterministic? Can it call steps?
+  // Nothing in this function indicates the developer is in the
+  // deterministic sandboxed workflow
+  // Also where is the retry happening? inside or outside the workflow?
+  const order = await fetchOrder(orderId);
+  return order;
+});
+```
+
+`processOrder` を書く開発者には、その関数が決定論的なサンドボックス環境にあることを示す目に見えるシグナルがありません。リトライロジックがワークフロー内で実行されているのか外で実行されているのかも曖昧で、実際の挙動は開発者の直感と一致しない可能性があります。
+
+**なぜコンパイラがこれを検出できないのか：**
+
+`processOrder` が実際にワークフローであることを検出するには、コンパイラはプログラム全体の解析を行い次を追跡する必要があります：
+
+1. `withRetry` が `useWorkflow` の結果を返していること
+2. したがって `processOrder = withRetry(...)` がワークフローであること
+3. `withRetry` に渡された関数がサンドボックスコンテキストで実行されること
+
+このレベルの関数横断的解析はビルドツールにとって非現実的です — コードベースとすべての依存関係内のすべての関数呼び出しチェーンを解析する必要があります。コンパイラが確実に検出できるのは直接的な `useWorkflow` 呼び出しのみであり、抽象化の陰に隠れた呼び出しは検出できません。
+
+## ディレクティブがこれらの問題をどのように解決するか
+
+ディレクティブは、前述の各アプローチで遭遇した問題をすべて解決します：
+
+**1. コンパイル時のセマンティック境界**
+
+`"use workflow"` ディレクティブはコンパイラにこのコードを別扱いするよう指示します：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow"; // Compiler knows: transform this for sandbox execution // [!code highlight]
+
+  const order = await fetchOrder(orderId); // Compiler knows: this is a step call // [!code highlight]
+  return { orderId, order };
+}
+```
+
+**2. ビルド時の検証**
+
+コンパイラはデプロイ前に制約を強制できます：
+
+```typescript lineNumbers
+export async function badWorkflow() {
+  "use workflow";
+
+  const crypto = require("crypto"); // Build error: Node.js module in workflow // [!code highlight]
+  return crypto.randomBytes(16);
+}
+```
+
+実際、Workflow DevKit はこのエラーページへのリンクを含むエラーを投げます: [Node.js module in workflow](/docs/errors/node-js-module-in-workflow)
+
+**3. クロージャの曖昧さが解消される**
+
+ステップはランタイムと通信する関数呼び出しへと変換されます：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  let counter = 0;
+
+  // This essentially becomes: await enqueueStep("updateCounter", [counter])
+  // The step receives counter as a parameter, not a closure
+  await updateCounter(counter); // [!code highlight]
+
+  console.log(counter); // Always 0, consistently // [!code highlight]
+}
+```
+
+しかしコールバックはワークフローサンドボックス内で実行され、期待通りに動作します：
+
+```typescript lineNumbers
+export async function processOrders(orderIds: string[]) {
+  "use workflow";
+
+  let successCount = 0;
+
+  // Callbacks run in the workflow context, not skipped on replay
+  await Promise.all(orderIds.map(async (orderId) => {
+    const order = await fetchOrder(orderId); // Step call
+    if (order.status === "completed") {
+      successCount++; // Mutation works correctly // [!code highlight]
+    }
+  }));
+
+  console.log(successCount); // Consistent across replays
+  return { total: orderIds.length, successful: successCount };
+}
+```
+
+コールバックはワークフローサンドボックス内で実行されるため、クロージャの読み取りとミューテーションはリプレイ間で一貫して動作します。
+
+**4. 自然な構文**
+
+通常の JavaScript のように見え、感じられます：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Standard async/await patterns work naturally // [!code highlight]
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // [!code highlight]
+    fetchUser(userId) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { order, user };
+}
+```
+
+**5. ステップの一貫した構文**
+
+`"use step"` ディレクティブは一貫性を維持します。ステップはフル Node.js ランタイムで実行され、*ディレクティブなしでも*動作する可能性はありますが、ワークフローランタイムに対してそれがステップであることを示す手段が必要です。
+
+ステップに対してのみ関数ラッパーを使用することもできましたが：
+
+```typescript lineNumbers
+// Mixed approach (inconsistent)
+export async function processOrder(orderId: string) {
+  "use workflow"; // Directive for workflow // [!code highlight]
+
+  const order = await step(async () => fetchOrder(orderId));
+  return order;
+}
+
+const fetchOrder = useStep(() => { // Wrapper for step? // [!code highlight]
+  // ...
+})
+```
+
+構文を混在させると一貫性が欠けます。
+
+代替案として、*すべての*非同期関数呼び出しをデフォルトでステップ扱いにすることも検討しました：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Every async call becomes a step automatically?
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // Step
+    fetchUser(userId)    // Step
+  ]);
+
+  return { order, user };
+}
+```
+
+しかしこれは多くの妥当な非同期操作がステップではないため破綻します：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // These are valid async calls that SHOULD NOT be steps:
+  const results = await Promise.all([...]); // Language primitive // [!code highlight]
+  const winner = await Promise.race([...]); // Language primitive // [!code highlight]
+
+  // Helper function that formats data
+  const formatted = await formatOrderData(order); // Pure JavaScript helper // [!code highlight]
+}
+```
+
+明示的な `"use step"` ディレクティブを要求することで、何が耐久性のあるリトライ可能なステップになるのか、ワークフローサンドボックス内でインライン実行されるものかを開発者が細かく制御できます。
+
+<Callout>
+ディレクティブがコンパイル時にどのように変換されるかについては、[How the Code Transform Works](/docs/how-it-works/code-transform) を参照してください。
+</Callout>
+
+## ディレクティブが可能にすること
+
+`"use workflow"` がコンパイル時のセマンティック境界を定義するため、次のものを提供できます：
+
+<Cards>
+  <Card title="ビルド時の検証">
+    コンパイラはデプロイ前に無効なパターンを検出します：禁止されたインポートを検出し、直接的な副作用を防ぎ、ワークフロー構造を検証します。
+  </Card>
+  <Card title="静的解析">
+    実行せずにワークフローコードを解析できます：UML や DAG 図を自動生成し、観測性と可視化を提供し、実行パスを最適化できます。
+  </Card>
+  <Card title="耐久性のある実行">
+    ワークフローは安全にサスペンドと再開が可能です：ステップ間の実行状態を永続化し、障害やデプロイ後のチェックポイントから再開し、進行を失うことなくゼロスケールに対応できます。
+  </Card>
+  <Card title="将来の最適化">
+    セマンティック境界は将来の改善を可能にします：より小さなシリアライズ状態で高速なチェックポイント、ワークフロー構造に基づくスマートなスケジューリング、より効率的なサスペンドと再開などです。
+  </Card>
+</Cards>
+
+## ディレクティブは JavaScript のパターンである
+
+JavaScript におけるディレクティブは常に開発者と実行環境の間の契約でした。`"use strict"` がこのパターンを馴染み深いものにしました — 文字列リテラルがコードの解釈方法を変えます。
+
+JavaScript はまだ Rust の `#[attribute]` や C++ の `#pragma` のようなカスタムディレクティブを第一級でサポートしているわけではありませんが、文字列リテラルディレクティブは現時点で最も実用的なツールです。
+
+私たちは TC39 のメンバーとして、pragma 的な構文やマクロアノテーションの正式仕様を検討するため、標準化団体や広範なエコシステムと積極的に協業しています。
+
+## 最後に
+
+ディレクティブは構文の好みの問題ではなく、セマンティック境界を表現するためのものです。`"use workflow"` はこのコードが決定論的で、再開可能で、サンドボックス化されていることをコンパイラ、開発者、ランタイムに通知します。
+
+この明確性により、Workflow Development Kit は馴染みのある JavaScript パターンを維持しつつ、信頼性の高いワークフローオーケストレーションに必要なコンパイル時保証を提供することができます。

@@ -1,0 +1,196 @@
+---
+title: 工作流和步骤
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+工作流（也称为 *持久化函数*）是一种用于构建长时间运行、有状态的应用逻辑的编程模型，能够在重启、故障或用户事件之间保持其执行状态。与在终止时丢失所有状态的传统无服务器函数不同，工作流会持久化其进度并能在恰当的位置准确地恢复执行。
+
+此外，工作流使你能够以简单、优雅的代码建模复杂的多步骤流程。为此，我们引入两个基本实体：
+
+1. **Workflow Functions（工作流函数）**：用于协调/组织步骤的函数
+2. **Step Functions（步骤函数）**：执行实际工作的函数
+
+## 工作流函数
+
+*Directive: `"use workflow"`*
+
+工作流函数定义了工作流的入口点并组织如何调用步骤函数。这类函数无法访问完整的 Node.js 运行时，可用的 `npm` 包受到限制。
+
+尽管这最初看起来是限制，但此功能对于暂停并准确恢复工作流的执行非常重要。
+
+将工作流函数更多地视为将各种步骤“串联”在一起的结构，而不是完整的 JavaScript 运行时会更有帮助，你会使用条件语句、循环、try/catch 处理器、`Promise.all` 以及其他语言原语来实现。
+
+```typescript lineNumbers
+export async function processOrderWorkflow(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // Orchestrate multiple steps
+  const order = await fetchOrder(orderId);
+  const payment = await chargePayment(order);
+
+  return { orderId, status: "completed" };
+}
+```
+
+**主要特性：**
+
+- 在受沙箱限制的环境中运行，无法完全访问 Node.js
+- 所有步骤结果都会持久化到事件日志
+- 必须是 **确定性的**，以便在故障后恢复执行
+
+工作流中的确定性是恢复挂起工作流所必需的。本质上，工作流代码在其生命周期内会被多次重新运行，每次使用事件日志将工作流恢复到正确的位置。
+
+工作流运行所在的受沙箱限制环境已经确保了确定性。例如，`Math.random` 和 `Date` 构造函数在工作流运行中是固定的，因此你可以安全使用它们，框架会确保这些值在重放期间不发生变化。
+
+## 步骤函数
+
+*Directive: `"use step"`*
+
+步骤函数在工作流中执行实际工作，并具有完整的运行时访问权限。
+
+```typescript lineNumbers
+async function chargePayment(order: Order) {
+  "use step"; // [!code highlight]
+
+  // Full Node.js access - use any npm package
+  const stripe = new Stripe(process.env.STRIPE_KEY);
+
+  const charge = await stripe.charges.create({
+    amount: order.total,
+    currency: "usd",
+    source: order.paymentToken
+  });
+
+  return { chargeId: charge.id };
+}
+```
+
+**主要特性：**
+
+- 完整的 Node.js 运行时和 npm 包访问
+- 出错时会自动重试
+- 结果会被持久化以供重放
+
+默认情况下，步骤在失败并将错误传播回工作流前，最多会有 3 次重试尝试。有关错误和重试的更多信息，请参阅 [Errors & Retrying](/docs/foundations/errors-and-retries) 页面。
+
+<Callout type="warning">
+**重要：** 由于序列化的原因，参数是按 **值传递，而不是按引用传递**。如果你将对象或数组传递给步骤并对其进行变更，这些更改在工作流上下文中 **不会** 可见。请务必从你的步骤函数中返回修改后的数据。有关详细信息和示例，请参阅 [Pass-by-Value Semantics](/docs/foundations/serialization#pass-by-value-semantics)。
+</Callout>
+
+<Callout type="info">
+步骤函数主要用于在工作流内部使用。
+</Callout>
+
+从工作流外部或从另一个步骤调用步骤时，步骤基本上会像普通函数那样在相同进程中运行（换句话说，`use step` 指令将是一个无操作）。这意味着你可以在代码库的其他部分重用步骤函数，而无需复制业务逻辑。
+
+
+```typescript lineNumbers
+async function updateUser(userId: string) {
+  "use step";
+  await db.insert(...);
+}
+
+// Used inside a workflow
+export async function userOnboardingWorkflow(userId: string) {
+  "use workflow";
+  await updateUser(userId);
+  // ... more steps
+}
+
+// Used directly outside a workflow
+export async function POST() {
+  await updateUser("123");
+  // ... more logic
+}
+```
+
+<Callout type="info">
+请注意，在工作流函数之外调用步骤函数不会具有重试语义，也不会被观测到。此外，某些工作流特定的函数（例如 [`getStepMetadata()`](/docs/api-reference/workflow/get-step-metadata)）在被用作从工作流外部调用的步骤内部时会抛出错误。
+</Callout>
+
+### 挂起与恢复
+
+工作流函数可以在等待异步工作时自动挂起。挂起期间，工作流的状态通过事件日志存储，并且在工作流恢复执行之前不会使用任何计算资源。
+
+工作流可以通过多种方式挂起：
+
+- 等待一个步骤函数：当步骤在步骤运行时运行时，工作流会让出执行权。
+- 使用 `sleep()` 暂停一段固定时长。
+- 等待由 [`createWebhook()`](/docs/api-reference/workflow/create-webhook) 返回的 promise，该 promise 在外部系统向工作流传入数据时恢复工作流。
+
+```typescript lineNumbers
+import { sleep, createWebhook } from "workflow";
+
+export async function documentReviewProcess(userId: string) {
+  "use workflow";
+
+  await sleep("1 month"); // Sleep will suspend without consuming any resources [!code highlight]
+
+  // Create a webhook for external workflow resumption
+  const webhook = createWebhook();
+
+  // Send the webhook url to some external service or in an email, etc.
+  await sendHumanApprovalEmail("Click this link to accept the review", webhook.url)
+
+  const data = await webhook; // The workflow suspends till the URL is resumed [!code highlight]
+
+  console.log("Document reviewed!")
+}
+```
+
+## 编写工作流
+
+### 基本结构
+
+最简单的工作流由一个工作流函数和一个或多个步骤函数组成。
+
+```typescript lineNumbers
+// Workflow function (orchestrates the steps)
+export async function greetingWorkflow(name: string) {
+  "use workflow";
+
+  const message = await greet(name);
+  return { message };
+}
+
+// Step function (does the actual work)
+async function greet(name: string) {
+  "use step";
+
+  // Access Node.js APIs
+  const message = `Hello ${name} at ${new Date().toISOString()}`;
+  console.log(message);
+  return message;
+}
+```
+
+### 项目结构
+
+虽然你可以以任何喜欢的方式组织工作流和步骤函数，但我们发现较大的项目从一些结构化组织中受益：
+<Files>
+  <Folder name="workflows" defaultOpen disabled>
+    <Folder name="userOnboarding" defaultOpen disabled>
+      <File name="index.ts" />
+      <File name="steps.ts" />
+    </Folder>
+    <Folder name="aiVideoGeneration" defaultOpen disabled>
+      <File name="index.ts" />
+      <Folder name="steps" defaultOpen disabled>
+        <File name="transcribeUpload.ts" />
+        <File name="generateVideo.ts" />
+        <File name="notifyUser.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="shared" defaultOpen disabled>
+      <File name="validateInput.ts" />
+      <File name="logActivity.ts" />
+    </Folder>
+  </Folder>
+</Files>
+
+你可以选择将步骤组织到单个 `steps.ts` 文件中，也可以放在 `steps` 文件夹中的单独文件。`shared` 文件夹是放置多个工作流共享的通用步骤的好地方。
+
+<Callout type="info">
+将步骤和工作流拆分开也有助于避免 Workflow DevKit 大多数与打包器相关的错误。
+</Callout>

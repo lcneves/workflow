@@ -1,0 +1,76 @@
+---
+title: getStepMetadata
+---
+
+現在のステップ関数で利用可能なメタデータを返します。
+
+次のような場合にこの関数を使用することがあります:
+
+- エラー処理での再試行回数を追跡する
+- ステップのタイミング情報や実行メタデータにアクセスする
+- 外部API用の冪等性キーを生成する
+
+<Callout type="warn">
+  この関数はステップ関数内でのみ呼び出すことができます。
+</Callout>
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function testWorkflow() {
+  "use workflow";
+  await logStepId();
+}
+
+async function logStepId() {
+  "use step";
+  const ctx = getStepMetadata(); // [!code highlight]
+  console.log(ctx.stepId); // Grab the current step ID
+}
+```
+
+### 例: `stepId` を冪等性キーとして使用する
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+  const { stepId } = getStepMetadata();
+
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: `charge:${stepId}`, // [!code highlight]
+    }
+  );
+}
+```
+
+<Callout type="info">
+  パターンや注意点の詳細については{" "}
+  <a href="/docs/foundations/idempotency">冪等性</a> ガイドをご覧ください。
+</Callout>
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+  definition={`
+import { getStepMetadata } from "workflow";
+export default getStepMetadata;`}
+  showSections={["parameters"]}
+/>
+
+### 戻り値
+
+<TSDoc
+  definition={`
+import type { StepMetadata } from "workflow";
+export default StepMetadata;`}
+/>

@@ -1,0 +1,411 @@
+---
+title: Membangun Agen AI yang Tahan Lama
+---
+
+Agen AI dibangun dari primitif loop pemanggilan LLM dan alat, sering kali dengan proses tambahan untuk pengambilan data, penyediaan sumber daya, atau merespons peristiwa eksternal.
+
+Workflow DevKit membuat agen Anda siap produksi, dengan mengubahnya menjadi workflow yang tahan lama dan dapat dilanjutkan. Ini mentransformasikan panggilan LLM Anda, eksekusi alat, dan operasi async lainnya menjadi langkah-langkah yang dapat dicoba ulang, diskalakan, dan diamati.
+
+<AgentTraces />
+
+Panduan ini akan memandu Anda mengubah aplikasi chat AI dasar menjadi agen AI yang tahan lama menggunakan Workflow DevKit.
+
+## Mengapa Agen yang Tahan Lama?
+
+Selain tantangan umum membuat tugas jangka panjang siap produksi, membangun agen AI yang matang biasanya mengharuskan pemecahan beberapa **tantangan tambahan**:
+
+- **Statefulness**: Menyimpan sesi obrolan dan mengubah panggilan LLM serta alat menjadi pekerjaan async dengan worker dan antrean.
+- **Observabilitas**: Menggunakan layanan untuk mengumpulkan jejak dan metrik, dan mengelolanya terpisah dari pesan dan riwayat pengguna Anda.
+- **Kemampuan Melanjutkan**: Melanjutkan stream tidak hanya memerlukan penyimpanan pesan Anda, tetapi juga penyimpanan stream, dan meneruskannya antar layanan.
+- **Keterlibatan manusia dalam proses**: Klien, API, dan orkestrasi pekerjaan async Anda perlu bekerja bersama untuk membuat, melacak, merutekan, dan menampilkan permintaan persetujuan dari manusia, atau operasi webhook serupa.
+
+Workflow DevKit menyediakan semua kemampuan ini secara bawaan. Agen Anda menjadi sebuah workflow, alat Anda menjadi langkah, dan framework menangani interaksi dengan infrastruktur yang sudah ada.
+
+## Memulai
+
+Untuk membuat Agen menjadi tahan lama, pertama kita membutuhkan Agen, yang akan kita siapkan di sini. Jika Anda sudah memiliki aplikasi yang ingin diikuti, Anda dapat melewatkan bagian ini.
+
+Untuk contoh kami, kita memerlukan aplikasi dengan antarmuka chat sederhana dan rute API yang memanggil LLM, sehingga kita dapat menambahkan Workflow DevKit ke dalamnya. Kita akan menggunakan contoh [Agen Pemesanan Penerbangan](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) sebagai titik awal, yang hadir dengan antarmuka chat yang dibangun menggunakan Next.js, AI SDK, dan Shadcn UI.
+
+<Steps>
+
+<Step>
+### Clone example app
+
+Kita memerlukan aplikasi dengan antarmuka chat sederhana dan rute API yang memanggil LLM, sehingga kita dapat menambahkan Workflow DevKit ke dalamnya. Untuk langkah-langkah mengikuti, kita akan menggunakan contoh [Agen Pemesanan Penerbangan](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) sebagai titik awal, yang hadir dengan antarmuka chat yang dibangun menggunakan Next.js, AI SDK, dan Shadcn UI.
+
+Jika Anda memiliki proyek sendiri, Anda dapat melewatkan langkah ini, dan cukup terapkan perubahan dari langkah-langkah berikut ke proyek Anda sendiri.
+
+```bash
+git clone https://github.com/vercel/workflow-examples -b plain-ai-sdk
+cd workflow-examples/flight-booking-app
+```
+
+</Step>
+
+<Step>
+
+### Set up API keys
+
+Untuk terhubung ke LLM, kita perlu mengatur kunci API. Cara termudah adalah menggunakan Vercel Gateway (berfungsi dengan semua penyedia tanpa markup), atau Anda dapat mengonfigurasi penyedia kustom.
+<Tabs items={['Gateway', 'Custom Provider']}>
+
+<Tab value="Gateway">
+
+Dapatkan kunci API Gateway dari halaman [Vercel Gateway](https://vercel.com/docs/gateway/api-reference/overview).
+
+Kemudian tambahkan ke file `.env.local` Anda:
+
+```bash title=".env.local" lineNumbers
+GATEWAY_API_KEY=...
+```
+
+</Tab>
+
+<Tab value="Custom Provider">
+
+Ini adalah contoh cara menggunakan penyedia OpenAI untuk AI SDK. Untuk detail tentang penyedia lain dan informasi lebih lanjut, lihat [panduan penyedia AI SDK](https://ai-sdk.dev/providers/ai-sdk-providers).
+
+```package-install
+npm i @ai-sdk/openai
+```
+
+Setel kunci API OpenAI Anda dalam variabel lingkungan:
+
+```bash title=".env.local" lineNumbers
+OPENAI_API_KEY=...
+```
+
+Kemudian ubah endpoint API Anda untuk menggunakan penyedia OpenAI:
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+// ...
+import { openai } from "@workflow/ai/openai"; // [!code highlight]
+
+export async function POST(req: Request) {
+  // ...
+  const agent = new Agent({
+    // This uses the OPENAI_API_KEY environment variable by default, but you
+    // can also pass { apiKey: string } as an option.
+    model: openai("gpt-5.1"), // [!code highlight]
+    // ...
+  });
+```
+
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+
+### Get familiar with the code
+
+Mari luangkan waktu sejenak untuk melihat apa yang sedang kita kerjakan. Jalankan aplikasi dengan `npm run dev` dan buka [http://localhost:3000](http://localhost:3000) di browser Anda. Anda akan melihat antarmuka chat sederhana untuk dicoba. Silakan coba.
+
+Kode inti yang membuat semua ini terjadi cukup sederhana. Berikut adalah rincian bagian utama. Perhatikan bahwa tidak diperlukan perubahan di sini, kita hanya melihat kode untuk memahami apa yang terjadi.
+
+<Tabs items={['API Route', 'Tools', 'Client']}>
+
+<Tab value="API Route">
+
+Rute API kita membuat panggilan sederhana ke [kelas `Agent` AI SDK](https://ai-sdk.dev/docs/agents/overview), yang merupakan pembungkus sederhana di sekitar [fungsi `streamText` AI SDK](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#streamtext). Di sinilah kita juga meneruskan alat ke agent.
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const agent = new Agent({ // [!code highlight]
+    model: gateway("bedrock/claude-4-5-haiku-20251001-v1"),
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+  const modelMessages = convertToModelMessages(messages);
+  const stream = agent.stream({ messages: modelMessages }); // [!code highlight]
+  return createUIMessageStreamResponse({
+    stream: stream.toUIMessageStream(),
+  });
+}
+```
+
+</Tab>
+
+<Tab value="Tools">
+
+Alat kami sebagian besar dimock untuk keperluan contoh. Kami menggunakan fungsi `tool` AI SDK untuk mendefinisikan alat, dan meneruskannya ke agent. Dalam aplikasi Anda sendiri, ini bisa berupa panggilan alat apa pun, seperti kueri basis data, panggilan ke layanan eksternal, dll.
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { tool } from "ai";
+import { z } from "zod";
+
+export const tools = {
+  searchFlights: tool({
+    description: "Search for flights",
+    inputSchema: z.object({ query: z.string() }),
+    execute: searchFlights,
+  }),
+};
+
+async function searchFlights({ from, to, date }: { from: string; to: string; date: string }) {
+  // ... generate some fake flights
+}
+```
+
+</Tab>
+
+<Tab value="Client">
+
+Komponen `ChatPage` kami memiliki banyak logika untuk menampilkan pesan chat dengan rapi, tetapi pada intinya, komponen ini hanya mengelola input/output untuk hook [`useChat`](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat#usechat) dari AI SDK.
+
+```typescript title="app/chat.tsx" lineNumbers
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+
+export default function ChatPage() {
+  const { messages, input, handleInputChange, handleSubmit } = useChat({ // [!code highlight]
+    // ... other options ...
+  });
+
+  // ... more UI logic
+
+  return (
+    <div>
+      // This is a simplified example of the rendering logic
+      {messages.map((m) => (
+        <div key={m.id}>
+          <strong>{m.role}:</strong>
+          {m.parts.map((part, i) => {
+            if (part.type === "text") { // [!code highlight]
+              return <span key={i}>{part.text}</span>;
+            }
+            if (part.type === "tool-searchFlights") { // [!code highlight]
+              // ... some special rendering for our tool results
+            }
+            return null;
+          })}
+        </div>
+      ))}
+      <form onSubmit={handleSubmit}>
+        <input
+          value={input}
+          onChange={handleInputChange}
+          placeholder="Type a message..."
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+</Tabs>
+
+</Step>
+
+</Steps>
+
+## Mengintegrasikan Workflow DevKit
+
+Sekarang kita memiliki agen dasar yang menggunakan AI SDK, kita dapat memodifikasinya agar tahan lama.
+
+<Steps>
+<Step>
+
+### Install Dependencies
+
+Tambahkan paket Workflow DevKit ke proyek Anda:
+
+```package-install
+npm i workflow @workflow/ai
+```
+
+dan perluas konfigurasi Next.js untuk mentransformasikan kode workflow Anda (lihat [Memulai](/docs/getting-started/next) untuk detail lebih lanjut).
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next";
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // ... rest of your Next.js config
+};
+
+export default withWorkflow(nextConfig);
+```
+
+</Step>
+
+<Step>
+
+### Create a Workflow Function
+
+Pindahkan logika agent ke fungsi terpisah, yang akan menjadi definisi workflow kita.
+
+```typescript title="workflows/chat/workflow.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent"; // [!code highlight]
+import { getWritable } from "workflow"; // [!code highlight]
+import { tools } from "@/ai/tools";
+import { openai } from "@workflow/ai/openai";
+import type { ModelMessage, UIMessageChunk } from "ai";
+
+export async function chatWorkflow(messages: ModelMessage[]) {
+  "use workflow"; // [!code highlight]
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+
+  const agent = new DurableAgent({ // [!code highlight]
+
+    // If using AI Gateway, just specify the model name as a string:
+    model: "bedrock/claude-4-5-haiku-20251001-v1", // [!code highlight]
+
+    // ELSE if using a custom provider, pass the provider call as an argument:
+    model: openai("gpt-5.1"), // [!code highlight]
+
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+
+  await agent.stream({ // [!code highlight]
+    messages,
+    writable,
+  });
+}
+```
+
+Perubahan kunci:
+
+- Tambahkan directive "use workflow" untuk menandai Agent kita sebagai fungsi workflow
+- Mengganti `Agent` dengan [`DurableAgent`](/docs/api-reference/workflow-ai/durable-agent) dari `@workflow/ai/agent`. Ini memastikan bahwa semua panggilan ke LLM dijalankan sebagai "langkah", dan hasil dikumpulkan dalam konteks workflow (lihat [Workflows and Steps](/docs/foundations/workflows-and-steps) untuk lebih detail tentang bagaimana workflow/langkah didefinisikan).
+- Gunakan [`getWritable()`](/docs/api-reference/workflow/get-writable) untuk mendapatkan stream keluaran agent. Stream ini persisten, dan endpoint API dapat membaca stream dari sebuah run kapan saja.
+</Step>
+
+<Step>
+### Update the API Route
+
+Hapus panggilan agent yang baru saja kita ekstrak, dan ganti dengan pemanggilan `start()` untuk menjalankan workflow:
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+import type { UIMessage } from "ai";
+import { convertToModelMessages, createUIMessageStreamResponse } from "ai";
+import { start } from "workflow/api";
+import { chatWorkflow } from "@/workflows/chat/workflow";
+
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const modelMessages = convertToModelMessages(messages);
+
+  const run = await start(chatWorkflow, [modelMessages]); // [!code highlight]
+
+  return createUIMessageStreamResponse({
+    stream: run.readable, // [!code highlight]
+  });
+}
+```
+
+Perubahan kunci:
+
+- Panggil `start()` untuk menjalankan fungsi workflow. Ini mengembalikan objek `Run`, yang berisi ID run dan stream yang dapat dibaca (lihat [Starting Workflows](/docs/foundations/starting-workflows) untuk detail lebih lanjut tentang objek `Run`).
+- Lewatkan `writable` ke `agent.stream()` alih-alih mengembalikan stream secara langsung, memastikan semua keluaran Agent ditulis ke stream run.
+
+</Step>
+
+<Step>
+### Convert Tools to Steps
+
+Tandai semua definisi alat dengan `"use step"` agar menjadi tahan lama. Ini mengaktifkan retry otomatis dan observabilitas untuk setiap pemanggilan alat:
+
+```typescript title="workflows/chat/steps/tools.ts​" lineNumbers
+// ...
+
+export async function searchFlights(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function checkFlightStatus(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function getAirportInfo(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function bookFlight({
+  // ... arguments
+}) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function checkBaggageAllowance(
+  // ... arguments
+) {
+    "use step"; // [!code highlight]
+
+    // ... rest of the tool code
+  }
+}
+```
+
+Dengan `"use step"`:
+
+- Eksekusi alat berjalan dalam langkah terpisah dengan akses penuh ke Node.js. Di produksi, setiap langkah dieksekusi dalam proses worker terpisah, yang secara otomatis menskalakan sesuai beban kerja Anda.
+- Panggilan alat yang gagal akan dicoba ulang secara otomatis (hingga 3 kali secara default). Lihat [Errors and Retries](/docs/foundations/errors-and-retries) untuk detail lebih lanjut.
+- Setiap eksekusi alat muncul sebagai langkah diskrit dalam alat observabilitas. Lihat [Observability](/docs/observability) untuk detail lebih lanjut.
+</Step>
+
+</Steps>
+
+Itu saja yang perlu Anda lakukan untuk mengubah agen AI SDK dasar Anda menjadi agen yang tahan lama. Jika Anda menjalankan server pengembangan, dan mengirim pesan chat, Anda seharusnya melihat agen merespons seperti sebelumnya, tetapi sekarang dengan ketahanan dan observabilitas tambahan.
+
+## Observabilitas
+
+Di direktori aplikasi Anda, Anda dapat membuka dasbor observabilitas untuk melihat workflow Anda berjalan, menggunakan CLI:
+
+```bash
+npx workflow web
+```
+
+Ini akan membuka dasbor lokal yang menampilkan semua run workflow dan statusnya, serta viewer jejak untuk memeriksa workflow secara detail, termasuk percobaan ulang, dan data yang diteruskan antar langkah.
+
+## Langkah Selanjutnya
+
+Sekarang setelah Anda memiliki agen tahan lama dasar, hanya selangkah pendek untuk menambahkan fitur tambahan ini:
+
+<Cards>
+  <Card title="Streaming Updates from Tools" href="/docs/ai/streaming-updates-from-tools">
+    Alirkan pembaruan progres dari alat ke UI saat alat sedang dieksekusi.
+  </Card>
+  <Card title="Resumable Streams" href="/docs/ai/resumable-streams">
+    Aktifkan klien untuk tersambung kembali ke stream yang terputus tanpa kehilangan data.
+  </Card>
+  <Card title="Sleep, Suspense, and Scheduling" href="/docs/ai/sleep-and-delays">
+    Tambahkan fungsi native untuk sleep, suspense, dan penjadwalan ke Agen dan workflow Anda.
+  </Card>
+  <Card title="Human-in-the-Loop" href="/docs/ai/human-in-the-loop">
+    Terapkan langkah persetujuan untuk menunggu input manusia atau peristiwa eksternal.
+  </Card>
+</Cards>
+
+## Contoh Lengkap
+
+Contoh lengkap yang mencakup semua hal di atas, plus semua fitur "langkah selanjutnya" tersedia di branch utama dari contoh [Flight Booking Agent](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app).
+
+## Dokumentasi Terkait
+
+- [Alat](/docs/ai/defining-tools) - Pola untuk mendefinisikan alat untuk agen Anda
+- [`DurableAgent` API Reference](/docs/api-reference/workflow-ai/durable-agent) - Dokumentasi API lengkap
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - Konsep inti
+- [Streaming](/docs/foundations/streaming) - Panduan mendalam tentang streaming
+- [Errors and Retries](/docs/foundations/errors-and-retries) - Pola penanganan kesalahan

@@ -1,0 +1,262 @@
+---
+title: Next.js
+description: Este guia irá orientar você na configuração do seu primeiro workflow em um app Next.js. Ao longo do caminho, você aprenderá mais sobre os conceitos que são fundamentais para usar o kit de desenvolvimento em seus próprios projetos.
+---
+
+<Steps>
+
+<Step>
+## Crie seu projeto Next.js
+
+Comece criando um novo projeto Next.js. Este comando criará um novo diretório chamado `my-workflow-app` e configurará um projeto Next.js dentro dele.
+
+```bash
+npm create next-app@latest my-workflow-app
+```
+
+Entre no diretório recém-criado:
+
+```bash
+cd my-workflow-app
+```
+
+### Instale `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Configure o Next.js
+
+Envolva seu `next.config.ts` com `withWorkflow()`. Isso habilita o uso das diretivas `"use workflow"` e `"use step"`.
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next"; // [!code highlight]
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // … rest of your Next.js config
+};
+
+export default withWorkflow(nextConfig); // [!code highlight]
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Configurar o IntelliSense para TypeScript (Opcional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Para habilitar dicas úteis no seu IDE, configure o plugin workflow em `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Configurar o Proxy Handler (se aplicável)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Se seu app Next.js possui um [proxy handler](https://nextjs.org/docs/app/api-reference/file-conventions/proxy)
+(antigamente conhecido como "middleware"), você precisará atualizar o padrão matcher para excluir os caminhos internos do Workflow
+para evitar que o proxy handler seja executado neles.
+
+Adicione `.well-known/workflow/*` à lista de exclusões do seu middleware:
+
+```typescript title="proxy.ts" lineNumbers
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+export function proxy(request: NextRequest) {
+  // Your middleware logic
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    // ... your existing matchers
+    {
+      source: "/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/).*)", // [!code highlight]
+    },
+  ],
+};
+```
+
+Isso garante que os caminhos internos do Workflow não sejam interceptados pelo seu middleware, o que poderia interferir na execução e retomada dos workflows.
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Crie seu primeiro Workflow
+
+Crie um novo arquivo para o nosso primeiro workflow:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+ "use workflow"; // [!code highlight]
+
+ const user = await createUser(email);
+ await sendWelcomeEmail(user);
+
+ await sleep("5s"); // Pause for 5s - doesn't consume any resources
+ await sendOnboardingEmail(user);
+
+ console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+ return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+Vamos preencher essas funções em seguida, mas vamos dar uma olhada neste código:
+
+* Definimos uma função **workflow** com a diretiva `"use workflow"`. Pense na função workflow como a _orquestradora_ dos **steps** individuais.
+* A função `sleep` do Workflow DevKit nos permite suspender a execução do workflow sem consumir recursos. Um sleep pode durar alguns segundos, horas, dias ou até meses.
+
+## Crie seus Steps do Workflow
+
+Agora vamos definir essas funções que faltam.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+ "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+ console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Observando este código:
+
+* A lógica de negócio vive dentro dos **steps**. Quando um step é invocado dentro de um **workflow**, ele é enfileirado para execução em uma requisição separada enquanto o workflow está suspenso, assim como `sleep`.
+* Se um step lançar um erro, como em `sendWelcomeEmail`, o step será automaticamente reexecutado até que tenha sucesso (ou alcance o número máximo de tentativas do step).
+* Os steps podem lançar um `FatalError` se um erro for intencional e não deva ser reexecutado.
+
+<Callout>
+Vamos nos aprofundar em workflows, steps e outras formas de suspender ou lidar com eventos em [Fundamentos](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Crie seu Route Handler
+
+Para invocar seu novo workflow, precisaremos adicionar seu workflow a um Route Handler de API `POST`, `app/api/signup/route.ts`, com o código a seguir:
+
+```typescript title="app/api/signup/route.ts"
+import { start } from "workflow/api";
+import { handleUserSignup } from "@/workflows/user-signup";
+import { NextResponse } from "next/server";
+
+export async function POST(request: Request) {
+ const { email } = await request.json();
+
+ // Executes asynchronously and doesn't block your app
+ await start(handleUserSignup, [email]);
+
+ return NextResponse.json({
+  message: "User signup workflow started",
+ });
+}
+```
+
+Esse Route Handler cria um endpoint de requisição `POST` em `/api/signup` que disparará seu workflow.
+
+<Callout>
+Workflows podem ser acionados a partir de rotas de API, Server Actions, ou qualquer código do lado do servidor.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Executar em desenvolvimento
+
+Para iniciar seu servidor de desenvolvimento, execute o seguinte comando no terminal na raiz do Next.js:
+
+```bash
+npm run dev
+```
+
+Quando o servidor de desenvolvimento estiver em execução, você pode disparar seu workflow executando este comando no terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Verifique os logs do servidor de desenvolvimento do Next.js para ver a execução do seu workflow, bem como os steps que estão sendo processados.
+
+Além disso, você pode usar o [CLI ou Interface Web do Workflow DevKit](/docs/observability) para inspecionar suas execuções e steps em detalhes.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Interface Web do Workflow DevKit" />
+
+## Implantação em produção
+
+Aplicativos Workflow DevKit atualmente funcionam melhor quando implantados no [Vercel](https://vercel.com/home) e não precisam de configuração especial.
+
+Consulte a seção [Implantação](/docs/deploying) para saber como seus workflows podem ser implantados em outros lugares.
+
+## Próximos passos
+
+* Saiba mais sobre os [Fundamentos](/docs/foundations).
+* Consulte [Erros](/docs/errors) caso encontre problemas.
+* Explore a [Referência de API](/docs/api-reference).

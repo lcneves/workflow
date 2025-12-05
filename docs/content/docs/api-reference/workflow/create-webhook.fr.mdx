@@ -1,0 +1,225 @@
+---
+title: createWebhook
+---
+
+Crée un webhook pouvant être utilisé pour suspendre et reprendre une exécution de workflow lors de la réception d'une requête HTTP.
+
+Les webhooks offrent un moyen pour des systèmes externes d'envoyer des requêtes HTTP directement à votre workflow. Contrairement aux hooks qui acceptent des payloads arbitraires, les webhooks fonctionnent avec des objets HTTP `Request` standard et peuvent retourner des objets `Response` HTTP.
+
+```ts lineNumbers
+import { createWebhook } from "workflow"
+
+export async function webhookWorkflow() {
+  "use workflow";
+  const webhook = createWebhook();  // [!code highlight]
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook; // Suspends until HTTP request received
+  console.log("Received request:", request.method, request.url);
+}
+```
+
+## Signature de l'API
+
+### Paramètres
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['parameters']}
+/>
+
+### Valeur de retour
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['returns']}
+/>
+
+L'objet `Webhook` renvoyé possède :
+
+- `url`: L'URL du point de terminaison HTTP que les systèmes externes peuvent appeler
+- `token`: Le token unique identifiant ce webhook
+- Implémente `AsyncIterable<RequestWithResponse>` pour gérer plusieurs requêtes
+
+Le type `RequestWithResponse` étend l'interface standard `Request` avec une méthode `respondWith(response: Response)` permettant d'envoyer des réponses personnalisées au client.
+
+## Exemples
+
+### Utilisation de base
+
+Créez un webhook qui reçoit des requêtes HTTP et enregistre les détails de la requête :
+
+```typescript lineNumbers
+import { createWebhook } from "workflow"
+
+export async function basicWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook(); // [!code highlight]
+  console.log("Send requests to:", webhook.url);
+
+  const request = await webhook;
+
+  console.log("Method:", request.method);
+  console.log("Headers:", Object.fromEntries(request.headers));
+
+  const body = await request.text();
+  console.log("Body:", body);
+}
+```
+
+### Répondre aux requêtes webhook
+
+Utilisez la méthode `respondWith()` pour envoyer des réponses HTTP personnalisées. Notez que `respondWith()` doit être appelé depuis une fonction step :
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendResponse(request: RequestWithResponse) { // [!code highlight]
+  "use step"; // [!code highlight]
+  await request.respondWith( // [!code highlight]
+    new Response(JSON.stringify({ success: true, message: "Received!" }), { // [!code highlight]
+      status: 200, // [!code highlight]
+      headers: { "Content-Type": "application/json" } // [!code highlight]
+    }) // [!code highlight]
+  ); // [!code highlight]
+} // [!code highlight]
+
+export async function respondingWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook;
+
+  // Send a custom response back to the caller
+  await sendResponse(request);
+
+  // Continue workflow processing
+  const data = await request.json();
+  await processData(data);
+}
+
+async function processData(data: any) {
+  "use step";
+  // Process the webhook data
+  console.log("Processing:", data);
+}
+```
+
+### Personnalisation des tokens
+
+Les tokens servent à identifier un webhook spécifique. Vous pouvez personnaliser le token pour l'adapter à un cas d'utilisation.
+
+```typescript lineNumbers
+import { type RequestWithResponse } from "workflow"
+
+async function sendAck(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response(JSON.stringify({ received: true }), {
+      headers: { "Content-Type": "application/json" }
+    })
+  );
+}
+
+export async function githubWebhookWorkflow(repoName: string) {
+  "use workflow";
+
+  // Use a deterministic token based on the repository
+  const webhook = createWebhook({ // [!code highlight]
+    token: `github_webhook:${repoName}`, // [!code highlight]
+  }); // [!code highlight]
+
+  console.log("Configure GitHub webhook:", webhook.url);
+
+  const request = await webhook;
+  const event = await request.json();
+
+  await sendAck(request);
+
+  await deployCommit(event);
+}
+
+async function deployCommit(event: any) {
+  "use step";
+  // Deploy logic here
+}
+```
+
+### Attendre plusieurs requêtes
+
+Vous pouvez également attendre plusieurs requêtes en utilisant la syntaxe `for await...of`.
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendSlackResponse(request: RequestWithResponse, message: string) {
+  "use step";
+  await request.respondWith(
+    new Response(
+      JSON.stringify({
+        response_type: "in_channel",
+        text: message
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+}
+
+async function sendStopResponse(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response("Stopping workflow...")
+  );
+}
+
+export async function slackCommandWorkflow(channelId: string) {
+  "use workflow";
+
+  const webhook = createWebhook({
+    token: `slack_command:${channelId}`,
+  });
+
+  for await (const request of webhook) { // [!code highlight]
+    const formData = await request.formData();
+    const command = formData.get("command");
+    const text = formData.get("text");
+
+    if (command === "/status") {
+      // Respond immediately to Slack
+      await sendSlackResponse(request, "Checking status...");
+
+      // Process the command
+      const status = await checkSystemStatus();
+      await postToSlack(channelId, `Status: ${status}`);
+    }
+
+    if (text === "stop") {
+      await sendStopResponse(request);
+      break;
+    }
+  }
+}
+
+async function checkSystemStatus() {
+  "use step";
+  return "All systems operational";
+}
+
+async function postToSlack(channelId: string, message: string) {
+  "use step";
+  // Post message to Slack
+}
+```
+
+## Fonctions associées
+
+- [`createHook()`](/docs/api-reference/workflow/create-hook) - Primitive de hook bas niveau pour des données arbitraires
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - Aide pour hooks typés
+- [`resumeWebhook()`](/docs/api-reference/workflow-api/resume-webhook) - Reprendre un webhook depuis une route API

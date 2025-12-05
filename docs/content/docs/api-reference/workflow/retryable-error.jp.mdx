@@ -1,0 +1,106 @@
+---
+title: RetryableError
+---
+
+ステップ内で `RetryableError` がスローされると、そのワークフローはステップを再試行すべきことを示します。さらに、いつステップを再試行するかを示す `retryAfter` パラメータを含みます。
+
+ステップを再試行したい場合や、一定期間後に再試行したい場合にこれを使用してください。
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!") // [!code highlight]
+}
+```
+
+<Callout>
+`Error` と `RetryableError` の違いは必ずしも明確ではないかもしれません。両方がスローされた場合、どちらも再試行されるためです。違いは、`RetryableError` には追加の設定可能な `retryAfter` パラメータがある点です。
+</Callout>
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+interface RetryableError {
+    options?: RetryableErrorOptions;
+    message: string;
+}
+
+export default RetryableError;`}
+/>
+
+#### RetryableErrorOptions
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+export default RetryableErrorOptions;`}
+/>
+
+## 例
+
+### 一定期間後に再試行する
+
+`RetryableError` は `retryAfter` パラメータで、ステップをいつ再試行するかを指定できます。
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: "5m" // - supports "5m", "30s", "1h", etc. // [!code highlight]
+    })
+}
+```
+
+再試行の遅延をミリ秒単位で指定することもできます:
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: 5000 // - 5000 milliseconds = 5 seconds // [!code highlight]
+    })
+}
+```
+
+または特定の日時に再試行することもできます:
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: new Date(Date.now() + 60000) // - retry after 1 minute // [!code highlight]
+    })
+}
+```

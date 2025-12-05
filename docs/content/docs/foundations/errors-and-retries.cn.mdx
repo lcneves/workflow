@@ -1,0 +1,179 @@
+---
+title: 错误与重试
+---
+
+默认情况下，步骤内部抛出的错误会被重试。此外，Workflow DevKit 提供了两种新的错误类型，可用于自定义重试行为。
+
+## 默认重试
+
+默认情况下，步骤在任意错误上最多重试 3 次。你可以通过向步骤函数添加 `maxRetries` 属性来自定义重试次数。
+
+```typescript lineNumbers
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!"); // [!code highlight]
+  }
+
+  return response.json();
+}
+
+callApi.maxRetries = 5; // Set a custom number of retries
+```
+
+步骤在失败后会立即入队。继续阅读以了解如何自定义此行为。
+
+<Callout type="info">
+  当被重试的步骤会执行外部副作用（付款、电子邮件、API 写入）时，确保这些调用是 <strong>幂等的</strong> 以避免重复的副作用。有关更多信息，请参见 <a href="/docs/foundations/idempotency">幂等性</a>。
+</Callout>
+
+## 故意抛错
+
+当你的步骤需要故意抛出错误并跳过重试时，只需抛出 [`FatalError`](/docs/api-reference/workflow/fatal-error)。
+
+```typescript lineNumbers
+import { FatalError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries."); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## 自定义重试行为
+
+当你需要自定义重试间隔时，使用 [`RetryableError`](/docs/api-reference/workflow/retryable-error) 并设置 `retryAfter` 属性。
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", { // [!code highlight]
+      retryAfter: "1m", // Duration string // [!code highlight]
+    }); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## 高级示例
+
+下面的示例将我们所学的内容结合起来，同时使用 [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)。
+
+```typescript lineNumbers
+import { FatalError, RetryableError, getStepMetadata } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const metadata = getStepMetadata();
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Exponential backoffs
+    throw new RetryableError("Backing off...", {
+      retryAfter: (metadata.attempt ** 2) * 1000,  // [!code highlight]
+    });
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", {
+      retryAfter: new Date(Date.now() + 60000),  // Date instance // [!code highlight]
+    });
+  }
+
+  return response.json();
+}
+callApi.maxRetries = 5;
+```
+
+## 回滚失败步骤
+
+当工作流在中途失败时，可能会使系统处于不一致状态。常见的解决模式是“回滚”：为每个成功的步骤记录一个对应的回滚操作以撤销它。如果后续步骤失败，则按相反顺序运行回滚操作以进行回滚。
+
+关键指南：
+
+- 将回滚也实现为步骤，这样它们是持久的并能受益于重试。
+- 确保回滚具有 [幂等性](/docs/foundations/idempotency)；它们可能会运行多次。
+- 只有在正向步骤成功后才将补偿入队。
+
+```typescript lineNumbers
+// Forward steps
+async function reserveInventory(orderId: string) {
+  "use step";
+  // ... call inventory service to reserve ...
+}
+
+async function chargePayment(orderId: string) {
+  "use step";
+  // ... charge the customer ...
+}
+
+// Rollback steps
+async function releaseInventory(orderId: string) {
+  "use step";
+  // ... undo inventory reservation ...
+}
+
+async function refundPayment(orderId: string) {
+  "use step";
+  // ... refund the charge ...
+}
+
+export async function placeOrderSaga(orderId: string) {
+  "use workflow";
+
+  const rollbacks: Array<() => Promise<void>> = [];
+
+  try {
+    await reserveInventory(orderId);
+    rollbacks.push(() => releaseInventory(orderId));
+
+    await chargePayment(orderId);
+    rollbacks.push(() => refundPayment(orderId));
+
+    // ... more steps & rollbacks ...
+  } catch (e) {
+    for (const rollback of rollbacks.reverse()) {
+      await rollback();
+    }
+    // Rethrow so the workflow records the failure after rollbacks
+    throw e;
+  }
+}
+```

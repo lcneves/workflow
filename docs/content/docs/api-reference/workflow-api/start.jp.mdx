@@ -1,0 +1,73 @@
+---
+title: 開始
+---
+
+新しいワークフロー実行を開始／キューに登録します。
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow); // [!code highlight]
+```
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+definition={`
+import { start } from "workflow/api";
+export default start;`}
+showSections={["parameters"]}
+/>
+
+#### StartOptions
+
+<TSDoc
+definition={`
+import type { StartOptions } from "workflow/api";
+export default StartOptions;`}
+/>
+
+### 戻り値
+
+`Run` オブジェクトを返します:
+
+<TSDoc
+definition={`
+import { Run } from "workflow/api";
+export default Run;`}
+showSections={["returns"]}
+/>
+
+詳細は[`WorkflowReadableStreamOptions`](/docs/api-reference/workflow-api/get-run#workflowreadablestreamoptions)をご覧ください。
+
+## 補足情報
+
+* `start()` 関数はランタイム／非ワークフローのコンテキストで、ワークフローの実行をプログラム的にトリガーするために使用されます。
+* これは、Next.js アプリケーションで一般的なパターンであるワークフロー関数を直接呼び出す方法とは異なります。
+* この関数はワークフローをキューに登録した直後に戻り、ワークフローの完了を待ちません。
+* すべての引数は[シリアライズ可能](/docs/foundations/serialization)である必要があります。
+
+## 例
+
+### 引数を渡す例
+
+```typescript
+import { start } from "workflow/api";
+import { userSignupWorkflow } from "./workflows/user-signup";
+
+const run = await start(userSignupWorkflow, ["user@example.com"]); // [!code highlight]
+```
+
+### `StartOptions` を使用した例
+
+```typescript
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow, ["arg1", "arg2"], { // [!code highlight]
+  deploymentId: "custom-deployment-id" // [!code highlight]
+}); // [!code highlight]
+```

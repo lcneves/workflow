@@ -1,0 +1,424 @@
+---
+title: DurableAgent
+---
+
+<Callout type="warn">
+`@workflow/ai` パッケージは現在積極的に開発中であり、実験的であると見なすべきです。
+</Callout>
+
+`DurableAgent` クラスは、ワークフローステップ間で状態を維持し、ツールを呼び出し、中断と再開を適切に処理できる AI 搭載のエージェントを作成することを可能にします。
+
+ツール呼び出しは自動リトライのためにワークフローステップとして実装することも、[`sleep()`](/docs/api-reference/workflow/sleep) や Hooks といったコアライブラリ機能を利用する通常のワークフローレベルのロジックとして実装することもできます。
+
+```typescript lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function getWeather({ city }: { city: string }) {
+  "use step";
+
+  return `Weather in ${city} is sunny`;
+}
+
+async function myAgent() {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    system: "You are a helpful weather assistant.",
+    tools: {
+      getWeather: {
+        description: "Get weather for a city",
+        inputSchema: z.object({ city: z.string() }),
+        execute: getWeather,
+      },
+    },
+  });
+
+  // The agent will stream its output to the workflow
+  // run's default output stream
+  const writable = getWritable<UIMessageChunk>();
+
+  await agent.stream({
+    messages: [{ role: "user", content: "How is the weather in San Francisco?" }],
+    writable,
+  });
+}
+```
+
+## API Signature
+
+### Class
+
+<TSDoc
+definition={`
+import { DurableAgent } from "@workflow/ai/agent";
+export default DurableAgent;`}
+/>
+
+### DurableAgentOptions
+
+<TSDoc
+definition={`
+import type { DurableAgentOptions } from "@workflow/ai/agent";
+export default DurableAgentOptions;`}
+/>
+
+### DurableAgentStreamOptions
+
+<TSDoc
+definition={`
+import type { DurableAgentStreamOptions } from "@workflow/ai/agent";
+export default DurableAgentStreamOptions;`}
+/>
+
+### PrepareStepInfo
+
+`prepareStep` コールバックに渡される情報:
+
+<TSDoc
+definition={`
+import type { PrepareStepInfo } from "@workflow/ai/agent";
+export default PrepareStepInfo;`}
+/>
+
+### PrepareStepResult
+
+`prepareStep` コールバックの返り値の型:
+
+<TSDoc
+definition={`
+import type { PrepareStepResult } from "@workflow/ai/agent";
+export default PrepareStepResult;`}
+/>
+
+## 主な機能
+
+- **耐久性のある実行**: エージェントは状態を失うことなく中断および再開が可能です
+- **柔軟なツール実装**: ツールは自動リトライのためにワークフローステップとして実装することも、通常のワークフローレベルのロジックとして実装することもできます
+- **ストリーム処理**: ストリーミング応答やツール呼び出しを構造化された方法で扱います
+- **Workflow ネイティブ**: 本番品質の信頼性のために Workflow DevKit と完全に統合されています
+
+## 知っておくと良いこと
+
+- ツールはワークフローステップとして実装できます（自動リトライのために `"use step"` を使用する）、または通常のワークフローレベルのロジックとして実装できます
+- ツールの `execute` 関数内では `sleep()` や Hooks などのコアライブラリ機能を使用できます
+- エージェントはツール呼び出しを完了するまで反復的に処理します
+- `stream()` メソッドは、初期メッセージ、アシスタントの応答、ツール結果を含む完全な会話履歴を含む `{ messages }` を返します
+- `prepareStep` コールバックは各ステップの前に実行され、モデルやメッセージを動的に変更できます
+
+## 例
+
+### 基本的なツール付きエージェント
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function getWeather({ location }: { location: string }) {
+  "use step";
+  // Fetch weather data
+  const response = await fetch(`https://api.weather.com?location=${location}`);
+  return response.json();
+}
+
+async function weatherAgentWorkflow(userQuery: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      getWeather: {
+        description: "Get current weather for a location",
+        inputSchema: z.object({ location: z.string() }),
+        execute: getWeather,
+      },
+    },
+    system: "You are a helpful weather assistant. Always provide accurate weather information.",
+  });
+
+  await agent.stream({
+    messages: [
+      {
+        role: "user",
+        content: userQuery,
+      },
+    ],
+    writable: getWritable<UIMessageChunk>(),
+  });
+}
+```
+
+### 複数のツール
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function getWeather({ location }: { location: string }) {
+  "use step";
+  return `Weather in ${location}: Sunny, 72°F`;
+}
+
+async function searchEvents({ location, category }: { location: string; category: string }) {
+  "use step";
+  return `Found 5 ${category} events in ${location}`;
+}
+
+async function multiToolAgentWorkflow(userQuery: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      getWeather: {
+        description: "Get weather for a location",
+        inputSchema: z.object({ location: z.string() }),
+        execute: getWeather,
+      },
+      searchEvents: {
+        description: "Search for upcoming events in a location",
+        inputSchema: z.object({ location: z.string(), category: z.string() }),
+        execute: searchEvents,
+      },
+    },
+  });
+
+  await agent.stream({
+    messages: [
+      {
+        role: "user",
+        content: userQuery,
+      },
+    ],
+    writable: getWritable<UIMessageChunk>(),
+  });
+}
+```
+
+### マルチターン会話
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { z } from "zod";
+
+async function searchProducts({ query }: { query: string }) {
+  "use step";
+  // Search product database
+  return `Found 3 products matching "${query}"`;
+}
+
+async function multiTurnAgentWorkflow() {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      searchProducts: {
+        description: "Search for products",
+        inputSchema: z.object({ query: z.string() }),
+        execute: searchProducts,
+      },
+    },
+  });
+
+  const writable = getWritable<UIMessageChunk>();
+
+  // First user message
+  //   - Result is streamed to the provided `writable` stream
+  //   - Message history is returned in `messages` for LLM context
+  let { messages } = await agent.stream({
+    messages: [
+      { role: "user", content: "Find me some laptops" }
+    ],
+    writable,
+  });
+
+  // Continue the conversation with the accumulated message history
+  const result = await agent.stream({
+    messages: [
+      ...messages,
+      { role: "user", content: "Which one has the best battery life?" }
+    ],
+    writable,
+  });
+
+  // result.messages now contains the complete conversation history
+  return result.messages;
+}
+```
+
+### ワークフローライブラリ機能を使ったツール
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { sleep, defineHook, getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+// Define a reusable hook type
+const approvalHook = defineHook<{ approved: boolean; reason: string }>();
+
+async function scheduleTask({ delaySeconds }: { delaySeconds: number }) {
+  // Note: No "use step" for this tool call,
+  // since `sleep()` is a workflow level function
+  await sleep(`${delaySeconds}s`);
+  return `Slept for ${delaySeconds} seconds`;
+}
+
+async function requestApproval({ message }: { message: string }) {
+  // Note: No "use step" for this tool call either,
+  // since hooks are awaited at the workflow level
+
+  // Utilize a Hook for Human-in-the-loop approval
+  const hook = approvalHook.create({
+    metadata: { message }
+  });
+
+  console.log(`Approval needed - token: ${hook.token}`);
+
+  // Wait for the approval payload
+  const approval = await hook;
+
+  if (approval.approved) {
+    return `Request approved: ${approval.reason}`;
+  } else {
+    throw new Error(`Request denied: ${approval.reason}`);
+  }
+}
+
+async function agentWithLibraryFeaturesWorkflow(userRequest: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      scheduleTask: {
+        description: "Pause the workflow for the specified number of seconds",
+        inputSchema: z.object({
+          delaySeconds: z.number(),
+        }),
+        execute: scheduleTask,
+      },
+      requestApproval: {
+        description: "Request approval for an action",
+        inputSchema: z.object({ message: z.string() }),
+        execute: requestApproval,
+      },
+    },
+  });
+
+  await agent.stream({
+    messages: [{ role: "user", content: userRequest }],
+    writable: getWritable<UIMessageChunk>(),
+  });
+}
+```
+
+### prepareStep を使った動的コンテキスト
+
+エージェントループの各ステップの前に設定を変更するには `prepareStep` を使用してください:
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import type { UIMessageChunk } from "ai";
+
+async function agentWithPrepareStep(userMessage: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "openai/gpt-4.1-mini", // Default model
+    system: "You are a helpful assistant.",
+  });
+
+  await agent.stream({
+    messages: [{ role: "user", content: userMessage }],
+    writable: getWritable<UIMessageChunk>(),
+    prepareStep: async ({ stepNumber, messages }) => {
+      // Switch to a stronger model for complex reasoning after initial steps
+      if (stepNumber > 2 && messages.length > 10) {
+        return {
+          model: "anthropic/claude-sonnet-4.5",
+        };
+      }
+
+      // Trim context if messages grow too large
+      if (messages.length > 20) {
+        return {
+          messages: [
+            messages[0], // Keep system message
+            ...messages.slice(-10), // Keep last 10 messages
+          ],
+        };
+      }
+
+      return {}; // No changes
+    },
+  });
+}
+```
+
+### prepareStep を使ったメッセージ注入
+
+外部ソース（フックなど）からのメッセージを各 LLM 呼び出しの前に注入する例:
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable, defineHook } from "workflow";
+import type { UIMessageChunk } from "ai";
+
+const messageHook = defineHook<{ message: string }>();
+
+async function agentWithMessageQueue(initialMessage: string) {
+  "use workflow";
+
+  const messageQueue: Array<{ role: "user"; content: string }> = [];
+
+  // Listen for incoming messages via hook
+  const hook = messageHook.create();
+  hook.then(({ message }) => {
+    messageQueue.push({ role: "user", content: message });
+  });
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    system: "You are a helpful assistant.",
+  });
+
+  await agent.stream({
+    messages: [{ role: "user", content: initialMessage }],
+    writable: getWritable<UIMessageChunk>(),
+    prepareStep: ({ messages }) => {
+      // Inject queued messages before the next step
+      if (messageQueue.length > 0) {
+        const newMessages = messageQueue.splice(0);
+        return {
+          messages: [
+            ...messages,
+            ...newMessages.map(m => ({
+              role: m.role,
+              content: [{ type: "text" as const, text: m.content }],
+            })),
+          ],
+        };
+      }
+      return {};
+    },
+  });
+}
+```
+
+## 関連項目
+
+- [耐久性のある AI エージェントの構築](/docs/ai) - 耐久性のあるエージェント作成の完全ガイド
+- [ユーザーメッセージのキューイング](/docs/ai/message-queueing) - メッセージ注入のための prepareStep の使用
+- [WorkflowChatTransport](/docs/api-reference/workflow-ai/workflow-chat-transport) - AI SDK ストリームのためのトランスポートレイヤー
+- [ワークフローとステップ](/docs/foundations/workflows-and-steps) - ワークフローの基本の理解
+- [AI SDK のエージェントループ制御パターン](https://ai-sdk.dev/docs/agents/loop-control) - AI SDK のエージェントループ制御パターン

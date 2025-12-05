@@ -1,0 +1,211 @@
+---
+title: 启动工作流
+---
+
+一旦你定义了工作流函数，你需要触发它们以开始执行。可以使用来自 `workflow/api` 的 `start()` 函数来完成此操作，该函数会将新的工作流运行入队并返回一个可用于跟踪其进度的 `Run` 对象。
+
+## `start()` 函数
+
+[`start()`](/docs/api-reference/workflow-api/start) 函数用于从运行时上下文（例如 API 路由、Server Actions 或任何服务器端代码）以编程方式触发工作流执行。
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { handleUserSignup } from "./workflows/user-signup";
+
+export async function POST(request: Request) {
+  const { email } = await request.json();
+
+  // Start the workflow
+  const run = await start(handleUserSignup, [email]); // [!code highlight]
+
+  return Response.json({
+    message: "Workflow started",
+    runId: run.runId
+  });
+}
+```
+
+**关键要点：**
+
+- `start()` 在将工作流入队后立即返回 — 它不会等待完成
+- 第一个参数是你的工作流函数
+- 第二个参数是要传递给工作流的参数数组（如果工作流不接受参数则可选）
+- 所有参数必须是 [可序列化](/docs/foundations/serialization)
+
+**了解更多**：[`start()` API 参考](/docs/api-reference/workflow-api/start)
+
+## `Run` 对象
+
+当你调用 `start()` 时，它会返回一个[`Run`](/docs/api-reference/workflow-api/start#returns) 对象，该对象可用于访问工作流的状态和结果。
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { processOrder } from "./workflows/process-order";
+
+const run = await start(processOrder, [orderId]);
+
+// The run object has properties you can await
+console.log("Run ID:", run.runId);
+
+// Check the workflow status
+const status = await run.status; // "running" | "completed" | "failed"
+
+// Get the workflow's return value (blocks until completion)
+const result = await run.returnValue;
+```
+
+**主要属性：**
+
+- `runId` - 此工作流运行的唯一标识符
+- `status` - 工作流的当前状态（异步）
+- `returnValue` - 工作流函数返回的值（异步，阻塞直到完成）
+- `readable` - 用于从工作流流式传输更新的 ReadableStream
+
+<Callout type="info">
+大多数 `Run` 属性是返回 Promise 的异步 getter。你需要对它们使用 `await` 才能获取其值。有关属性和方法的完整列表，请参阅下面的 API 参考。
+</Callout>
+
+**了解更多**：[`Run` API 参考](/docs/api-reference/workflow-api/start#returns)
+
+## 常见模式
+
+### 触发即忘
+
+最常见的模式是启动一个工作流并立即返回，让它在后台执行：
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { sendNotifications } from "./workflows/notifications";
+
+export async function POST(request: Request) {
+  // Start workflow and don't wait for it
+  const run = await start(sendNotifications, [userId]);
+
+  // Return immediately
+  return Response.json({
+    message: "Notifications queued",
+    runId: run.runId
+  });
+}
+```
+
+### 等待完成
+
+如果你需要在响应之前等待工作流完成：
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateReport } from "./workflows/reports";
+
+export async function POST(request: Request) {
+  const run = await start(generateReport, [reportId]);
+
+  // Wait for the workflow to complete
+  const report = await run.returnValue; // [!code highlight]
+
+  return Response.json({ report });
+}
+```
+
+<Callout type="warn">
+在等待 `returnValue` 时要谨慎 —— 如果你的工作流需要很长时间，API 路由可能会超时。
+</Callout>
+
+### 向客户端流式传输更新
+
+在工作流执行时实时向客户端流式传输更新，而无需等待完成：
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateAIContent } from "./workflows/ai-generation";
+
+export async function POST(request: Request) {
+  const { prompt } = await request.json();
+
+  // Start the workflow
+  const run = await start(generateAIContent, [prompt]);
+
+  // Get the readable stream (can also use run.readable as shorthand)
+  const stream = run.getReadable(); // [!code highlight]
+
+  // Return the stream immediately
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+    },
+  });
+}
+```
+
+你的工作流可以使用 [`getWritable()`](/docs/api-reference/workflow/get-writable) 向流写入数据：
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function generateAIContent(prompt: string) {
+  "use workflow";
+
+  const writable = getWritable(); // [!code highlight]
+
+  await streamContentToClient(writable, prompt);
+
+  return { status: "complete" };
+}
+
+async function streamContentToClient(
+  writable: WritableStream,
+  prompt: string
+) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Stream updates as they become available
+  for (let i = 0; i < 10; i++) {
+    const chunk = new TextEncoder().encode(`Update ${i}\n`);
+    await writer.write(chunk);
+  }
+
+  writer.releaseLock();
+}
+```
+
+<Callout type="info">
+流在 AI 工作流中特别有用，当你想向用户实时显示进度，或用于会产生中间结果的长时间运行的过程。
+</Callout>
+
+**了解更多**： [工作流中的流式传输](/docs/foundations/serialization#streaming)
+
+### 稍后检查状态
+
+你可以使用其 `runId` 通过 [`getRun()`](/docs/api-reference/workflow-api/get-run) 在稍后检索工作流运行：
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const runId = url.searchParams.get("runId");
+
+  // Retrieve the existing run
+  const run = getRun(runId); // [!code highlight]
+
+  // Check its status
+  const status = await run.status;
+
+  if (status === "completed") {
+    const result = await run.returnValue;
+    return Response.json({ result });
+  }
+
+  return Response.json({ status });
+}
+```
+
+## 下一步
+
+现在你已经了解如何启动工作流并跟踪其执行：
+
+- 了解 [控制流模式](/docs/foundations/control-flow-patterns) 以组织复杂工作流
+- 探索 [错误与重试](/docs/foundations/errors-and-retries) 以优雅地处理失败
+- 查看 [`start()` API 参考](/docs/api-reference/workflow-api/start) 以获取完整细节

@@ -1,0 +1,151 @@
+---
+title: Sérialisation
+---
+
+Tous les arguments de fonction et les valeurs de retour transmis entre les fonctions de workflow et les fonctions step doivent être sérialisables. Workflow DevKit utilise un système de sérialisation personnalisé construit sur [devalue](https://github.com/sveltejs/devalue). Ce système prend en charge les types JSON standard, ainsi que quelques types d'API Web additionnels courants.
+
+<Callout type="info">
+Le système de sérialisation garantit que toutes les données persistent correctement lors des suspensions et des reprises de workflow, permettant une exécution durable.
+</Callout>
+
+## Types sérialisables pris en charge
+
+Les types suivants peuvent être sérialisés et transmis via les fonctions de workflow :
+
+**Types JSON standard :**
+
+- `string`
+- `number`
+- `boolean`
+- `null`
+- Tableaux de valeurs sérialisables
+- Objets avec des clés `string` et des valeurs sérialisables
+
+**Types étendus :**
+
+- `undefined`
+- `bigint`
+- `ArrayBuffer`
+- `BigInt64Array`, `BigUint64Array`
+- `Date`
+- `Float32Array`, `Float64Array`
+- `Int8Array`, `Int16Array`, `Int32Array`
+- `Map<Serializable, Serializable>`
+- `RegExp`
+- `Set<Serializable>`
+- `URL`
+- `URLSearchParams`
+- `Uint8Array`, `Uint8ClampedArray`, `Uint16Array`, `Uint32Array`
+
+**À noter :**
+
+<Callout type="info">
+Ces types bénéficient d'un traitement particulier et sont expliqués en détail dans les sections ci‑dessous.
+</Callout>
+
+- `Headers`
+- `Request`
+- `Response`
+- `ReadableStream<Serializable>`
+- `WritableStream<Serializable>`
+
+## Streaming
+
+`ReadableStream` et `WritableStream` sont pris en charge en tant que types sérialisables avec un traitement spécial. Ces flux peuvent être transmis entre les fonctions de workflow et les fonctions step tout en conservant leurs capacités de streaming.
+
+Pour des informations complètes sur l'utilisation des streams dans les workflows, y compris des modèles pour le streaming IA, le traitement de fichiers et les mises à jour de progression, consultez le [Guide du streaming](/docs/foundations/streaming).
+
+## Request & Response
+
+Les API Web [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) et [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) sont prises en charge par le système de sérialisation et peuvent être transmises entre les fonctions de workflow et les fonctions step de la même manière que les autres types de données.
+
+Par commodité, ces deux API sont traitées légèrement différemment lorsqu'elles sont utilisées dans une fonction de workflow : l'appel des méthodes d'instance `text()` / `json()` / `arrayBuffer()` est automatiquement considéré comme une invocation de fonction step. Cela vous permet de consommer le corps directement dans le contexte du workflow tout en maintenant une sérialisation et une mise en cache appropriées.
+
+Par exemple, considérez comment la réception d'une requête webhook fournit l'instance `Request` entière dans le contexte du workflow. Vous pouvez consommer le corps de cette requête directement dans le workflow, qui sera mis en cache en tant que résultat de step pour les reprises futures du workflow :
+
+```typescript title="workflows/webhook.ts" lineNumbers
+import { createWebhook } from "workflow";
+
+export async function handleWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+  const request = await webhook;
+
+  // The body of the request will only be consumed once // [!code highlight]
+  const body = await request.json(); // [!code highlight]
+
+  // …
+}
+```
+
+### Utilisation de `fetch` dans les workflows
+
+Parce que `Request` et `Response` sont sérialisables, Workflow DevKit fournit une fonction `fetch` qui peut être utilisée directement dans les fonctions de workflow :
+
+```typescript title="workflows/api-call.ts" lineNumbers
+import { fetch } from "workflow"; // [!code highlight]
+
+export async function apiWorkflow() {
+  "use workflow";
+
+  // fetch can be called directly in workflows // [!code highlight]
+  const response = await fetch("https://api.example.com/data"); // [!code highlight]
+  const data = await response.json();
+
+  return data;
+}
+```
+
+L'implémentation est simple : `fetch` depuis le workflow est une fonction step qui encapsule le `fetch` standard :
+
+```typescript title="Implementation" lineNumbers
+export async function fetch(...args: Parameters<typeof globalThis.fetch>) {
+  "use step";
+  return globalThis.fetch(...args);
+}
+```
+
+Cela vous permet d'effectuer des requêtes HTTP directement dans les fonctions de workflow tout en conservant un comportement de replay déterministe grâce à la mise en cache automatique.
+
+## Sémantique du passage par valeur
+
+**Les paramètres sont passés par valeur, pas par référence.** Les steps reçoivent des copies désérialisées des données. Les mutations effectuées à l'intérieur d'un step n'affecteront pas l'original dans le workflow.
+
+**Incorrect :**
+
+```typescript title="workflows/incorrect-mutation.ts" lineNumbers
+export async function updateUserWorkflow(userId: string) {
+  "use workflow";
+
+  let user = { id: userId, name: "John", email: "john@example.com" };
+  await updateUserStep(user);
+
+  // user.email is still "john@example.com" // [!code highlight]
+  console.log(user.email); // [!code highlight]
+}
+
+async function updateUserStep(user: { id: string; name: string; email: string }) {
+  "use step";
+  user.email = "newemail@example.com"; // Changes are lost // [!code highlight]
+}
+```
+
+**Correct — renvoyer les données modifiées :**
+
+```typescript title="workflows/correct-mutation.ts" lineNumbers
+export async function updateUserWorkflow(userId: string) {
+  "use workflow";
+
+  let user = { id: userId, name: "John", email: "john@example.com" };
+  user = await updateUserStep(user); // Reassign the return value // [!code highlight]
+
+  console.log(user.email); // "newemail@example.com"
+}
+
+async function updateUserStep(user: { id: string; name: string; email: string }) {
+  "use step";
+  user.email = "newemail@example.com";
+  return user; // [!code highlight]
+}
+```

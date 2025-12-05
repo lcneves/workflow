@@ -1,0 +1,139 @@
+---
+title: fetch
+---
+
+在工作流内发起 HTTP 请求。这是一个特殊的步骤函数，封装了标准的 `fetch` API，自动处理序列化并提供重试语义。
+
+当您需要在工作流中调用外部 API 或服务时，这很有用。
+
+<Callout>
+`fetch` 是一种 *特殊* 的步骤函数，应在工作流函数内部直接调用。
+</Callout>
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    return await response.json()
+}
+```
+
+## API 签名
+
+### 参数
+
+接受与 Web [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) 相同的参数
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['parameters']}
+/>
+
+### 返回
+
+返回与 Web [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) 相同的响应
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['returns']}
+/>
+
+## 示例
+
+### 基本用法
+
+下面是一个如何在工作流中使用 `fetch` 的简单示例。
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    const data = await response.json()
+
+    // Make a POST request
+    const postResponse = await fetch("https://api.example.com/create", { // [!code highlight]
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: "test" })
+    })
+
+    return data
+}
+```
+
+我们像使用标准 fetch API 一样，使用 URL 和可选的请求选项调用 `fetch()`。工作流运行时会自动处理响应序列化。
+
+此 API 用于在工作流中方便地使用 `fetch`，但通常您可能希望扩展并实现自己的 fetch，以获得更强大的错误处理和重试逻辑。
+
+### 自定义 `fetch` 行为
+
+下面是一个自定义 fetch 封装的示例，提供更复杂的错误处理和自定义重试逻辑：
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow"
+
+export async function customFetch(
+    url: string,
+    init?: RequestInit
+) {
+    "use step"
+
+    const response = await fetch(url, init)
+
+    // Handle client errors (4xx) - don't retry
+    if (response.status >= 400 && response.status < 500) {
+        if (response.status === 429) {
+            // Rate limited - retry with backoff from Retry-After header
+            const retryAfter = response.headers.get("Retry-After")
+
+            if (retryAfter) {
+                // The Retry-After header is either a number (seconds) or an RFC 7231 date string
+                const retryAfterValue = /^\d+$/.test(retryAfter)
+                    ? parseInt(retryAfter) * 1000  // Convert seconds to milliseconds
+                    : new Date(retryAfter);        // Parse RFC 7231 date format
+
+                // Use `RetryableError` to customize the retry
+                throw new RetryableError( // [!code highlight]
+                    `Rate limited by ${url}`, // [!code highlight]
+                    { retryAfter: retryAfterValue } // [!code highlight]
+                ) // [!code highlight]
+            }
+        }
+
+        // Other client errors are fatal (400, 401, 403, 404, etc.)
+        throw new FatalError( // [!code highlight]
+            `Client error ${response.status}: ${response.statusText}` // [!code highlight]
+        ) // [!code highlight]
+    }
+
+    // Handle server errors (5xx) - will retry automatically
+    if (!response.ok) {
+        throw new Error(
+            `Server error ${response.status}: ${response.statusText}`
+        )
+    }
+
+    return response
+}
+```
+
+此示例演示：
+
+- 将自定义的 `maxRetries` 设置为 5 次尝试。
+- 对于客户端错误（400-499），抛出 [`FatalError`](/docs/api-reference/workflow/fatal-error) 以防止重试。
+- 通过读取 `Retry-After` 头并使用 [`RetryableError`](/docs/api-reference/workflow/retryable-error) 来处理 429 限速情况。
+- 对于服务器错误（5xx），允许自动重试。

@@ -1,0 +1,235 @@
+---
+title: resumeWebhook
+---
+
+通过向由其令牌标识的 webhook 发送 HTTP `Request` 来恢复工作流运行。
+
+此函数会创建一个 `hook_received` 事件并重新触发工作流以继续执行。它旨在从接收外部 HTTP 请求的 API 路由或 server action 中调用。
+
+<Callout type="warn">
+`resumeWebhook` 是一个运行时函数，必须在工作流函数之外调用。
+</Callout>
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    return new Response("Missing token", { status: 400 });
+  }
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    return new Response("Webhook not found", { status: 404 });
+  }
+}
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { resumeWebhook } from "workflow/api";
+export default resumeWebhook;`}
+showSections={['parameters']}
+/>
+
+### 返回值
+
+返回一个解析为以下内容的 `Promise<Response>`：
+
+- `Response`: 来自工作流 `respondWith()` 调用的 HTTP 响应
+
+如果未找到或令牌无效，则抛出错误。
+
+## 示例
+
+### 基本 API 路由
+
+通过令牌将传入的 HTTP 请求转发到 webhook：
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    return new Response("Token required", { status: 400 });
+  }
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response; // Returns the workflow's custom response
+  } catch (error) {
+    return new Response("Webhook not found", { status: 404 });
+  }
+}
+```
+
+### GitHub Webhook 处理器
+
+处理 GitHub webhook 事件并将其转发到工作流：
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+import { verifyGitHubSignature } from "@/lib/github";
+
+export async function POST(request: Request) {
+  // Extract repository name from URL
+  const url = new URL(request.url);
+  const repo = url.pathname.split("/").pop();
+
+  // Verify GitHub signature
+  const signature = request.headers.get("x-hub-signature-256");
+  const isValid = await verifyGitHubSignature(request, signature);
+
+  if (!isValid) {
+    return new Response("Invalid signature", { status: 401 });
+  }
+
+  // Construct deterministic token
+  const token = `github_webhook:${repo}`;
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    return new Response("Workflow not found", { status: 404 });
+  }
+}
+```
+
+### Slack 斜线命令处理器
+
+处理 Slack 斜线命令并将其路由到工作流 webhook：
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const formData = await request.formData();
+  const channelId = formData.get("channel_id") as string;
+  const command = formData.get("command") as string;
+
+  // Verify Slack request signature
+  const slackSignature = request.headers.get("x-slack-signature");
+  if (!slackSignature) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Construct token from channel ID
+  const token = `slack_command:${channelId}`;
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    // If no workflow is listening, return a default response
+    return new Response(
+      JSON.stringify({
+        response_type: "ephemeral",
+        text: "No active workflow for this channel"
+      }),
+      {
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+  }
+}
+```
+
+### 多租户 Webhook 路由器
+
+根据租户/组织将 webhook 路由到不同的工作流：
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+
+  // Extract tenant and webhook ID from path
+  // e.g., /api/webhooks/tenant-123/webhook-abc
+  const [, , , tenantId, webhookId] = url.pathname.split("/");
+
+  if (!tenantId || !webhookId) {
+    return new Response("Invalid webhook URL", { status: 400 });
+  }
+
+  // Verify API key for tenant
+  const apiKey = request.headers.get("authorization");
+  const isAuthorized = await verifyTenantApiKey(tenantId, apiKey);
+
+  if (!isAuthorized) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Construct namespaced token
+  const token = `tenant:${tenantId}:webhook:${webhookId}`;
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    return new Response("Webhook not found or expired", { status: 404 });
+  }
+}
+
+async function verifyTenantApiKey(tenantId: string, apiKey: string | null) {
+  // Verify API key logic
+  return apiKey === process.env[`TENANT_${tenantId}_API_KEY`];
+}
+```
+
+### Server Action（Next.js）
+
+在 Next.js 的 server action 中使用 `resumeWebhook`：
+
+```typescript lineNumbers
+"use server";
+
+import { resumeWebhook } from "workflow/api";
+
+export async function triggerWebhook(
+  token: string,
+  payload: Record<string, any>
+) {
+  // Create a Request object from the payload
+  const request = new Request("http://localhost/webhook", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  try {
+    const response = await resumeWebhook(token, request);
+
+    // Parse and return the response
+    const contentType = response.headers.get("content-type");
+    if (contentType?.includes("application/json")) {
+      return await response.json();
+    }
+
+    return await response.text();
+  } catch (error) {
+    throw new Error("Webhook not found");
+  }
+}
+```
+
+## 相关函数
+
+- [`createWebhook()`](/docs/api-reference/workflow/create-webhook) - 在工作流中创建 webhook
+- [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) - 使用任意有效负载恢复钩子
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - 类型安全的钩子辅助函数

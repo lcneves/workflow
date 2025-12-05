@@ -1,0 +1,351 @@
+---
+title: Humano en el bucle
+---
+
+Un requisito previo común para ejecutar agentes de IA en producción es la capacidad de esperar la intervención humana o eventos externos antes de continuar.
+
+Los primitivos [webhook](/docs/api-reference/workflow/create-webhook) y [hook](/docs/api-reference/workflow/define-hook) de Workflow DevKit permiten patrones de "humano en el bucle" donde los flujos de trabajo se pausan hasta que una persona actúe, permitiendo la reanudación fluida de los flujos incluso después de días de inactividad y proporcionando estabilidad ante despliegues de código.
+
+Si necesitas reaccionar a eventos externos de forma programática, consulta la documentación de [hooks](/docs/foundations/hooks) para más información. Esta parte de la guía se centrará en el patrón de humano en el bucle, que es un subconjunto del patrón de hook más general.
+
+## Cómo funciona
+
+<Steps>
+
+<Step>
+`defineHook()` crea un hook tipado que puede esperarse en un flujo de trabajo. Cuando se llama a la herramienta, crea una instancia de hook usando el ID de la llamada de la herramienta como token.
+</Step>
+
+<Step>
+El flujo de trabajo se pausa en `await hook`: no se consumen recursos de cómputo mientras se espera a que la persona actúe.
+</Step>
+
+<Step>
+La interfaz de usuario muestra la llamada a la herramienta pendiente con sus datos de entrada (detalles del vuelo, precio, etc.) y muestra controles de aprobación.
+</Step>
+
+<Step>
+El usuario envía su decisión a través de un endpoint de la API, que reanuda el hook con los datos de aprobación.
+</Step>
+
+<Step>
+El flujo de trabajo recibe los datos de aprobación y reanuda la ejecución.
+</Step>
+
+</Steps>
+
+Aunque esta demo usará un botón del lado del cliente para la aprobación humana, podrías igualmente crear un webhook y enviar el enlace de aprobación por correo electrónico o Slack para reanudar el agente.
+
+## Crear una herramienta de aprobación de reservas
+
+Agrega una herramienta que permita al agente pausar deliberadamente la ejecución hasta que una persona apruebe o rechace la reserva de un vuelo:
+
+<Steps>
+
+<Step>
+
+### Definir el Hook
+
+Crea un hook tipado con un esquema Zod para la validación:
+
+```typescript title="workflow/steps/tools.ts" lineNumbers
+import { defineHook } from "workflow";
+import { z } from "zod";
+// ... existing imports ...
+
+export const bookingApprovalHook = defineHook({
+  schema: z.object({
+    approved: z.boolean(),
+    comment: z.string().optional(),
+  }),
+});
+
+// ... tool definitions ...
+```
+
+</Step>
+
+<Step>
+
+### Implementar la herramienta
+
+Crea una herramienta que genere una instancia del hook usando el ID de la llamada de la herramienta como token. La interfaz de usuario usará este ID para enviar la aprobación.
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { z } from "zod";
+
+// ...
+
+async function executeBookingApproval( // [!code highlight]
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number }, // [!code highlight]
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - hooks are workflow-level primitives // [!code highlight]
+
+  // Use the toolCallId as the hook token so the UI can reference it // [!code highlight]
+  const hook = bookingApprovalHook.create({ token: toolCallId }); // [!code highlight]
+
+  // Workflow pauses here until the hook is resolved // [!code highlight]
+  const { approved, comment } = await hook; // [!code highlight]
+
+  if (!approved) {
+    return `Booking rejected: ${comment || "No reason provided"}`;
+  }
+
+  return `Booking approved for ${passengerName} on flight ${flightNumber}${comment ? ` - Note: ${comment}` : ""}`;
+}
+
+// Adding the tool to the existing tool definitions
+export const flightBookingTools = {
+  // ... existing tool definitions ...
+  bookingApproval: {
+    description: "Request human approval before booking a flight",
+    inputSchema: z.object({
+      flightNumber: z.string().describe("Flight number to book"),
+      passengerName: z.string().describe("Name of the passenger"),
+      price: z.number().describe("Total price of the booking"),
+    }),
+    execute: executeBookingApproval,
+  },
+};
+```
+
+<Callout type="info">
+Ten en cuenta que la función `defineHook().create()` debe llamarse desde el contexto del flujo de trabajo, no desde dentro de un step. Por eso `executeBookingApproval` no tiene "use step" — se ejecuta en el contexto del flujo de trabajo donde los hooks están disponibles.
+</Callout>
+
+</Step>
+
+<Step>
+
+### Crear la ruta de la API
+
+Crea un nuevo endpoint de la API al que la interfaz llamará para enviar la decisión de aprobación:
+
+```typescript title="app/api/approve-booking/route.ts" lineNumbers
+import { bookingApprovalHook } from "@/workflow/steps/tools";
+
+export async function POST(request: Request) {
+  const { toolCallId, approved, comment } = await request.json();
+
+  // Schema validation happens automatically // [!code highlight]
+  // Can throw a zod schema validation error, or a
+  await bookingApprovalHook.resume(toolCallId, { // [!code highlight]
+    approved,
+    comment,
+  });
+
+  return Response.json({ success: true });
+}
+```
+
+</Step>
+
+<Step>
+
+### Crear el componente de aprobación
+
+Construye un nuevo componente que reaccione a los datos de la llamada a la herramienta y permita al usuario aprobar o rechazar la reserva:
+
+```typescript title="components/booking-approval.tsx" lineNumbers
+"use client";
+
+import { useState } from "react";
+
+interface BookingApprovalProps {
+  toolCallId: string;
+  input: {
+    flightNumber: string;
+    passengerName: string;
+    price: number;
+  };
+  output?: string;
+}
+
+export function BookingApproval({ toolCallId, input, output }: BookingApprovalProps) {
+  const [comment, setComment] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // If we have output, the approval has been processed
+  if (output) {
+    return (
+      <div className="border rounded-lg p-4">
+        <p className="text-sm text-muted-foreground">{output}</p>
+      </div>
+    );
+  }
+
+  const handleSubmit = async (approved: boolean) => {
+    setIsSubmitting(true);
+    try {
+      await fetch("/api/approve-booking", { // [!code highlight]
+        method: "POST", // [!code highlight]
+        headers: { "Content-Type": "application/json" }, // [!code highlight]
+        body: JSON.stringify({ toolCallId, approved, comment }), // [!code highlight]
+      }); // [!code highlight]
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="border rounded-lg p-4 space-y-4">
+      <div className="space-y-2">
+        <p className="font-medium">Approve this booking?</p>
+        <div className="text-sm text-muted-foreground">
+          <div>Flight: {input.flightNumber}</div>
+          <div>Passenger: {input.passengerName}</div>
+          <div>Price: ${input.price}</div>
+        </div>
+      </div>
+
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Add a comment (optional)..."
+        className="w-full border rounded p-2 text-sm"
+        rows={2}
+      />
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => handleSubmit(true)}
+          disabled={isSubmitting}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+        >
+          {isSubmitting ? "Submitting..." : "Approve"}
+        </button>
+        <button
+          onClick={() => handleSubmit(false)}
+          disabled={isSubmitting}
+          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+        >
+          {isSubmitting ? "Submitting..." : "Reject"}
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+</Step>
+
+<Step>
+
+### Mostrar el estado de la herramienta en la interfaz
+
+Usa el componente que acabamos de crear para renderizar la llamada a la herramienta y los controles de aprobación en tu interfaz de chat:
+
+```typescript title="app/page.tsx" lineNumbers
+// ... existing imports ...
+import { BookingApproval } from "@/components/booking-approval";
+
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                      ) {
+                        // ... render other tools
+                      }
+                      if (part.type === "tool-bookingApproval") { // [!code highlight]
+                        return ( // [!code highlight]
+                          <BookingApproval // [!code highlight]
+                            key={partIndex} // [!code highlight]
+                            toolCallId={part.toolCallId} // [!code highlight]
+                            input={part.input} // [!code highlight]
+                            output={part.output} // [!code highlight]
+                          /> // [!code highlight]
+                        ); // [!code highlight]
+                      } // [!code highlight]
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+```
+
+</Step>
+
+</Steps>
+
+## Usar webhooks directamente
+
+Para casos más simples en los que no necesitas validación con tipos o reanudación programática, puedes usar [`createWebhook()`](/docs/api-reference/workflow/create-webhook) directamente. Esto genera una URL única que puede llamarse para reanudar el flujo de trabajo:
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { createWebhook } from "workflow";
+import { z } from "zod";
+
+async function executeBookingApproval(
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number },
+  { toolCallId }: { toolCallId: string }
+) {
+  const webhook = createWebhook(); // [!code highlight]
+
+  // The webhook URL could be logged, sent via email, or stored for later use
+  console.log("Approval URL:", webhook.url);
+
+  // Workflow pauses here until the webhook is called // [!code highlight]
+  const request = await webhook; // [!code highlight]
+  const { approved, comment } = await request.json(); // [!code highlight]
+
+  if (!approved) {
+    return `Booking rejected: ${comment || "No reason provided"}`;
+  }
+
+  return `Booking approved for ${passengerName} on flight ${flightNumber}`;
+}
+```
+
+La URL del webhook puede llamarse directamente con una petición POST que contenga los datos de aprobación. Esto es útil para:
+
+- Sistemas externos que necesiten llamar de regreso a tu flujo de trabajo
+- Callbacks de proveedores de pago
+- Enlaces de aprobación por correo electrónico
+
+## Documentación relacionada
+
+- [Hooks y Webhooks](/docs/foundations/hooks) - Guía completa de hooks y webhooks
+- [`createWebhook()` Referencia de API](/docs/api-reference/workflow/create-webhook) - Opciones de configuración del webhook
+- [`defineHook()` Referencia de API](/docs/api-reference/workflow/define-hook) - Definiciones de hook con tipado seguro

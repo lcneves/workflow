@@ -1,0 +1,110 @@
+---
+title: 制御フローパターン
+---
+
+一般的な分散制御フローのパターンはワークフロー内で簡単に実装でき、新しい構文を学ぶ必要はありません。普段使い慣れた async/await パターンをそのまま使えます。
+
+## 逐次実行
+
+ステップをオーケストレーションする最も簡単な方法は、各ステップを前のステップに依存させながら順番に実行することです。
+
+```typescript lineNumbers
+export async function dataPipelineWorkflow(data: any) {
+  "use workflow";
+
+  const validated = await validateData(data);
+  const processed = await processData(validated);
+  const stored = await storeData(processed);
+
+  return stored;
+}
+```
+
+## 並列実行
+
+複数のステップを並列で実行する必要がある場合、`Promise.all` を使って同時に実行できます。
+
+```typescript lineNumbers
+export async function fetchUserData(userId: string) {
+  "use workflow";
+
+  const [user, orders, preferences] = await Promise.all([ // [!code highlight]
+    fetchUser(userId), // [!code highlight]
+    fetchOrders(userId), // [!code highlight]
+    fetchPreferences(userId) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { user, orders, preferences };
+}
+```
+
+これはステップに限った話ではありません。[`sleep()`](/docs/api-reference/workflow/sleep) と [`webhook`](/docs/api-reference/workflow/create-webhook) もただの promises なので、これらを並列で await することもできます。
+また、`Promise.all` の代わりに `Promise.race` を使えば、最初に完了したものの後で他のプロミスの実行を止めることができます。
+
+```typescript lineNumbers
+
+import { sleep, createWebhook } from "workflow";
+
+export async function runExternalTask(userId: string) {
+  "use workflow";
+
+  const webhook = createWebhook();
+  await executeExternalTask(webhook.url); // Send the webhook somewhere
+
+  // Wait for the external webhook to be hit, with a timeout of 1 day,
+  // whichever comes first
+  await Promise.race([ // [!code highlight]
+    webhook, // [!code highlight]
+    sleep("1 day"), // [!code highlight]
+  ]); // [!code highlight]
+
+  console.log("Done")
+}
+```
+
+## 完全な例
+
+以下は、より複雑なオーケストレーションを Promise でどのようにモデル化できるかを示すために、[誕生日カードジェネレーターのデモ](https://github.com/vercel/workflow-examples/tree/main/birthday-card-generator) から簡略化した例です。
+
+```typescript lineNumbers
+import { createWebhook, sleep } from "workflow"
+
+async function birthdayWorkflow(
+    prompt: string,
+    email: string,
+    friends: string[],
+    birthday: Date
+) {
+    "use workflow";
+
+    // Generate a birthday card with sequential steps
+    const text = await makeCardText(prompt)
+    const image = await makeCardImage(text)
+
+    // Create webhooks for each friend who's invited to the birthday party
+    const webhooks = friends.map(_ => createWebhook())
+
+    // Send out all the RSVP invites in parallel steps
+    await Promise.all(
+        friends.map(
+            (friend, i) => sendRSVPEmail(friend, webhooks[i])
+        )
+    )
+
+    // Collect RSVPs as they are made without blocking the workflow
+    let rsvps = []
+    webhooks.map(
+        webhook => webhook
+            .then(req => req.json())
+            .then(( { rsvp } ) => rsvps.push(rsvp))
+    )
+
+    // Wait until the birthday
+    await sleep(birthday)
+
+    // Send birthday card with as many rsvps were collected
+    await sendBirthdayCard(text, image, rsvps, email)
+
+    return { text, image, status: "Sent" }
+}
+```

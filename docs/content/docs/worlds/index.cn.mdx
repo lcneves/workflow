@@ -1,0 +1,39 @@
+---
+title: Worlds 生态系统
+description: 官方和社区的 Workflow World 实现的兼容性状态与性能基准概览。
+---
+
+import { WorldsDashboardServer } from "@/components/worlds";
+
+# Workflow Worlds 生态系统
+
+The Workflow `World` is an interface that abstracts how workflows and steps communicate with the outside world. This page shows the compatibility status and performance of all available World implementations.
+
+<WorldsDashboardServer />
+
+## 什么是 World？
+
+A World 实现负责：
+- **工作流存储**: 持久化工作流状态和事件日志
+- **步骤执行**: 管理步骤函数调用
+- **消息传递**: 工作流编排器与步骤函数之间的通信
+
+## 选择 World
+
+| 适用场景 | 推荐的 World |
+|----------|------------------|
+| 本地开发 | Local World |
+| Vercel 部署 | Vercel World |
+| 使用 PostgreSQL 的自托管 | Postgres World |
+| 边缘/嵌入式数据库 | Turso World |
+| 高吞吐量队列 | Redis World |
+
+## 贡献 World 实现
+
+想构建自己的 World 实现吗？请参阅 [World 接口文档](/docs/deploying/world) 和 [参考实现](https://github.com/vercel/workflow/tree/main/packages) 获取指南。
+
+社区的 World 实现会在 CI 中使用我们的 E2E 测试套件进行测试。要将你的 World 添加到此仪表板：
+
+1. 实现 World 接口
+2. 发布到 npm
+3. 打开一个 PR 将你的 world 添加到 `worlds-manifest.json`

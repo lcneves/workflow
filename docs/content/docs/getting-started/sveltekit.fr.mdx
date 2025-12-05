@@ -1,0 +1,227 @@
+---
+title: SvelteKit
+description: Ce guide vous accompagnera pour configurer votre premier workflow dans une application SvelteKit. En cours de route, vous découvrirez les concepts fondamentaux pour utiliser le kit de développement dans vos propres projets.
+---
+
+<Steps>
+
+<Step>
+## Créez votre projet SvelteKit
+
+Commencez par créer un nouveau projet SvelteKit. Cette commande va créer un nouveau répertoire nommé `my-workflow-app` avec une configuration minimale et configurer un projet SvelteKit à l'intérieur.
+
+```bash
+npx sv create my-workflow-app --template=minimal --types=ts --no-add-ons
+```
+
+Entrez dans le répertoire nouvellement créé :
+
+```bash
+cd my-workflow-app
+```
+
+### Installer `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Configurer Vite
+
+Ajoutez `workflowPlugin()` à votre configuration Vite. Cela permet l'utilisation des directives `"use workflow"` et `"use step"`.
+
+```typescript title="vite.config.ts" lineNumbers
+import { sveltekit } from "@sveltejs/kit/vite";
+import { defineConfig } from "vite";
+import { workflowPlugin } from "workflow/sveltekit"; // [!code highlight]
+
+export default defineConfig({
+  plugins: [sveltekit(), workflowPlugin()], // [!code highlight]
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Configurer IntelliSense pour TypeScript (optionnel)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Pour activer des suggestions utiles dans votre IDE, configurez le plugin workflow dans `tsconfig.json` :
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Créez votre premier workflow
+
+Créez un nouveau fichier pour notre premier workflow :
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+Nous allons remplir ces fonctions ensuite, mais examinons d'abord ce code :
+
+* Nous définissons une fonction **workflow** avec la directive `"use workflow"`. Pensez à la fonction workflow comme à l'_orchestrateur_ des **steps** individuelles.
+* La fonction `sleep` du Workflow DevKit nous permet de suspendre l'exécution du workflow sans consommer de ressources. Un sleep peut durer quelques secondes, des heures, des jours, voire des mois.
+
+## Créez vos étapes de workflow
+
+Définissons maintenant ces fonctions manquantes.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+En regardant ce code :
+
+* La logique métier réside à l'intérieur des **steps**. Lorsqu'un step est invoqué dans un **workflow**, il est mis en file d'attente pour s'exécuter dans une requête séparée pendant que le workflow est suspendu, tout comme `sleep`.
+* Si un step génère une erreur, comme dans `sendWelcomeEmail`, le step sera automatiquement réessayé jusqu'à ce qu'il réussisse (ou atteigne le nombre maximal de tentatives du step).
+* Les steps peuvent lancer une `FatalError` si une erreur est intentionnelle et ne doit pas être réessayée.
+
+<Callout>
+Nous approfondirons les workflows, les steps et d'autres moyens de suspendre ou de gérer des événements dans [Fondations](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Créez votre gestionnaire de route
+
+Pour invoquer votre nouveau workflow, nous devons ajouter votre workflow à un gestionnaire de route API `POST`, `src/routes/api/signup/+server.ts` avec le code suivant :
+
+```typescript title="src/routes/api/signup/+server.ts"
+import { start } from "workflow/api";
+import { handleUserSignup } from "../../../../workflows/user-signup";
+import { json, type RequestHandler } from "@sveltejs/kit";
+
+export const POST: RequestHandler = async ({
+  request,
+}: {
+  request: Request;
+}) => {
+  const { email } = await request.json();
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+
+  return json({ message: "User signup workflow started" });
+};
+
+```
+
+Ce gestionnaire de route crée un endpoint de requête `POST` à `/api/signup` qui déclenchera votre workflow.
+
+<Callout>
+Les workflows peuvent être déclenchés depuis des routes API ou n'importe quel code côté serveur.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Exécuter en développement
+
+Pour démarrer votre serveur de développement, exécutez la commande suivante dans votre terminal à la racine du projet SvelteKit :
+
+```bash
+npm run dev
+```
+
+Une fois votre serveur de développement lancé, vous pouvez déclencher votre workflow en exécutant cette commande dans le terminal :
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+Consultez les logs du serveur de développement SvelteKit pour voir l'exécution de votre workflow ainsi que les steps en cours de traitement.
+
+De plus, vous pouvez utiliser la [CLI ou l'interface Web de Workflow DevKit](/docs/observability) pour inspecter en détail les exécutions de vos workflows et les steps.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Interface Web de Workflow DevKit" />
+
+## Déployer en production
+
+Les applications Workflow DevKit fonctionnent actuellement mieux lorsqu'elles sont déployées sur [Vercel](https://vercel.com/home) et ne nécessitent aucune configuration spéciale.
+
+Consultez la section [Déploiement](/docs/deploying) pour savoir comment vos workflows peuvent être déployés ailleurs.
+
+## Prochaines étapes
+
+* En savoir plus sur les [Fondations](/docs/foundations).
+* Consultez [Erreurs](/docs/errors) si vous rencontrez des problèmes.
+* Explorez la [Référence API](/docs/api-reference).

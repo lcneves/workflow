@@ -1,0 +1,55 @@
+---
+title: Idempotensi
+---
+
+Idempotensi adalah sifat dari suatu operasi yang memastikan operasi tersebut dapat dicoba ulang dengan aman tanpa menghasilkan efek samping duplikat.
+
+Dalam sistem terdistribusi (memanggil API eksternal), tidak selalu mungkin memastikan suatu operasi hanya dilakukan sekali hanya dengan melihat apakah operasi tersebut berhasil.
+Pertimbangkan sebuah API pembayaran yang menagih pengguna $10, tetapi karena kegagalan jaringan, respons konfirmasi hilang. Ketika langkah tersebut dicoba ulang (karena upaya sebelumnya dianggap gagal), itu akan menagih pengguna lagi.
+
+Untuk mencegah hal ini, banyak API eksternal mendukung kunci idempotensi. Kunci idempotensi adalah pengenal unik untuk sebuah operasi yang dapat digunakan untuk mengeliminasi duplikat permintaan.
+
+## Pola inti: gunakan ID langkah sebagai kunci idempotensi Anda
+
+Setiap pemanggilan langkah memiliki `stepId` yang stabil dan tetap sama saat dicoba ulang.
+Gunakan itu sebagai kunci idempotensi saat memanggil API pihak ketiga.
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+
+  const { stepId } = getStepMetadata();
+
+  // Example: Stripe-style idempotency key
+  // This guarantees only one charge is created even if the step retries
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: stepId, // [!code highlight]
+    }
+  );
+}
+```
+
+Mengapa ini berhasil:
+
+- **Stabil saat dicoba ulang**: `stepId` tidak berubah antara percobaan.
+- **Unik secara global per langkah**: Memenuhi persyaratan keunikan untuk kunci idempotensi.
+
+## Praktik terbaik
+
+- **Selalu berikan kunci idempotensi untuk efek samping eksternal yang tidak idempoten** di dalam langkah (pembayaran, surel, SMS, antrean).
+- **Utamakan `stepId` sebagai kunci Anda**; itu stabil saat dicoba ulang dan unik per langkah.
+- **Jaga agar kunci deterministik**; hindari menyertakan cap waktu atau penghitung percobaan.
+- **Tangani respons 409/konflik** dengan tepat; anggap mereka sebagai keberhasilan jika percobaan sebelumnya telah selesai.
+
+## Dokumentasi terkait
+
+- Pelajari tentang pengulangan di [Kesalahan & Pengulangan](/docs/foundations/errors-and-retries)
+- Referensi API: [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)

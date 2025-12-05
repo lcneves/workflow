@@ -1,0 +1,43 @@
+---
+title: ワールド
+---
+
+<Callout type="wip">
+
+このページは作業中です。
+
+</Callout>
+
+The Workflow `World` は、ワークフローとステップが外部とどのように通信するかを抽象化するインターフェースで、カスタムアダプタを構築し、異なる環境、インフラストラクチャ、ホスティングプロバイダ間で再利用できるようにします。
+
+## World の実装を選択する
+
+* デフォルトでは、Workflow は簡単なローカル開発のために [ローカルワールド](/docs/deploying/world/local-world) を使用します。
+* Vercel にデプロイすると、Workflow は [Vercel ワールド](/docs/deploying/world/vercel-world) に切り替わります。
+
+別の World 実装を使用したい場合は、`WORKFLOW_TARGET_WORLD` 環境変数を希望する World パッケージの NPM 名に設定してください:
+
+```bash
+export WORKFLOW_TARGET_WORLD=@my-namespace/my-npm-package
+export MY_WORLD_CONFIG=... # implementation-specific configuration
+```
+
+## 組み込みのワールド
+
+Workflow DevKit は 2 つの組み込みワールド実装を提供します:
+
+- [ローカルワールド](/docs/deploying/world/local-world) - ローカル開発向けのファイルシステムベース
+- [Vercel ワールド](/docs/deploying/world/vercel-world) - Vercel デプロイ向けの本番対応
+
+## コミュニティワールド
+
+> これらのワールドはコミュニティによって保守され、CI でテストされています。設定の詳細は [worlds-manifest.json](https://github.com/vercel/workflow/blob/main/worlds-manifest.json) を参照してください。
+
+- [Turso](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/turso) (`@workflow-worlds/turso`) - Turso/libSQL を用いた、組み込みまたはリモートの SQLite データベース向けのワールド
+- [MongoDB](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/mongodb) (`@workflow-worlds/mongodb`) - ネイティブドライバを使用した MongoDB ワールド
+- [Redis](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/redis) (`@workflow-worlds/redis`) - キューに BullMQ、出力に Redis Streams を使用する Redis ワールド
+
+### その他のコミュニティワールド
+
+- [Postgres ワールド](/docs/deploying/world/postgres-world) - マルチホストの PostgreSQL バックエンドワールドのリファレンス実装。
+- [Jazz ワールド](https://github.com/garden-co/workflow-world-jazz) - [Jazz](https://jazz.tools) の上に構築された完全なワールド実装。

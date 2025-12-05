@@ -1,0 +1,73 @@
+---
+title: ワークフロー内の Node.js モジュール
+---
+
+このエラーは、ワークフロー関数の内部で `fs`、`http`、`crypto`、`path` などの Node.js コアモジュールを直接インポートまたは使用しようとしたときに発生します。
+
+## エラーメッセージ
+
+```
+Cannot use Node.js module "fs" in workflow functions. Move this module to a step function.
+```
+
+## なぜこのエラーが発生するのか
+
+ワークフロー関数はフルな Node.js ランタイムアクセスがないサンドボックス化された環境で実行されます。この制限は、ワークフローを正確に再実行し、中断や障害後に中断した地点から再開する能力、すなわち **決定性** を維持するために重要です。
+
+Node.js モジュールは副作用や非決定的な振る舞いを持ち、ワークフローの再実行保証を損なう可能性があります。
+
+## クイックフィックス
+
+Node.js モジュールを使用するコードはすべてステップ関数に移動してください。ステップ関数はフルな Node.js ランタイムアクセスを持ちます。
+
+例えば、ワークフロー関数内でファイルを読み取ろうとする場合、そのコードをステップ関数に移すべきです。
+
+**変更前:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // This will cause an error - Node.js module in workflow context
+  const content = fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+  return content;
+}
+```
+
+**変更後:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // Call step function that has Node.js access
+  const content = await read(filePath); // [!code highlight]
+  return content;
+}
+
+async function read(filePath: string) {
+  "use step";
+
+  // Node.js modules are allowed in step functions
+  return fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+}
+```
+
+## 一般的な Node.js コアモジュール
+
+これらの一般的な Node.js コアモジュールはワークフロー関数内では使用できません:
+
+- ファイルシステム: `fs`, `path`
+- ネットワーク: `http`, `https`, `net`, `dns`, `fetch`
+- プロセス: `child_process`, `cluster`
+- 暗号: `crypto`（代わりに Web Crypto API を使用してください）
+- オペレーティングシステム: `os`
+- ストリーム: `stream`（代わりに Web Streams API を使用してください）
+
+<Callout type="info">
+ワークフロー関数では Web プラットフォームの API（`Headers`、`crypto.randomUUID()`、`Response` など）を使用できます。これらはサンドボックス化された環境で利用可能です。
+</Callout>

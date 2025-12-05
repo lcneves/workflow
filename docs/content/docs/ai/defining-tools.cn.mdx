@@ -1,0 +1,71 @@
+---
+title: 定义工具的模式
+---
+
+本页介绍了使用 Workflow DevKit 为 AI 代理定义工具时的一些常见模式的详细内容。
+
+使用 DurableAgent，我们将大多数工具建模为步骤。这些可以是从简单的函数调用到持续多天的完整工作流的任何内容。
+
+## 在工具中访问消息上下文
+
+正如在常规 AI SDK 工具定义中一样，DurableAgent 中的工具调用时，第一个参数是工具的输入参数，第二个参数是工具调用上下文。
+
+当你的工具需要访问完整消息历史时，可以通过工具调用上下文的 `messages` 属性来访问：
+
+```typescript title="tools.ts" lineNumbers
+async function getWeather(
+  { city }: { city: string },
+  { messages, toolCallId }: { messages: LanguageModelV2Prompt, toolCallId: string }) { // [!code highlight]
+  "use step";
+  return `Weather in ${city} is sunny`;
+}
+```
+
+## 向流写入
+
+如在 [工具的流式更新](/docs/ai/streaming-updates-from-tools) 中讨论的那样，通常会使用一个步骤仅调用 `getWritable()` 来向流写入自定义数据部分。
+
+这可以通过创建一个辅助步骤函数来向流写入任意数据，从而变得通用：
+
+```typescript title="tools.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeToStream(data: any) {
+  "use step";
+
+  const writable = getWritable();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## 步骤级与工作流级工具
+
+工具可以在步骤级或工作流级实现，具有不同的能力和限制。
+
+| 功能 | 步骤级 (`"use step"`) | 工作流级 (`"use workflow"`) |
+|------------|---------------------------|----------------|
+| `getWritable()` | ✅ | ❌ |
+| 自动重试 | ✅ | ❌ |
+| 允许副作用（例如 API 调用） | ✅ | ❌ |
+| `sleep()` | ❌ | ✅ |
+| `createWebhook()` | ❌ | ✅ |
+
+工具也可以通过从工作流级开始，并调用步骤来执行 I/O 操作，从而结合两者，例如：
+
+```typescript title="tools.ts" lineNumbers
+// Step: handles I/O with retries
+async function performFetch(url: string) {
+  "use step";
+  const response = await fetch(url);
+  return response.json();
+}
+
+// Workflow-level: orchestrates steps and can use sleep()
+async function executeFetchWithDelay({ url }: { url: string }) {
+  const result = await performFetch(url);
+  await sleep("5s"); // Only available at workflow level
+  return result;
+}
+```

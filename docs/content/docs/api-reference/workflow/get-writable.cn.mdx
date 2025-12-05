@@ -1,0 +1,284 @@
+---
+title: getWritable
+description: 检索当前工作流运行的默认可写流。
+---
+
+可写流可以在工作流函数中获取并传递给步骤，或者在步骤函数内直接调用以写入数据，这些数据可以通过 [`Run` 对象](/docs/api-reference/workflow-api/get-run) 的 `readable` 属性在工作流外部读取。
+
+在您的工作流和步骤中使用此函数以生成可被客户端实时消费的流式输出。
+
+<Callout type="warn">
+  此函数只能在工作流或步骤函数内部调用（带有 "use workflow" 或 "use step" 指令的函数）
+</Callout>
+
+<Callout type="error">
+  **重要：** 虽然您可以在工作流函数内调用 `getWritable()` 来获取流，但您**不能在工作流上下文中直接与该流交互**（例如，调用 `getWriter()`、`write()` 或 `close()`）。该流必须作为参数传递给步骤函数，或者由步骤直接调用 `getWritable()`。
+</Callout>
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function myWorkflow() {
+  "use workflow";
+
+  // Get the writable stream
+  const writable = getWritable(); // [!code highlight]
+
+  // Pass it to a step function to interact with it
+  await writeToStream(writable); // [!code highlight]
+}
+
+async function writeToStream(writable: WritableStream) {
+  "use step";
+
+  const writer = writable.getWriter();
+  await writer.write(new TextEncoder().encode("Hello from workflow!"));
+  writer.releaseLock();
+  await writable.close();
+}
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+  definition={`
+import { getWritable } from "workflow";
+export default getWritable;`}
+  showSections={["parameters"]}
+/>
+
+### 返回值
+
+<TSDoc
+  definition={`
+import { getWritable } from "workflow";
+export default getWritable;`}
+  showSections={["returns"]}
+/>
+
+返回一个 `WritableStream<W>`，其中 `W` 是您计划写入流的数据类型。
+
+## 需要注意的事项
+
+- **工作流函数只能获取流的引用** - 在工作流中调用 `getWritable()` 以获取流的引用，但您不能在工作流上下文中直接调用 `getWriter()`、`write()` 或 `close()` 等方法。
+- **步骤函数可以与流交互** - 步骤可以接收该流作为参数或直接调用 `getWritable()`，并可以自由地与之交互（写入、关闭等）。
+- 当从工作流中调用时，必须将流作为参数传递给步骤以便交互。
+- 当从步骤中调用时，它会直接检索相同的工作流级别的流。
+- 写入后请始终释放 writer 锁以防止资源泄露。
+- 流可以写入二进制数据（使用 `TextEncoder`）或结构化对象。
+- 完成后请记得关闭流以发出完成信号。
+
+## 示例
+
+### 基本文本流
+
+下面是一个流式传输文本数据的简单示例：
+
+```typescript lineNumbers
+import { sleep, getWritable } from "workflow";
+
+export async function outputStreamWorkflow() {
+  "use workflow";
+
+  const writable = getWritable(); // [!code highlight]
+
+  await sleep("1s");
+  await stepWithOutputStream(writable);
+  await sleep("1s");
+  await stepCloseOutputStream(writable);
+
+  return "done";
+}
+
+async function stepWithOutputStream(writable: WritableStream) {
+  "use step";
+
+  const writer = writable.getWriter();
+  // Write binary data using TextEncoder
+  await writer.write(new TextEncoder().encode("Hello, world!"));
+  writer.releaseLock();
+}
+
+async function stepCloseOutputStream(writable: WritableStream) {
+  "use step";
+
+  // Close the stream to signal completion
+  await writable.close();
+}
+```
+
+### 在步骤内调用 `getWritable()`
+
+您也可以在步骤函数内部直接调用 `getWritable()`，而无需将其作为参数传递：
+
+```typescript lineNumbers
+import { sleep, getWritable } from "workflow";
+
+export async function outputStreamFromStepWorkflow() {
+  "use workflow";
+
+  // No need to create or pass the stream - steps can get it themselves
+  await sleep("1s");
+  await stepWithOutputStreamInside();
+  await sleep("1s");
+  await stepCloseOutputStreamInside();
+
+  return "done";
+}
+
+async function stepWithOutputStreamInside() {
+  "use step";
+
+  // Call getWritable() directly inside the step // [!code highlight]
+  const writable = getWritable(); // [!code highlight]
+  const writer = writable.getWriter();
+
+  await writer.write(new TextEncoder().encode("Hello from step!"));
+  writer.releaseLock();
+}
+
+async function stepCloseOutputStreamInside() {
+  "use step";
+
+  // Call getWritable() to get the same stream // [!code highlight]
+  const writable = getWritable(); // [!code highlight]
+  await writable.close();
+}
+```
+
+### 在步骤中使用命名空间流
+
+在步骤中调用 `getWritable()` 时，您也可以使用命名空间流：
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function multiStreamWorkflow() {
+  "use workflow";
+
+  // Steps will access both streams by namespace
+  await writeToDefaultStream();
+  await writeToNamedStream();
+  await closeStreams();
+
+  return "done";
+}
+
+async function writeToDefaultStream() {
+  "use step";
+
+  const writable = getWritable(); // Default stream
+  const writer = writable.getWriter();
+  await writer.write({ message: "Default stream data" });
+  writer.releaseLock();
+}
+
+async function writeToNamedStream() {
+  "use step";
+
+  const writable = getWritable({ namespace: "logs" }); // [!code highlight]
+  const writer = writable.getWriter();
+  await writer.write({ log: "Named stream data" });
+  writer.releaseLock();
+}
+
+async function closeStreams() {
+  "use step";
+
+  await getWritable().close(); // Close default stream
+  await getWritable({ namespace: "logs" }).close(); // Close named stream
+}
+```
+
+### 高级聊天流
+
+下面是一个更复杂的示例，展示如何流式传输 AI 聊天响应：
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+import { generateId, streamText, type UIMessageChunk } from "ai";
+
+export async function chat(messages: UIMessage[]) {
+  "use workflow";
+
+  // Get typed writable stream for UI message chunks
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+
+  // Start the stream
+  await startStream(writable);
+
+  let currentMessages = [...messages];
+
+  // Process messages in steps
+  for (let i = 0; i < MAX_STEPS; i++) {
+    const result = await streamTextStep(currentMessages, writable);
+    currentMessages.push(result.messages);
+
+    if (result.finishReason !== "tool-calls") {
+      break;
+    }
+  }
+
+  // End the stream
+  await endStream(writable);
+}
+
+async function startStream(writable: WritableStream<UIMessageChunk>) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Send start message
+  writer.write({
+    type: "start",
+    messageMetadata: {
+      createdAt: Date.now(),
+      messageId: generateId(),
+    },
+  });
+
+  writer.releaseLock();
+}
+
+async function streamTextStep(
+  messages: UIMessage[],
+  writable: WritableStream<UIMessageChunk>
+) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Call streamText from the AI SDK
+  const result = streamText({
+    model: "gpt-4",
+    messages,
+    /* other options */
+  });
+
+  // Pipe the AI stream into the writable stream
+  const reader = result
+    .toUIMessageStream({ sendStart: false, sendFinish: false })
+    .getReader();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    await writer.write(value);
+  }
+
+  reader.releaseLock();
+
+  // Close the stream
+  writer.close();
+  writer.releaseLock();
+}
+
+async function endStream(writable: WritableStream<UIMessageChunk>) {
+  "use step";
+
+  // Close the stream to signal completion
+  await writable.close();
+}
+```

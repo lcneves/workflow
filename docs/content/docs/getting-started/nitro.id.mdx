@@ -1,0 +1,225 @@
+---
+title: Nitro
+description: Panduan ini akan memandu Anda melalui penyiapan workflow pertama Anda dalam proyek Nitro v3. Sepanjang proses, Anda akan mempelajari konsep-konsep yang menjadi dasar penggunaan kit pengembangan dalam proyek Anda sendiri.
+---
+
+<Steps>
+
+<Step>
+## Buat Proyek Nitro Anda
+
+Mulailah dengan membuat proyek [Nitro v3](https://v3.nitro.build/) baru. Perintah ini akan membuat direktori baru bernama `nitro-app` dan menyiapkan proyek Nitro di dalamnya.
+
+```bash
+npx create-nitro-app
+```
+
+Masuk ke direktori yang baru dibuat:
+
+```bash
+cd nitro-app
+```
+
+### Instal `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Konfigurasi Nitro
+
+Tambahkan modul `workflow/nitro` ke `nitro.config.ts` Anda. Ini memungkinkan penggunaan direktif `"use workflow"` dan `"use step"`.
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  serverDir: "./server",
+  modules: ["workflow/nitro"],
+});
+
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Siapkan IntelliSense untuk TypeScript (Opsional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Untuk mengaktifkan petunjuk berguna di IDE Anda, siapkan plugin workflow di `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Buat Workflow Pertama Anda
+
+Buat file baru untuk workflow pertama kita:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Kita akan mengisi fungsi-fungsi tersebut nanti, tetapi mari lihat kode ini:
+
+- Kita mendefinisikan fungsi **workflow** dengan direktif `"use workflow"`. Anggap fungsi workflow sebagai _orkestrator_ dari **langkah** individual.
+- Fungsi `sleep` dari Workflow DevKit memungkinkan kita menangguhkan eksekusi workflow tanpa menggunakan sumber daya. Sleep bisa berlangsung beberapa detik, jam, hari, atau bahkan berbulan-bulan.
+
+## Buat Langkah-langkah Workflow Anda
+
+Sekarang mari kita definisikan fungsi-fungsi yang belum ada.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Melihat kode ini:
+
+- Logika bisnis berada di dalam **langkah**. Ketika sebuah langkah dipanggil di dalam sebuah **workflow**, langkah tersebut masuk ke antrean untuk dijalankan pada permintaan terpisah sementara workflow ditangguhkan, sama seperti `sleep`.
+- Jika sebuah langkah melempar kesalahan, seperti di `sendWelcomeEmail`, langkah tersebut akan otomatis dicoba ulang hingga berhasil (atau mencapai jumlah percobaan ulang maksimum langkah tersebut).
+- Langkah dapat melempar `FatalError` jika kesalahan bersifat disengaja dan tidak boleh dicoba ulang.
+
+<Callout>
+  Kita akan membahas lebih dalam tentang workflow, langkah, dan cara lain untuk menangguhkan atau menangani peristiwa di [Dasar](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Buat Route Handler Anda
+
+Untuk memanggil workflow baru Anda, kita akan membuat route handler API baru di `server/api/signup.post.ts` dengan kode berikut:
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+Route Handler ini membuat endpoint permintaan `POST` di `/api/signup` yang akan memicu workflow Anda.
+
+<Callout>
+  Workflow dapat dipicu dari route API atau kode sisi-server apa pun.
+</Callout>
+
+</Step>
+
+<Step>
+
+## Jalankan di lingkungan pengembangan
+
+Untuk memulai server pengembangan Anda, jalankan perintah berikut di terminal pada direktori root Nitro:
+
+```bash
+npm run dev
+```
+
+Setelah server pengembangan Anda berjalan, Anda dapat memicu workflow dengan menjalankan perintah ini di terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Periksa log server pengembangan Nitro untuk melihat eksekusi workflow Anda serta langkah-langkah yang sedang diproses.
+
+Selain itu, Anda dapat menggunakan [Workflow DevKit CLI atau Web UI](/docs/observability) untuk memeriksa jalannya workflow dan langkah-langkah secara rinci.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+## Menerapkan ke produksi
+
+Aplikasi Workflow DevKit saat ini bekerja paling baik jika diterapkan ke [Vercel](https://vercel.com/home) dan tidak memerlukan konfigurasi khusus.
+
+Periksa bagian [Penempatan](/docs/deploying) untuk mempelajari bagaimana workflow Anda dapat diterapkan di tempat lain.
+
+## Langkah Selanjutnya
+
+- Pelajari lebih lanjut tentang [Dasar](/docs/foundations).
+- Periksa [Kesalahan](/docs/errors) jika Anda mengalami masalah.
+- Jelajahi [Referensi API](/docs/api-reference).

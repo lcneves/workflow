@@ -1,0 +1,233 @@
+---
+title: Astro
+---
+
+このガイドでは、Astro アプリで最初の workflow を設定する手順を説明します。途中で、開発キットを自分のプロジェクトで使用するための基本的な概念についても詳しく学びます。
+
+---
+
+<Steps>
+
+<Step>
+## Astro プロジェクトを作成する
+
+まず新しい Astro プロジェクトを作成します。このコマンドは `my-workflow-app` という名前の新しいディレクトリを作成し、その中に最小限の Astro プロジェクトをセットアップします。
+
+```bash
+npm create astro@latest my-workflow-app -- --template minimal --install --yes
+```
+
+作成したディレクトリに移動します:
+
+```bash
+cd my-workflow-app
+```
+
+### `workflow` をインストールする
+
+```package-install
+npm i workflow
+```
+
+### Astro を設定する
+
+Astro の設定に `workflow()` を追加します。これにより `"use workflow"` および `"use step"` ディレクティブを使用できるようになります。
+
+```typescript title="astro.config.mjs" lineNumbers
+// @ts-check
+import { defineConfig } from "astro/config";
+import { workflow } from "workflow/astro";
+
+// https://astro.build/config
+export default defineConfig({
+  integrations: [workflow()],
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### TypeScript の IntelliSense を設定する（任意）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+IDE で便利なヒントを有効にするには、`tsconfig.json` に workflow プラグインを設定します:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 最初の Workflow を作成する
+
+最初の workflow 用の新しいファイルを作成します:
+
+```typescript title="src/workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+次にこれらの関数を埋めていきますが、まずこのコードを見てみましょう:
+
+* **workflow** 関数を `"use workflow"` ディレクティブ付きで定義しています。workflow 関数は個々の **steps** のオーケストレーターと考えてください。
+* Workflow DevKit の `sleep` 関数は、ワークフローの実行をリソースを消費することなく一時停止できるようにします。sleep は数秒、数時間、数日、あるいは数ヶ月に及ぶことがあります。
+
+## Workflow のステップを作成する
+
+それでは、欠けている関数を定義しましょう。
+
+```typescript title="src/workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+このコードを見てみましょう:
+
+* ビジネスロジックは **steps** の内部にあります。ステップが **workflow** 内で呼び出されると、そのステップはワークフローが中断されている間に別のリクエストで実行されるようキューに登録されます。`sleep` と同様の動作です。
+* ステップがエラーを投げた場合（`sendWelcomeEmail` の例のように）、そのステップは成功するまで自動的に再試行されます（またはステップの最大再試行回数に達するまで）。
+* エラーが意図的で再試行すべきでない場合、ステップは `FatalError` を投げすれば再試行をスキップできます。
+
+<Callout>
+ワークフロー、ステップ、およびイベントの一時停止や処理方法については、[Foundations](/docs/foundations) で詳しく説明しています。
+</Callout>
+
+</Step>
+
+<Step>
+
+## ルートハンドラを作成する
+
+新しい workflow を起動するには、`POST` API ルートハンドラ `src/pages/api/signup.ts` にワークフローを追加する必要があります。以下のコードを使用してください:
+
+```typescript title="src/pages/api/signup.ts"
+import type { APIRoute } from "astro";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../../workflows/user-signup";
+
+export const POST: APIRoute = async ({ request }: { request: Request }) => {
+  const { email } = await request.json();
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return Response.json({
+    message: "User signup workflow started",
+  });
+};
+
+export const prerender = false; // Don't prerender this page since it's an API route
+```
+
+このルートハンドラは `/api/signup` に `POST` リクエストのエンドポイントを作成し、ワークフローをトリガーします。
+
+<Callout>
+Workflows は API ルートや任意のサーバーサイドコードからトリガーできます。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 開発での実行
+
+開発サーバーを起動するには、Vite ルートディレクトリで次のコマンドをターミナルで実行します:
+
+```bash
+npm run dev
+```
+
+開発サーバーが起動したら、次のコマンドをターミナルで実行してワークフローをトリガーできます:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+Astro 開発サーバーのログで、ワークフローの実行や処理されているステップを確認してください。
+
+さらに、[Workflow DevKit CLI or Web UI](/docs/observability) を使用して、ワークフローの実行やステップを詳細に検査できます。
+
+```bash
+npx workflow inspect runs
+# or add '--web' for an interactive Web based UI
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit の Web UI" />
+
+---
+
+## 本番環境へのデプロイ
+
+Workflow DevKit アプリは現在 [Vercel](https://vercel.com/home) にデプロイするのが最も適しており、特別な設定は必要ありません。
+
+Astro プロジェクトを Vercel にデプロイするには、[Astro Vercel adapter](https://docs.astro.build/en/guides/integrations-guide/vercel) が設定されていることを確認してください:
+
+```bash
+npx astro add vercel
+```
+
+また、ワークフローを他の場所にデプロイする方法については、[Deploying](/docs/deploying) セクションを参照してください。
+
+## 次のステップ
+
+* [Foundations](/docs/foundations) について詳しく学ぶ。
+* 問題が発生した場合は [Errors](/docs/errors) を確認する。
+* [API Reference](/docs/api-reference) を参照する。

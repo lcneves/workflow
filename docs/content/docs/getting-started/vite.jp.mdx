@@ -1,0 +1,232 @@
+---
+title: Vite
+---
+
+このガイドでは、Vite アプリで最初のワークフローを設定する手順を説明します。途中で、開発キットを自分のプロジェクトで使用する際に基本となる概念についても学びます。
+
+---
+
+<Steps>
+
+<Step>
+## Vite プロジェクトを作成する
+
+まず新しい Vite プロジェクトを作成します。このコマンドは `my-workflow-app` という名前の新しいディレクトリを最小限のセットアップで作成し、その中に Vite プロジェクトをセットアップします。
+
+```bash
+npm create vite@latest my-workflow-app -- --template react-ts
+```
+
+作成したディレクトリに移動します:
+
+```bash
+cd my-workflow-app
+```
+
+### `workflow` と `nitro` をインストール
+
+```package-install
+npm i workflow nitro
+```
+
+<Callout>
+Vite はビルドツールと開発サーバを提供しますが、Nitro は API ルートとデプロイに必要なサーバフレームワークを追加します。これにより、workflow サポートを備えたフルスタックアプリケーションの構築が可能になります。Nitro の詳細は[こちら](https://v3.nitro.build) を参照してください。
+</Callout>
+
+### Vite の設定
+
+Vite の設定に `workflow()` を追加します。これにより、"use workflow" と "use step" ディレクティブを使用できるようになります。
+
+```typescript title="vite.config.ts" lineNumbers
+import { nitro } from "nitro/vite";
+import { defineConfig } from "vite";
+import { workflow } from "workflow/vite";
+
+export default defineConfig({
+  plugins: [nitro(), workflow()], // [!code highlight]
+  nitro: { // [!code highlight]
+    serverDir: "./", // [!code highlight]
+  }, // [!code highlight]
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### TypeScript の IntelliSense を設定する（オプション）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+IDE で有用なヒントを有効にするには、`tsconfig.json` に workflow プラグインを設定してください:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 最初のワークフローを作成する
+
+最初のワークフロー用に新しいファイルを作成します:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+次にこれらの関数を実装しますが、その前にこのコードを見てみましょう:
+
+* ディレクティブ `"use workflow"` を使用して **workflow** 関数を定義します。workflow 関数は個々の **steps** のオーケストレーターとして考えてください。
+* Workflow DevKit の `sleep` 関数は、リソースを消費せずに workflow の実行を一時停止することを可能にします。sleep は数秒、数時間、数日、さらには数か月に及ぶ場合があります。
+
+## ワークフローステップを作成する
+
+では、これらの不足している関数を定義しましょう。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+このコードを見てみましょう:
+
+* ビジネスロジックは **steps** の内部にあります。**workflow** 内で step が呼び出されると、workflow が一時停止している間に別のリクエストとして実行するためにエンキューされます。これは `sleep` と同様の動作です。
+* `sendWelcomeEmail` のように step がエラーをスローした場合、その step は成功するまで（または step の最大リトライ回数に達するまで）自動的にリトライされます。
+* エラーが意図的でリトライすべきでない場合は、step は `FatalError` をスローできます。
+
+<Callout>
+ワークフロー、ステップ、その他の一時停止方法やイベント処理については、[基礎](/docs/foundations) で詳しく解説します。
+</Callout>
+
+</Step>
+
+<Step>
+
+## ルートハンドラーを作成する
+
+新しいワークフローを呼び出すには、`POST` API ルートハンドラ `api/signup.post.ts` に次のコードを追加する必要があります:
+
+```typescript title="api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+このルートハンドラは `/api/signup` に `POST` リクエストのエンドポイントを作成し、ワークフローをトリガーします。
+
+<Callout>
+ワークフローは API ルートや任意のサーバーサイドコードからトリガーできます。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 開発環境で実行する
+
+開発サーバを起動するには、Vite のルートディレクトリでターミナルから次のコマンドを実行します:
+
+```bash
+npm run dev
+```
+
+開発サーバが起動したら、次のコマンドをターミナルで実行してワークフローをトリガーできます:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+Vite 開発サーバのログを確認して、ワークフローの実行と処理されているステップを確認してください。
+
+さらに、[Workflow DevKit CLI または Web UI](/docs/observability) を使用して、ワークフローの実行やステップを詳細に検査できます。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit の Web UI" />
+
+---
+
+## 本番環境へのデプロイ
+
+Workflow DevKit アプリは現在 [Vercel](https://vercel.com/home) にデプロイした場合が最適で、特別な構成は必要ありません。
+
+ワークフローを他の環境にデプロイする方法については、[デプロイ](/docs/deploying) セクションを参照してください。
+
+## 次のステップ
+
+* [基礎](/docs/foundations) について詳しく学ぶ。
+* 問題が発生した場合は [エラー](/docs/errors) を確認してください。
+* [API リファレンス](/docs/api-reference) を参照してください。

@@ -1,0 +1,76 @@
+---
+title: getStepMetadata
+---
+
+Retorna os metadados disponíveis na função de etapa atual.
+
+Você pode querer usar esta função quando precisar:
+
+- **Acompanhar tentativas de repetição** no tratamento de erros
+- **Acessar informações de tempo de um passo e metadados da execução**
+- **Gerar chaves de idempotência para APIs externas**
+
+<Callout type="warn">
+  Esta função só pode ser chamada dentro de uma função de etapa.
+</Callout>
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function testWorkflow() {
+  "use workflow";
+  await logStepId();
+}
+
+async function logStepId() {
+  "use step";
+  const ctx = getStepMetadata(); // [!code highlight]
+  console.log(ctx.stepId); // Grab the current step ID
+}
+```
+
+### Exemplo: Use `stepId` como chave de idempotência
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+  const { stepId } = getStepMetadata();
+
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: `charge:${stepId}`, // [!code highlight]
+    }
+  );
+}
+```
+
+<Callout type="info">
+  Saiba mais sobre padrões e ressalvas no guia{" "}
+  <a href="/docs/foundations/idempotency">Idempotência</a>.
+</Callout>
+
+## Assinatura da API
+
+### Parâmetros
+
+<TSDoc
+  definition={`
+import { getStepMetadata } from "workflow";
+export default getStepMetadata;`}
+  showSections={["parameters"]}
+/>
+
+### Retorno
+
+<TSDoc
+  definition={`
+import type { StepMetadata } from "workflow";
+export default StepMetadata;`}
+/>

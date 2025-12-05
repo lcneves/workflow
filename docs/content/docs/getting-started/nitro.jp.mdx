@@ -1,0 +1,225 @@
+---
+title: Nitro
+description: このガイドでは、Nitro v3 プロジェクトで最初のワークフローを設定する手順を説明します。途中で、開発キットを独自のプロジェクトで使用するために重要な概念についても学びます。
+---
+
+<Steps>
+
+<Step>
+## Nitro プロジェクトを作成する
+
+まず新しい [Nitro v3](https://v3.nitro.build/) プロジェクトを作成します。このコマンドは `nitro-app` という名前の新しいディレクトリを作成し、その中に Nitro プロジェクトをセットアップします。
+
+```bash
+npx create-nitro-app
+```
+
+作成したディレクトリに移動します:
+
+```bash
+cd nitro-app
+```
+
+### `workflow` をインストール
+
+```package-install
+npm i workflow
+```
+
+### Nitro を設定する
+
+`nitro.config.ts` に `workflow/nitro` モジュールを追加します。これにより `"use workflow"` と `"use step"` ディレクティブが使用可能になります。
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  serverDir: "./server",
+  modules: ["workflow/nitro"],
+});
+
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      TypeScript の IntelliSense を設定する（任意）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+IDE で便利なヒントを有効にするには、`tsconfig.json` に workflow プラグインを設定してください:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 最初のワークフローを作成する
+
+最初のワークフロー用の新しいファイルを作成します:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+次にこれらの関数を実装しますが、その前にこのコードを見てみましょう:
+
+- ディレクティブ `"use workflow"` を使用して **ワークフロー** 関数を定義します。ワークフロー関数は個々の **ステップ** の _オーケストレーター_ と考えてください。
+- Workflow DevKit の `sleep` 関数は、ワークフローの実行をリソースを消費せずに一時停止できるようにします。sleep は数秒、数時間、数日、または数か月に及ぶこともあります。
+
+## ワークフローのステップを作成する
+
+それでは、先ほど不足していた関数を定義しましょう。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+このコードを見ると:
+
+- ビジネスロジックは **ステップ** の内部にあります。ステップが **ワークフロー** 内で呼び出されると、ワークフローが一時停止している間に別のリクエストで実行されるようキューに入れられます。これは `sleep` と同様の動作です。
+- `sendWelcomeEmail` のようにステップがエラーをスローすると、ステップは成功するまで（またはステップの最大リトライ回数に達するまで）自動的に再試行されます。
+- エラーが意図的でリトライしたくない場合は、ステップは `FatalError` をスローできます。
+
+<Callout>
+  ワークフロー、ステップ、およびイベントを一時停止または処理するその他の方法については、[Foundations](/docs/foundations) で詳しく説明します。
+</Callout>
+
+</Step>
+
+<Step>
+
+## ルートハンドラーを作成する
+
+新しいワークフローを呼び出すために、次のコードで `server/api/signup.post.ts` に API ルートハンドラーを作成します:
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+このルートハンドラーは `/api/signup` に `POST` リクエストのエンドポイントを作成し、ワークフローをトリガーします。
+
+<Callout>
+  ワークフローは API ルートや任意のサーバーサイドコードからトリガーできます。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 開発環境で実行する
+
+開発サーバーを起動するには、Nitro のルートディレクトリで以下のコマンドをターミナルで実行します:
+
+```bash
+npm run dev
+```
+
+開発サーバーが起動したら、次のコマンドをターミナルで実行してワークフローをトリガーできます:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Nitro の開発サーバーログを確認して、ワークフローや処理中のステップが実行されている様子を確認してください。
+
+さらに、[Workflow DevKit CLI または Web UI](/docs/observability) を使用して、ワークフローの実行やステップを詳細に検査できます。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit の Web UI" />
+
+</Step>
+
+</Steps>
+
+## 本番環境へのデプロイ
+
+Workflow DevKit アプリは現在 [Vercel](https://vercel.com/home) にデプロイした場合に最もよく動作し、特別な設定は不要です。
+
+ワークフローを他の環境にデプロイする方法については、[Deploying](/docs/deploying) セクションを参照してください。
+
+## 次のステップ
+
+- [Foundations](/docs/foundations) で詳細を学ぶ。
+- 問題が発生したら [Errors](/docs/errors) を確認する。
+- [API リファレンス](/docs/api-reference) を参照する。

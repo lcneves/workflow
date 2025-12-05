@@ -1,0 +1,595 @@
+---
+title: Comprendre les directives
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+<Callout>
+Ce guide explique comment les directives JavaScript permettent le modèle d'exécution du Workflow DevKit. Pour commencer avec les workflows, consultez les guides [getting started](/docs/getting-started) pour votre framework.
+</Callout>
+
+Le Workflow Development Kit utilise des directives JavaScript (`"use workflow"` et `"use step"`) comme fondement de son modèle d'exécution durable. Les directives fournissent la frontière sémantique au moment de la compilation nécessaire pour que les workflows puissent se suspendre, reprendre et conserver un comportement déterministe lors des relectures.
+
+Cette page examine comment les directives rendent possible ce modèle d'exécution et les principes de conception qui nous y ont conduits.
+
+Pour comprendre comment fonctionnent les directives, commençons par définir ce que sont les flux de travail (workflows) et les étapes dans le Workflow DevKit.
+
+## Introduction aux flux de travail et aux étapes
+
+Le Workflow DevKit propose deux types de fonctions :
+
+**Les fonctions d'étape** sont des opérations à effets de bord avec un accès complet au runtime Node.js. Pensez-y comme des appels RPC nommés : elles s'exécutent une fois, leur résultat est persistant, et elles peuvent être [réessayées en cas d'échec](/docs/foundations/errors-and-retries) :
+
+```typescript lineNumbers
+async function fetchUserData(userId: string) {
+  "use step";
+
+  // Full Node.js access: database calls, API requests, file I/O
+  const user = await db.query("SELECT * FROM users WHERE id = ?", [userId]);
+  return user;
+}
+```
+
+**Les fonctions de flux de travail** sont des orchestres déterministes qui coordonnent les étapes. Elles doivent être des fonctions pures — lors de la relecture, les mêmes résultats d'étapes produisent toujours la même sortie. Cela est nécessaire parce que les workflows reprennent en re jouant leur code depuis le début en utilisant les résultats d'étapes mis en cache ; une logique non déterministe empêcherait la reprise. Elles s'exécutent dans un environnement sandboxé sans accès direct à Node.js :
+
+```typescript lineNumbers
+export async function onboardUser(userId: string) {
+  "use workflow";
+
+  const user = await fetchUserData(userId); // Calls step
+
+  // Non-deterministic code would break replay behavior // [!code highlight]
+  if (Math.random() > 0.5) { // [!code highlight]
+    await sendWelcomeEmail(user); // [!code highlight]
+  } // [!code highlight]
+
+  return `Onboarded ${user.name}!`;
+}
+```
+
+**L'idée clé :** Les workflows reprennent après suspension en relançant leur code en utilisant les résultats d'étapes mis en cache depuis le journal d'événements. Lorsqu'une étape comme `await fetchUserData(userId)` est appelée :
+
+- **Si elle a déjà été exécutée :** Elle renvoie immédiatement le résultat mis en cache depuis le journal d'événements
+- **Si elle n'a pas encore été exécutée :** Le workflow se suspend, place l'étape en file d'attente pour exécution en arrière-plan, et reprend plus tard avec le résultat
+
+Ce mécanisme de relecture exige du code déterministe. Si `Math.random()` n'était pas initialisé de manière déterministe, la première exécution pourrait renvoyer `0.7` (envoi de l'email) mais la relecture pourrait renvoyer `0.3` (pas d'envoi), ce qui casserait la reprise. Le sandbox du Workflow DevKit fournit un `Math.random()` et un `Date` initialisés de manière reproductible pour garantir un comportement cohérent lors des relectures.
+
+<Callout>
+Pour un approfondissement sur les workflows et les étapes, voir [Workflows and Steps](/docs/foundations/workflows-and-steps).
+</Callout>
+
+## Le défi principal
+
+Ce modèle d'exécution permet des fonctionnalités de durabilité puissantes : les workflows peuvent se suspendre pendant des jours, survivre à des redémarrages et reprendre depuis n'importe quel point. Cependant, il nécessite aussi une frontière sémantique dans le code qui indique **au compilateur, au runtime et au développeur** que les sémantiques d'exécution ont changé.
+
+Le défi : comment marquer cette frontière de façon à :
+
+1. Permettre des transformations et validations au moment de la compilation
+2. Empêcher l'utilisation accidentelle d'API non déterministes
+3. Autoriser l'analyse statique de la structure du workflow
+4. Conserver une approche naturelle pour les développeurs JavaScript
+
+Regardons où les directives ont déjà été utilisées auparavant, et les alternatives que nous avons envisagées :
+
+## Antécédents sur les directives
+
+Les directives JavaScript ont un précédent pour modifier les sémantiques d'exécution dans une portée définie :
+
+- `"use strict"` (introduit dans ECMAScript 5 en 2009, standardisé par TC39) modifie les règles du langage pour rendre le runtime plus rapide, plus sûr et plus prévisible.
+- `"use client"` et `"use server"` (introduits par [React Server Components](https://react.dev/reference/rsc/server-components)) définissent une frontière explicite de « où » le code s'exécute — JavaScript côté client dans le navigateur vs Node.js côté serveur.
+- `"use workflow"` (introduit par le Workflow DevKit) définit à la fois « où » le code s'exécute (dans un environnement sandbox déterministe) et « comment » il s'exécute (sémantiques d'exécution déterministes, résumables et sandboxées).
+
+Les directives fournissent un contrat au moment de la compilation.
+
+Lorsque le Workflow DevKit voit `"use workflow"`, il :
+
+- Regroupe le workflow et ses dépendances en code exécutable dans un sandbox
+- Restreint l'accès aux API Node.js dans ce sandbox
+- Permet des fonctionnalités et des optimisations futures uniquement possibles avec un outil de build
+  - Par exemple, le code de workflow empaqueté peut être analysé statiquement pour générer des diagrammes/visualisations UML du workflow
+
+En plus d'être important pour le compilateur, `"use workflow"` signale explicitement au développeur que vous entrez dans un mode d'exécution différent.
+
+<Callout type="info">
+La directive `"use workflow"` est aussi utilisée par le plugin Language Server fourni avec Workflow DevKit pour offrir de l'IntelliSense dans votre IDE. Consultez les [getting started instructions](/docs/getting-started) pour votre framework pour les détails d'installation du Language Server Plugin.
+</Callout>
+
+Mais nous n'en sommes pas arrivés là immédiatement. Cela a nécessité des explorations pour en arriver à cette solution :
+
+## Alternatives que nous avons explorées
+
+Avant de retenir les directives, nous avons prototypé plusieurs autres approches. Chacune présentait des limitations importantes qui les rendaient inadaptées à la production.
+
+### API « Suspense » uniquement au runtime
+
+Notre première preuve de concept utilisait une API basée sur des wrappers sans étape de build :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(() => {
+  const message = run(async () => step());
+  return `${message}!`;
+});
+```
+
+Cette implémentation utilisait des « promesses jetées » (similaire au premier React Suspense) pour suspendre l'exécution. Lorsqu'une étape devait s'exécuter, nous lancions une promesse, la rattrapions à la frontière du workflow, exécutons l'étape, et relancions le workflow avec le résultat.
+
+**Les problèmes :**
+
+**1. Chaque effet de bord devait être encapsulé**
+
+Toute opération susceptible de produire des résultats non déterministes devait être encapsulée dans `run()` :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // These would be non-deterministic without wrapping
+  const now = await run(() => Date.now()); // [!code highlight]
+  const random = await run(() => Math.random()); // [!code highlight]
+  const user = await run(() => fetchUser()); // [!code highlight]
+
+  return { now, random, user };
+});
+```
+
+C'était verbeux et facile à oublier. De plus, si un développeur oubliait d'encapsuler quelque chose d'apparemment anodin comme `Date.now()`, cela conduisait à un comportement d'exécution instable.
+
+Par exemple :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // Nothing stops you from doing this:
+  const now = Date.now(); // Non-deterministic, untracked! // [!code highlight]
+  const user = await run(() => fetchUser());
+
+  // This workflow would produce different results on replay // [!code highlight]
+  return { now, user };
+});
+```
+
+**2. Les closures et les mutations devenaient imprévisibles**
+
+Les variables capturées dans des closures se comportaient de façon inattendue lorsque des étapes les mutaient :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  let counter = 0;
+
+  await run(() => {
+    counter++; // This mutation happens during step execution // [!code highlight]
+    return saveToDatabase(counter);
+  });
+
+  console.log(counter); // What is counter here? // [!code highlight]
+  // During execution: 1 (mutation preserved) // [!code highlight]
+  // During replay: 0 (mutation lost) // [!code highlight]
+  // Inconsistent behavior! // [!code highlight]
+});
+```
+
+La fonction de workflow serait relancée plusieurs fois, mais les mutations à l'intérieur des callbacks `run()` ne persistaient pas entre les relectures. Cela rendait le raisonnement sur l'état quasiment impossible.
+
+**3. La gestion des erreurs se dégradait**
+
+Puisque nous utilisions des promesses jetées pour le contrôle de flux, les blocs `try/catch` devenaient peu fiables :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  try {
+    const result = await run(() => step());
+    return result;
+  } catch (error) { // [!code highlight]
+    // This could catch: // [!code highlight]
+    // 1. A real error from the step // [!code highlight]
+    // 2. The thrown promise used for suspension // [!code highlight]
+    // 3. An error during replay // [!code highlight]
+    // Hard to distinguish without special handling // [!code highlight]
+    console.error(error);
+  }
+});
+```
+
+### API basée sur les generators
+
+Nous avons exploré l'utilisation des generators pour des points de suspension explicites, inspirés par des bibliothèques comme Effect.ts :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const message = yield* run(() => step());
+  return `${message}!`;
+});
+```
+
+<Callout type="info">
+Nous sommes de grands fans d'[Effect.ts](https://effect.website/) et de la puissance des API basées sur les generators pour la gestion des effets. Cependant, pour l'orchestration des workflows en particulier, nous avons trouvé la syntaxe trop lourde pour des développeurs non familiers avec les generators.
+</Callout>
+
+**Les problèmes :**
+
+**1. La syntaxe ressemblait plus à un DSL qu'à du JavaScript**
+
+Les generators exigent un modèle mental personnalisé qui diffère sensiblement du pattern async/await familier. La syntaxe `yield*` et la délégation de generators étaient peu familières à de nombreux développeurs :
+
+```typescript lineNumbers
+// Standard async/await (familiar)
+const result = await fetchData();
+
+// Generator-based (unfamiliar)
+const result = yield* run(() => fetchData()); // [!code highlight]
+```
+
+Les workflows complexes devenaient particulièrement verbeux et difficiles à lire :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const user = yield* run(() => fetchUser());
+
+  // Can't use Promise.all directly - need sequential calls or custom helpers // [!code highlight]
+  const orders = yield* run(() => fetchOrders(user.id)); // [!code highlight]
+  const payments = yield* run(() => fetchPayments(user.id)); // [!code highlight]
+
+  // Or create a custom generator-aware parallel helper: // [!code highlight]
+  const [orders2, payments2] = yield* all([ // [!code highlight]
+    run(() => fetchOrders(user.id)), // [!code highlight]
+    run(() => fetchPayments(user.id)) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { user, orders, payments };
+});
+```
+
+**2. Toujours pas de sandboxing au moment de la compilation**
+
+Comme pour l'approche uniquement runtime, les generators ne pouvaient pas empêcher le code non déterministe :
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const now = Date.now(); // Still possible, still problematic // [!code highlight]
+  const user = yield* run(() => fetchUser());
+  return { now, user };
+});
+```
+
+La syntaxe des generators adressait la suspension mais ne résolvait pas le problème fondamental du sandboxing.
+
+### Conventions basées sur le système de fichiers
+
+Nous avons exploré l'utilisation de conventions de système de fichiers pour identifier les workflows et les étapes, similaire à la manière dont les frameworks modernes gèrent le routing (Next.js, Hono, Nitro, SvelteKit) :
+
+<Files>
+  <Folder name="workflows" defaultOpen>
+    <File name="onboarding.ts" />
+    <File name="checkout.ts" />
+  </Folder>
+  <Folder name="steps" defaultOpen>
+    <File name="send-email.ts" />
+    <File name="charge-payment.ts" />
+  </Folder>
+</Files>
+
+Avec cette approche, toute fonction dans le répertoire `workflows/` serait transformée en workflow, et toute fonction dans `steps/` serait une étape. Pas de directives nécessaires, juste des emplacements de fichiers.
+
+**Pourquoi cela pourrait fonctionner :**
+
+- Séparation claire des responsabilités
+- Permet des transformations du compilateur basées sur le chemin de fichier
+- Pattern familier pour les développeurs habitués au routage basé sur les fichiers, par exemple Next.js
+
+**Pourquoi nous nous en sommes éloignés :**
+
+**1. Trop prescriptif pour des écosystèmes divers**
+
+Différents frameworks et développeurs ont des opinions fortes sur la structure des projets. Forcer une organisation de répertoires spécifique causait souvent des conflits avec diverses conventions, surtout dans des bases de code existantes.
+
+**2. Pas de support pour des fonctions publiables et réutilisables**
+
+Nous voulons que les développeurs puissent publier des bibliothèques sur npm qui incluent des directives pour les steps et les workflows. Idéalement, la logique devrait être isomorphe pour pouvoir être utilisée avec ou sans Workflow DevKit. Les conventions basées sur le système de fichiers rendaient cela impossible.
+
+**3. La migration et la réutilisation du code devenaient difficiles**
+
+Migrer du code existant nécessitait de déplacer des fichiers et de restructurer des projets plutôt que d'ajouter une seule ligne.
+
+L'approche par directives a résolu tous ces problèmes : elle fonctionne dans n'importe quelle structure de projet, prend en charge la réutilisation et la migration du code, permet les paquets npm et autorise les fonctions à s'adapter à leur contexte d'exécution.
+
+### Décorateurs
+
+Nous avons envisagé les décorateurs, mais ils présentaient des défis techniques et ergonomiques importants.
+
+**Les décorateurs ne sont pas encore standard et sont centrés sur les classes**
+
+Les décorateurs ne sont pas encore une syntaxe standard ([proposition TC39](https://github.com/tc39/proposal-decorators)) et ils fonctionnent actuellement uniquement avec les classes. Une approche par décorateur de classe pourrait ressembler à ceci :
+
+```typescript lineNumbers
+import {workflow, step} from "workflow";
+
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) { // [!code highlight]
+    const order = await this.fetchOrder(orderId);
+    const payment = await this.processPayment(order);
+    return { orderId, payment };
+  }
+
+  @step() // [!code highlight]
+  static async fetchOrder(orderId: string) { // [!code highlight]
+    // ...
+  }
+}
+```
+
+Cette approche nécessite :
+
+- D'écrire du boilerplate de classe avec des méthodes statiques
+- La gestion/stockage/mutation de propriétés de classe n'était pas évidente (problèmes similaires de closure/mutation que l'approche runtime-only)
+- Une syntaxe basée sur les classes qui ne semble pas « native » pour les développeurs JavaScript habitués aux patterns fonctionnels
+
+Comme l'écosystème JavaScript s'est orienté vers une approche fonctionnelle (exemplifiée par le passage de React des composants de classe aux fonctions et hooks), exiger que les développeurs utilisent des classes nous a semblé un pas en arrière et n'était pas en accord avec nos préférences en tant qu'auteurs du DevKit.
+
+**Le problème central : Présente les workflows comme du code runtime ordinaire**
+
+Bien que les décorateurs puissent être traités au moment de la compilation avec le support d'un outil de build, ils présentent les fonctions de workflow comme si elles étaient du code JavaScript régulier et composable, alors qu'il s'agit en réalité de déclarations au moment de la compilation qui nécessitent un traitement spécial.
+
+<Callout>
+Voir la section [Macro Wrapper](#macro-wrapper-approach) ci-dessous pour une analyse approfondie sur la raison pour laquelle cette approche échoue, avec des exemples concrets.
+</Callout>
+
+### Approche Macro Wrapper
+
+Nous avons aussi exploré des approches macro au moment de la compilation — utiliser un compilateur pour transformer des fonctions wrapper ou des décorateurs en code basé sur des directives :
+
+```typescript lineNumbers
+// Function wrapper approach
+import { useWorkflow } from "workflow"
+
+export const processOrder = useWorkflow(async (orderId: string) => { // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+});
+
+// Decorator approach (would work similarly)
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) {
+    const order = await fetchOrder(orderId);
+    return { orderId };
+  }
+
+  // ...
+}
+```
+
+Le compilateur pourrait transformer les deux de façon équivalente à l'approche par directive de WDK :
+
+```typescript lineNumbers
+export const processOrder = async (orderId: string) => {
+  "use workflow"; // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+};
+```
+
+L'avantage est que les macros pourraient appliquer des types et fournir des fonctionnalités LSP comme « Aller à la définition » dès l'origine.
+
+Cependant, **le problème fondamental demeure : les workflows ne sont pas des valeurs runtime**
+
+La question fondamentale est que les wrappers et les décorateurs font apparaître les workflows comme des valeurs de première classe au runtime alors qu'ils sont en réalité des déclarations au moment de la compilation. Ce décalage entre la syntaxe et la sémantique crée de nombreux modes de défaillance.
+
+**Exemples concrets montrant pourquoi cela casse :**
+
+```typescript lineNumbers
+// Someone writes a "helpful" utility
+function withRetry(fn: Function) {
+  return useWorkflow(async (...args) => { // Works with useWorkflow // [!code highlight]
+    try {
+      return await fn(...args);
+    } catch (error) {
+      return await fn(...args); // Retry once
+    }
+  });
+}
+
+// Note: the same utility would be written similarly for a decorator based syntax
+
+// Usage looks innocent in both cases
+export const processOrder = withRetry(async (orderId: string) => { // [!code highlight]
+  // Is this deterministic? Can it call steps?
+  // Nothing in this function indicates the developer is in the
+  // deterministic sandboxed workflow
+  // Also where is the retry happening? inside or outside the workflow?
+  const order = await fetchOrder(orderId);
+  return order;
+});
+```
+
+Le développeur qui écrit `processOrder` n'a aucun signal visible qu'il se trouve dans un environnement sandboxé et déterministe. Il est aussi ambigu de savoir si la logique de retry s'exécute à l'intérieur ou à l'extérieur du workflow, et le comportement réel ne correspond probablement pas à l'intuition du développeur.
+
+**Pourquoi le compilateur ne peut pas le détecter :**
+
+Pour détecter que `processOrder` est en réalité un workflow, le compilateur devrait effectuer une analyse du programme entier pour traquer que :
+
+1. `withRetry` renvoie le résultat de `useWorkflow`
+2. Donc `processOrder = withRetry(...)` est un workflow
+3. La fonction passée à `withRetry` s'exécutera dans un contexte sandboxé
+
+Ce niveau d'analyse inter-fonctions est impraticable pour les outils de build — il faudrait analyser chaque chaîne d'appel de fonction dans l'ensemble de votre codebase et toutes les dépendances. Le compilateur ne peut détecter de façon fiable que les appels directs à `useWorkflow`, pas les appels masqués derrière des abstractions.
+
+## Comment les directives résolvent ces problèmes
+
+Les directives répondent à tous les problèmes rencontrés lors des approches précédentes :
+
+**1. Frontière sémantique au moment de la compilation**
+
+La directive `"use workflow"` indique au compilateur de traiter ce code différemment :
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow"; // Compiler knows: transform this for sandbox execution // [!code highlight]
+
+  const order = await fetchOrder(orderId); // Compiler knows: this is a step call // [!code highlight]
+  return { orderId, order };
+}
+```
+
+**2. Validation au moment de la build**
+
+Le compilateur peut appliquer des restrictions avant le déploiement :
+
+```typescript lineNumbers
+export async function badWorkflow() {
+  "use workflow";
+
+  const crypto = require("crypto"); // Build error: Node.js module in workflow // [!code highlight]
+  return crypto.randomBytes(16);
+}
+```
+
+En fait, Workflow DevKit lèvera une erreur qui renvoie vers cette page d'erreur : [Node.js module in workflow](/docs/errors/node-js-module-in-workflow)
+
+**3. Plus d'ambiguïté dans les closures**
+
+Les étapes sont transformées en appels de fonction qui communiquent avec le runtime :
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  let counter = 0;
+
+  // This essentially becomes: await enqueueStep("updateCounter", [counter])
+  // The step receives counter as a parameter, not a closure
+  await updateCounter(counter); // [!code highlight]
+
+  console.log(counter); // Always 0, consistently // [!code highlight]
+}
+```
+
+Les callbacks, en revanche, s'exécutent à l'intérieur du sandbox du workflow et fonctionnent comme prévu :
+
+```typescript lineNumbers
+export async function processOrders(orderIds: string[]) {
+  "use workflow";
+
+  let successCount = 0;
+
+  // Callbacks run in the workflow context, not skipped on replay
+  await Promise.all(orderIds.map(async (orderId) => {
+    const order = await fetchOrder(orderId); // Step call
+    if (order.status === "completed") {
+      successCount++; // Mutation works correctly // [!code highlight]
+    }
+  }));
+
+  console.log(successCount); // Consistent across replays
+  return { total: orderIds.length, successful: successCount };
+}
+```
+
+Le callback s'exécute dans le sandbox du workflow, donc les lectures de closure et les mutations se comportent de manière cohérente lors des relectures.
+
+**4. Syntaxe naturelle**
+
+Ressemble et se ressent comme du JavaScript ordinaire :
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Standard async/await patterns work naturally // [!code highlight]
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // [!code highlight]
+    fetchUser(userId) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { order, user };
+}
+```
+
+**5. Syntaxe cohérente pour les étapes**
+
+La directive `"use step"` maintient la cohérence. Bien que les étapes s'exécutent dans le runtime Node.js complet et *pourraient* fonctionner sans directive, elles ont besoin d'un moyen pour signaler au runtime du workflow qu'elles sont des steps.
+
+Nous aurions pu utiliser un wrapper de fonction uniquement pour les steps :
+
+```typescript lineNumbers
+// Mixed approach (inconsistent)
+export async function processOrder(orderId: string) {
+  "use workflow"; // Directive for workflow // [!code highlight]
+
+  const order = await step(async () => fetchOrder(orderId));
+  return order;
+}
+
+const fetchOrder = useStep(() => { // Wrapper for step? // [!code highlight]
+  // ...
+})
+```
+
+Mélanger les syntaxes semblait incohérent.
+
+Une approche alternative que nous avons envisagée était de considérer *tous* les appels async comme des steps par défaut :
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Every async call becomes a step automatically?
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // Step
+    fetchUser(userId)    // Step
+  ]);
+
+  return { order, user };
+}
+```
+
+Cela échoue parce que de nombreuses opérations async valides à l'intérieur des workflows ne sont pas des steps :
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // These are valid async calls that SHOULD NOT be steps:
+  const results = await Promise.all([...]); // Language primitive // [!code highlight]
+  const winner = await Promise.race([...]); // Language primitive // [!code highlight]
+
+  // Helper function that formats data
+  const formatted = await formatOrderData(order); // Pure JavaScript helper // [!code highlight]
+}
+```
+
+En exigeant des directives explicites `"use step"`, les développeurs disposent d'un contrôle granulaire sur ce qui devient une étape durable et réessayable versus ce qui s'exécute en ligne dans le sandbox du workflow.
+
+<Callout>
+Pour comprendre comment les directives sont transformées au moment de la compilation, voir [How the Code Transform Works](/docs/how-it-works/code-transform).
+</Callout>
+
+## Ce que permettent les directives
+
+Parce que `"use workflow"` définit une frontière sémantique au moment de la compilation, nous pouvons fournir :
+
+<Cards>
+  <Card title="Validation à la compilation">
+    Le compilateur détecte les motifs invalides avant le déploiement : détecte les imports interdits, empêche les effets de bord directs et valide la structure des workflows.
+  </Card>
+  <Card title="Analyse statique">
+    Analysez le code de workflow sans l'exécuter : générez automatiquement des diagrammes UML ou DAG, fournissez de l'observabilité et des visualisations, et optimisez les chemins d'exécution.
+  </Card>
+  <Card title="Exécution durable">
+    Les workflows peuvent se suspendre et reprendre en toute sécurité : persister l'état d'exécution entre les étapes, reprendre depuis des checkpoints après des échecs ou des déploiements, et scaler à zéro sans perdre la progression.
+  </Card>
+  <Card title="Optimisations futures">
+    La frontière sémantique permet des améliorations planifiées : état sérialisé plus petit pour des checkpoints plus rapides, ordonnancement plus intelligent basé sur la structure du workflow, et reprise/suspension plus efficace.
+  </Card>
+</Cards>
+
+## Les directives comme pattern JavaScript
+
+Les directives en JavaScript ont toujours été des contrats entre le développeur et l'environnement d'exécution. `"use strict"` a rendu ce pattern familier — c'est un littéral string qui change la façon dont le code est interprété.
+
+Alors que JavaScript n'a pas encore de support natif pour des directives personnalisées (comme les attributs `#[attribute]` de Rust ou les `#pragma` en C++), les littéraux string sont l'outil le plus pragmatique disponible aujourd'hui.
+
+En tant que membres de TC39, nous chez Vercel travaillons activement avec l'organisme de normalisation et l'écosystème au sens large pour explorer des spécifications formelles pour une syntaxe de type pragma ou des annotations macro qui pourraient exprimer des sémantiques d'exécution.
+
+## Remarques finales
+
+Les directives ne sont pas une question de préférence syntaxique, elles servent à exprimer des frontières sémantiques. `"use workflow"` indique au compilateur, au développeur et au runtime que ce code est déterministe, résumable et sandboxé.
+
+Cette clarté permet au Workflow Development Kit d'offrir une exécution durable avec des patterns JavaScript familiers, tout en conservant les garanties au moment de la compilation nécessaires pour une orchestration de workflow fiable.

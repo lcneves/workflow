@@ -1,0 +1,568 @@
+---
+title: ストリーミング
+---
+
+ワークフローは、ワークフロー全体が完了するのを待たずにクライアントへリアルタイムでデータをストリーミングできます。これにより、進捗の更新、AI が生成したコンテンツ、ログメッセージ、その他の増分データをワークフローの実行中に配信できます。
+
+## `getWritable()` の始め方
+
+各ワークフロー実行には、ステップが書き込みできるデフォルトの書き込み可能なストリームがあります。[`getWritable()`](/docs/api-reference/workflow/get-writable) を使ってこのストリームに書き込むと、ワークフローの出力を消費しているクライアントに即座にデータが利用可能になります。
+
+```typescript title="workflows/simple-streaming.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeProgress(message: string) {
+  "use step";
+
+  // Steps can write to the run's default stream
+  const writable = getWritable<string>(); // [!code highlight]
+  const writer = writable.getWriter();
+  await writer.write(message);
+  writer.releaseLock();
+}
+
+export async function simpleStreamingWorkflow() {
+  "use workflow";
+
+  await writeProgress("Starting task...");
+  await writeProgress("Processing data...");
+  await writeProgress("Task complete!");
+}
+```
+
+### ストリームの消費
+
+API ルートからストリームを消費するには、`Run` オブジェクトの `readable` プロパティを使用します:
+
+```typescript title="app/api/stream/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { simpleStreamingWorkflow } from "./workflows/simple";
+
+export async function POST() {
+  const run = await start(simpleStreamingWorkflow);
+
+  // Return the readable stream to the client
+  return new Response(run.readable, {
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+```
+
+クライアントがこのエンドポイントにリクエストを行うと、ワークフローの完了を待たずに各メッセージが書き込まれたときに受信されます。
+
+### 特定の位置からストリームを再開する
+
+`run.getReadable({ startIndex })` を使ってストリームを特定の位置から再開できます。これはタイムアウトやネットワークの中断後に再接続する際に便利です:
+
+```typescript title="app/api/resume-stream/[runId]/route.ts" lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ runId: string }> }
+) {
+  const { runId } = await params;
+  const { searchParams } = new URL(request.url);
+
+  // Client provides the last chunk index they received
+  const startIndexParam = searchParams.get("startIndex"); // [!code highlight]
+  const startIndex = startIndexParam ? parseInt(startIndexParam, 10) : undefined; // [!code highlight]
+
+  const run = getRun(runId);
+  const stream = run.getReadable({ startIndex }); // [!code highlight]
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+```
+
+これにより、クライアントは開始地点から再受信するのではなく、中断した地点から継続してデータを受け取れます。
+
+## データ型としてのストリーム
+
+[`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream) と [`WritableStream`](https://developer.mozilla.org/en-US/docs/Web/API/WritableStream) は、Workflow DevKit がシリアライズ可能にしている標準的な Web Streams API の型です。これらはカスタム型ではなく Web 標準に従いますが、Workflow DevKit はそれらを関数間で受け渡しつつストリーミング機能を保持する能力を追加しています。
+
+通常の値がイベントログに完全にシリアライズされるのとは異なり、ストリームは関数間で渡されるときにもストリーミング能力を維持します。
+
+**主なプロパティ:**
+- ストリームの参照はワークフロー関数とステップ関数の間で渡せる
+- ストリームデータはイベントログに保存されずに直接流れる
+- ストリームはワークフローのサスペンドポイントを越えて状態を保持する
+
+<Callout type="info">
+**ワークフローのサスペンドを跨いでストリームがどのように永続化されるか**
+
+Workflow DevKit のストリームは、"world" 実装が提供する永続的で再開可能なストレージによって支えられています。これにより、ワークフローがサスペンドして再開してもストリームは状態を維持することが可能になります:
+
+- **Vercel のデプロイ**: ストリームは高性能な Redis ベースのストリームでバックエンドされます
+- **ローカル開発**: ストリームチャンクはファイルシステムに保存されます
+</Callout>
+
+### 引数としてストリームを渡す
+
+ストリームはシリアライズ可能なデータ型なので、特別な [`getWritable()`](/docs/api-reference/workflow/get-writable) を使う必要はありません。外部からステップへ引数として渡して自分のストリームをワイヤリングすることも可能です。
+
+以下は、リクエストボディのストリームをワークフロー経由で処理するステップに渡す例です:
+
+```typescript title="app/api/upload/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { streamProcessingWorkflow } from "./workflows/streaming";
+
+export async function POST(request: Request) {
+  // Streams can be passed as workflow arguments
+  const run = await start(streamProcessingWorkflow, [request.body]); // [!code highlight]
+  await run.result();
+
+  return Response.json({ status: "complete" });
+}
+```
+
+```typescript title="workflows/streaming.ts" lineNumbers
+export async function streamProcessingWorkflow(
+  inputStream: ReadableStream<Uint8Array> // [!code highlight]
+) {
+  "use workflow";
+
+  // Workflow passes stream to step for processing
+  const result = await processInputStream(inputStream); // [!code highlight]
+  return { length: result.length };
+}
+
+async function processInputStream(input: ReadableStream<Uint8Array>) {
+  "use step";
+
+  // Step reads from the stream
+  const chunks: Uint8Array[] = [];
+
+  for await (const chunk of input) {
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+```
+
+## 重要な制限
+
+<Callout type="info">
+**ワークフローコンテキストでストリームを直接使用することはできません**
+
+ワークフロー関数の中でストリームを直接読み書きすることはできません。すべてのストリーム操作はステップ関数内で行う必要があります。
+</Callout>
+
+ワークフロー関数はリプレイをサポートするために決定論的である必要があります。ストリームはパフォーマンスのためにイベントログを迂回するため、ワークフロー内でストリームデータを読むと決定論性が壊れます — リプレイごとに異なるデータが見える可能性があります。すべてのストリーム操作をステップで行うことを要求することで、フレームワークは一貫した動作を保証します。
+
+決定論性とリプレイの詳細は [Workflows and Steps](/docs/foundations/workflows-and-steps) を参照してください。
+
+```typescript title="workflows/bad-example.ts" lineNumbers
+export async function badWorkflow() {
+  "use workflow";
+
+  const writable = getWritable<string>();
+
+  // Cannot read/write streams in workflow context
+  const writer = writable.getWriter(); // [!code highlight]
+  await writer.write("data"); // [!code highlight]
+}
+```
+
+```typescript title="workflows/good-example.ts" lineNumbers
+export async function goodWorkflow() {
+  "use workflow";
+
+  // Delegate stream operations to steps
+  await writeToStream("data");
+}
+
+async function writeToStream(data: string) {
+  "use step";
+
+  // Stream operations must happen in steps
+  const writable = getWritable<string>();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## 名前空間付きストリーム
+
+異なる種類のデータ向けに複数の独立したストリームを作成するには、`getWritable({ namespace: 'name' })` を使用します。ログ、メトリクス、データ出力、その他の別々のチャネルを分離したい場合に便利です。
+
+```typescript title="workflows/multi-stream.ts" lineNumbers
+import { getWritable } from "workflow";
+
+type LogEntry = { level: string; message: string };
+type MetricEntry = { cpu: number; memory: number };
+
+async function writeLogs() {
+  "use step";
+
+  const logs = getWritable<LogEntry>({ namespace: "logs" }); // [!code highlight]
+  const writer = logs.getWriter();
+
+  await writer.write({ level: "info", message: "Task started" });
+  await writer.write({ level: "info", message: "Processing..." });
+
+  writer.releaseLock();
+}
+
+async function writeMetrics() {
+  "use step";
+
+  const metrics = getWritable<MetricEntry>({ namespace: "metrics" }); // [!code highlight]
+  const writer = metrics.getWriter();
+
+  await writer.write({ cpu: 45, memory: 512 });
+  await writer.write({ cpu: 52, memory: 520 });
+
+  writer.releaseLock();
+}
+
+async function closeStreams() {
+  "use step";
+
+  await getWritable({ namespace: "logs" }).close();
+  await getWritable({ namespace: "metrics" }).close();
+}
+
+export async function multiStreamWorkflow() {
+  "use workflow";
+
+  await writeLogs();
+  await writeMetrics();
+  await closeStreams();
+}
+```
+
+### 名前空間付きストリームの消費
+
+特定のストリームにアクセスするには `run.getReadable({ namespace: 'name' })` を使用します:
+
+```typescript title="app/api/multi-stream/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { multiStreamWorkflow } from "./workflows/multi";
+
+type LogEntry = { level: string; message: string };
+type MetricEntry = { cpu: number; memory: number };
+
+export async function POST(request: Request) {
+  const run = await start(multiStreamWorkflow);
+
+  // Access specific named streams // [!code highlight]
+  const logs = run.getReadable<LogEntry>({ namespace: "logs" }); // [!code highlight]
+  const metrics = run.getReadable<MetricEntry>({ namespace: "metrics" }); // [!code highlight]
+
+  // Return the logs stream to the client
+  return new Response(logs, {
+    headers: { "Content-Type": "application/json" }
+  });
+}
+```
+
+## よくあるパターン
+
+### 長時間実行されるタスクの進捗更新
+
+長時間のワークフロー中にユーザーに情報を提供するため、増分の進捗更新を送信します:
+
+```typescript title="workflows/batch-processing.ts" lineNumbers
+import { getWritable, sleep } from "workflow";
+
+type ProgressUpdate = {
+  item: string;
+  progress: number;
+  status: string;
+};
+
+async function processItem(
+  item: string,
+  current: number,
+  total: number
+) {
+  "use step";
+
+  const writable = getWritable<ProgressUpdate>(); // [!code highlight]
+  const writer = writable.getWriter();
+
+  // Simulate processing
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  // Send progress update // [!code highlight]
+  await writer.write({ // [!code highlight]
+    item, // [!code highlight]
+    progress: Math.round((current / total) * 100), // [!code highlight]
+    status: "processing" // [!code highlight]
+  }); // [!code highlight]
+
+  writer.releaseLock();
+}
+
+async function finalizeProgress() {
+  "use step";
+
+  await getWritable().close();
+}
+
+export async function batchProcessingWorkflow(items: string[]) {
+  "use workflow";
+
+  for (let i = 0; i < items.length; i++) {
+    await processItem(items[i], i + 1, items.length);
+    await sleep("1s");
+  }
+
+  await finalizeProgress();
+}
+```
+
+### `DurableAgent` を使った AI レスポンスのストリーミング
+
+`@workflow/ai` の [`DurableAgent`](/docs/api-reference/workflow-ai/durable-agent) を使って AI 生成コンテンツをストリーミングできます。ツールは AI SDK の [`UIMessageChunk`](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) 型を使った [データチャンク](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#streaming-custom-data) により、同じストリームに進捗更新を出力することもできます:
+
+```typescript title="workflows/ai-assistant.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function searchFlights({ query }: { query: string }) {
+  "use step";
+
+  // Tools can emit progress updates to the stream
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+  await writer.write({ // [!code highlight]
+    type: "data-progress", // [!code highlight]
+    data: { message: `Searching flights for ${query}...` }, // [!code highlight]
+    transient: true, // [!code highlight]
+  }); // [!code highlight]
+  writer.releaseLock(); // [!code highlight]
+
+  // ... search logic ...
+  return { flights: [/* results */] };
+}
+
+export async function aiAssistantWorkflow(userMessage: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    system: "You are a helpful flight assistant.",
+    tools: {
+      searchFlights: {
+        description: "Search for flights",
+        inputSchema: z.object({ query: z.string() }),
+        execute: searchFlights,
+      },
+    },
+  });
+
+  // LLM response will be streamed to the run's writable
+  await agent.stream({
+    messages: [{ role: "user", content: userMessage }],
+    writable: getWritable<UIMessageChunk>(), // [!code highlight]
+  });
+}
+```
+
+```typescript title="app/api/ai-assistant/route.ts" lineNumbers
+import { createUIMessageStreamResponse } from "ai";
+import { start } from "workflow/api";
+import { aiAssistantWorkflow } from "./workflows/ai";
+
+export async function POST(request: Request) {
+  const { message } = await request.json();
+
+  const run = await start(aiAssistantWorkflow, [message]);
+
+  return createUIMessageStreamResponse({
+    stream: run.readable,
+  });
+}
+```
+
+<Callout type="info">
+完全な実装例については、ツールの進捗更新を伴う AI レスポンスのストリーミングを示す [flight booking example](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) を参照してください。
+</Callout>
+
+### ステップ間のストリーミング
+
+あるステップがストリームを生成し、別のステップがそれを消費する例:
+
+```typescript title="workflows/stream-pipeline.ts" lineNumbers
+export async function streamPipelineWorkflow() {
+  "use workflow";
+
+  // Streams can be passed between steps
+  const stream = await generateData(); // [!code highlight]
+  const results = await consumeData(stream); // [!code highlight]
+
+  return { count: results.length };
+}
+
+async function generateData(): Promise<ReadableStream<number>> {
+  "use step";
+
+  // Producer step creates a stream
+  return new ReadableStream<number>({
+    start(controller) {
+      for (let i = 0; i < 10; i++) {
+        controller.enqueue(i);
+      }
+      controller.close();
+    }
+  });
+}
+
+async function consumeData(readable: ReadableStream<number>) {
+  "use step";
+
+  // Consumer step reads from the stream
+  const values: number[] = [];
+  for await (const value of readable) {
+    values.push(value);
+  }
+  return values;
+}
+```
+
+### 大きなファイルをメモリを圧迫せずに処理する
+
+変換ステップを通してチャンクをストリーミングすることで、大きなファイルを処理します:
+
+```typescript title="workflows/file-processing.ts" lineNumbers
+export async function fileProcessingWorkflow(fileUrl: string) {
+  "use workflow";
+
+  // Chain streams through multiple processing steps
+  const rawStream = await downloadFile(fileUrl); // [!code highlight]
+  const processedStream = await transformData(rawStream); // [!code highlight]
+  await uploadResult(processedStream); // [!code highlight]
+}
+
+async function downloadFile(url: string): Promise<ReadableStream<Uint8Array>> {
+  "use step";
+  const response = await fetch(url);
+  return response.body!;
+}
+
+async function transformData(input: ReadableStream<Uint8Array>): Promise<ReadableStream<Uint8Array>> {
+  "use step";
+
+  // Transform stream chunks without loading entire file into memory
+  return input.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      // Process each chunk individually
+      controller.enqueue(chunk);
+    }
+  }));
+}
+
+async function uploadResult(stream: ReadableStream<Uint8Array>) {
+  "use step";
+  await fetch("https://storage.example.com/upload", {
+    method: "POST",
+    body: stream,
+  });
+}
+```
+
+## ベストプラクティス
+
+**ロックは適切に解放する:**
+
+```typescript lineNumbers
+const writer = writable.getWriter();
+try {
+  await writer.write(data);
+} finally {
+  writer.releaseLock(); // Always release
+}
+```
+
+<Callout type="info">
+ステップ内で取得したストリームロックはそのステップ内でのみ適用され、他のステップに跨ることはありません。これにより複数のライターが同じストリームに同時に書き込めます。
+</Callout>
+
+<Callout type="info">
+ロックが解放されていない場合、ステッププロセスは終了できません。ステップが返されてワークフローが続行しても、基盤となるプロセスはタイムアウトするまでアクティブなままになります。
+</Callout>
+
+**完了時にストリームを閉じる:**
+
+```typescript lineNumbers
+async function finalizeStream() {
+  "use step";
+
+  await getWritable().close(); // Signal completion
+}
+```
+
+ワークフロー実行が完了するとストリームは自動的に閉じられますが、明示的に閉じることで消費者に早めに完了を通知できます。
+
+**型付きストリームを使って型安全性を保つ:**
+
+```typescript lineNumbers
+const writable = getWritable<MyDataType>();
+const writer = writable.getWriter();
+await writer.write({ /* typed data */ });
+```
+
+## ストリームの失敗
+
+ステップがストリームを返すと、そのステップはストリームを返した時点で成功と見なされます。後からストリームがエラーに遭遇しても、ワークフローは自動的にそのステップを再試行しません。ストリームの消費者がエラーを適切に処理する必要があります。再試行の挙動の詳細は [Errors and Retries](/docs/foundations/errors-and-retries) を参照してください。
+
+```typescript title="workflows/stream-error-handling.ts" lineNumbers
+import { FatalError } from "workflow";
+
+async function produceStream(): Promise<ReadableStream<number>> {
+  "use step";
+
+  // Step succeeds once it returns the stream
+  return new ReadableStream<number>({
+    start(controller) {
+      controller.enqueue(1);
+      controller.enqueue(2);
+      // Error occurs after step has completed // [!code highlight]
+      controller.error(new Error("Stream failed")); // [!code highlight]
+    }
+  });
+}
+
+async function consumeStream(stream: ReadableStream<number>) {
+  "use step";
+
+  try { // [!code highlight]
+    for await (const value of stream) {
+      console.log(value);
+    }
+  } catch (error) { // [!code highlight]
+    // Retrying won't help since the stream is already errored // [!code highlight]
+    throw new FatalError("Stream failed"); // [!code highlight]
+  } // [!code highlight]
+}
+
+export async function streamErrorWorkflow() {
+  "use workflow";
+
+  const stream = await produceStream(); // Step succeeds // [!code highlight]
+  await consumeStream(stream); // Consumer handles errors // [!code highlight]
+}
+```
+
+<Callout type="info">
+ストリームエラーはプロデューサーステップの自動再試行をトリガーしません。ストリームの消費者側で適切にエラー処理を設計してください。ストリームがすでにエラー状態であるため、消費者を再試行しても効果がないことに注意し、ワークフローを即時に失敗させたい場合は `FatalError` を使用してください。
+</Callout>
+
+## 関連ドキュメント
+
+- [`getWritable()` API リファレンス](/docs/api-reference/workflow/get-writable) - ワークフローの書き込み可能なストリームを取得する
+- [`sleep()` API リファレンス](/docs/api-reference/workflow/sleep) - 指定時間ワークフロー実行を一時停止する
+- [`start()` API リファレンス](/docs/api-reference/workflow-api/start) - ワークフローを開始して `Run` オブジェクトにアクセスする
+- [`getRun()` API リファレンス](/docs/api-reference/workflow-api/get-run) - 実行を取得し後でそのストリームにアクセスする
+- [DurableAgent](/docs/api-reference/workflow-ai/durable-agent) - 組み込みのストリーミングサポートを持つ AI エージェント
+- [Errors and Retries](/docs/foundations/errors-and-retries) - エラー処理と再試行の挙動の理解
+- [Serialization](/docs/foundations/serialization) - ワークフローで渡せるデータ型の理解
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - ワークフロー実行のコア概念

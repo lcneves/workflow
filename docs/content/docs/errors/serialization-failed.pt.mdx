@@ -1,0 +1,120 @@
+---
+title: falha-na-serialização
+---
+
+Este erro ocorre quando você tenta passar dados não serializáveis entre limites de execução no seu fluxo de trabalho. Todos os dados passados entre funções do fluxo de trabalho, funções de etapa e o tempo de execução do fluxo de trabalho devem ser serializáveis para persistirem no registro de eventos.
+
+## Mensagem de Erro
+
+```
+Failed to serialize workflow arguments. Ensure you're passing serializable types
+(plain objects, arrays, primitives, Date, RegExp, Map, Set).
+```
+
+Este erro pode aparecer quando:
+
+- Serializando argumentos do fluxo de trabalho ao chamar `start()`
+- Serializando valores de retorno do fluxo de trabalho
+- Serializando argumentos de etapa
+- Serializando valores de retorno de etapa
+
+## Por que Isso Acontece
+
+Os fluxos de trabalho persistem seu estado usando um registro de eventos. Todo valor que cruza limites de execução deve ser:
+
+1. **Serializado** para ser armazenado no registro de eventos  
+2. **Desserializado** quando o fluxo de trabalho retoma
+
+Funções, instâncias de classe, símbolos e outros tipos não serializáveis não podem ser corretamente reconstruídos após a serialização, o que comprometeria a reprodução do fluxo de trabalho.
+
+## Causas Comuns
+
+### Passando Funções
+
+```typescript lineNumbers
+// Error - functions cannot be serialized
+export async function processWorkflow() {
+  "use workflow";
+
+  const callback = () => console.log("done"); // [!code highlight]
+  await processStep(callback); // Error! // [!code highlight]
+}
+```
+
+**Solução:** Passe dados em vez disso, e depois defina a lógica da função na etapa.
+
+```typescript lineNumbers
+// Fixed - pass configuration data instead
+export async function processWorkflow() {
+  "use workflow";
+
+  await processStep({ shouldLog: true }); // [!code highlight]
+}
+
+async function processStep(config: { shouldLog: boolean }) {
+  "use step";
+
+  if (config.shouldLog) { // [!code highlight]
+    console.log("done"); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+### Instâncias de Classe
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Error - class instances lose methods after serialization
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep(new User("Alice")); // Error! // [!code highlight]
+}
+```
+
+**Solução:** Passe objetos simples e reconstrua a classe na etapa.
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Fixed - pass plain object, reconstruct in step
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep({ name: "Alice" }); // [!code highlight]
+}
+
+async function greetStep(userData: { name: string }) {
+  "use step";
+
+  const user = new User(userData.name); // [!code highlight]
+  console.log(user.greet());
+}
+```
+
+## Tipos Serializáveis Suportados
+
+Workflow DevKit suporta estes tipos através de limites de execução:
+
+### Tipos JSON Padrão
+
+- `string`, `number`, `boolean`, `null`
+- Arrays de valores serializáveis
+- Objetos simples com valores serializáveis
+
+Para saber mais sobre os tipos suportados, veja a seção [Serialização](/docs/foundations/serialization).
+
+## Depurando Problemas de Serialização
+
+Para identificar o que está causando a falha na serialização:
+
+1. **Verifique o rastreamento de pilha do erro** - ele frequentemente mostra qual propriedade falhou  
+2. **Simplifique seus dados** - passe temporariamente objetos menores para isolar o problema  
+3. **Assegure-se de que está usando tipos suportados** - veja a seção [Serialização](/docs/foundations/serialization) para mais detalhes

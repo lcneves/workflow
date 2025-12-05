@@ -1,0 +1,171 @@
+---
+title: Monde PostgreSQL
+---
+
+Le monde PostgreSQL est une implémentation de référence d'un [Monde](/docs/deploying/world) entièrement basée sur PostgreSQL, incluant le traitement des jobs (en utilisant [pg-boss](https://github.com/timgit/pg-boss)) et le streaming (en utilisant NOTIFY et LISTEN de PostgreSQL).
+
+Ce monde est conçu pour des processus de longue durée : il peut recevoir et dispatcher des événements depuis une base de données PostgreSQL, et n'est pas destiné à être déployé sur des plateformes serverless comme Vercel en raison de cette nature.
+
+<Steps>
+
+<Step>
+
+## Installation
+
+Installez le package `@workflow/world-postgres` :
+
+```package-install
+@workflow/world-postgres
+```
+
+</Step>
+
+<Step>
+
+## Ajouter des variables d'environnement
+
+Ajoutez les variables d'environnement suivantes à votre fichier `.env` requises pour les workflows :
+
+```bash
+WORKFLOW_TARGET_WORLD="@workflow/world-postgres"
+WORKFLOW_POSTGRES_URL="postgres://postgres:password@db.yourdb.co:5432/postgres"
+WORKFLOW_POSTGRES_JOB_PREFIX="workflow_"
+WORKFLOW_POSTGRES_WORKER_CONCURRENCY=10
+```
+
+La configuration du monde est automatiquement lue depuis les variables d'environnement :
+
+- `WORKFLOW_TARGET_WORLD` - Requis, spécifie quelle implémentation de monde utiliser
+- `WORKFLOW_POSTGRES_URL` - Chaîne de connexion PostgreSQL (par défaut `postgres://world:world@localhost:5432/world`)
+- `WORKFLOW_POSTGRES_JOB_PREFIX` - Préfixe pour les noms des jobs de la file d'attente
+- `WORKFLOW_POSTGRES_WORKER_CONCURRENCY` - Nombre de workers concurrents (par défaut `10` si non spécifié)
+
+
+</Step>
+
+<Step>
+
+## Configurer le schéma de la base de données
+
+Exécutez le script d'installation pour créer les tables de base de données requises :
+
+```bash
+pnpm exec workflow-postgres-setup
+```
+
+Ceci va créer les tables suivantes dans votre base de données PostgreSQL :
+
+- `workflow_runs` - Stocke l'état d'exécution des workflows
+- `workflow_events` - Stocke les événements des workflows
+- `workflow_steps` - Stocke l'état des étapes des workflows
+- `workflow_hooks` - Stocke les hooks des workflows
+- `workflow_stream_chunks` - Stocke les données de streaming
+
+Vous devriez voir une sortie similaire :
+
+```
+🔧 Setting up database schema...
+📍 Connection: postgres://postgres:****@db.yourcloudprovider.co:5432/postgres
+✅ Database schema created successfully!
+```
+
+</Step>
+
+<Step>
+
+## Initialiser le Monde PostgreSQL
+
+Le démarrage du Monde PostgreSQL variera selon les frameworks. L'idée principale est de démarrer le Monde PostgreSQL au démarrage du serveur.
+
+Voici quelques exemples de ce à quoi cela peut ressembler :
+
+### Next.js
+
+Créez un fichier `instrumentation.ts` à la racine de votre projet pour initialiser et démarrer le monde :
+
+```ts title="instrumentation.ts" lineNumbers
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== "edge") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+}
+```
+
+<Callout>
+  En savoir plus sur l'instrumentation [Next.js](https://nextjs.org/docs/app/guides/instrumentation).
+</Callout>
+
+### SvelteKit
+
+Créez un fichier `src/hooks.server.ts` :
+
+```ts title="src/hooks.server.ts" lineNumbers
+import type { ServerInit } from "@sveltejs/kit";
+
+export const init: ServerInit = async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    const { getWorld } = await import("workflow/runtime");
+    console.log("Starting Postgres World...");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+};
+```
+
+<Callout>
+  En savoir plus sur les [Hooks SvelteKit](https://svelte.dev/docs/kit/hooks).
+</Callout>
+
+### Applications basées sur Nitro
+
+Créez un plugin pour démarrer le Monde PostgreSQL. Celui-ci sera invoqué lorsque le serveur Nitro démarrera.
+
+```ts title="plugins/start-pg-world.ts" lineNumbers
+import { defineNitroPlugin } from "nitro/~internal/runtime/plugin";
+
+export default defineNitroPlugin(async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+});
+```
+
+Ajoutez le plugin à votre fichier `nitro.config.ts`. Cela active le plugin :
+
+```ts title="nitro.config.ts"
+import { defineNitroConfig } from "nitropack";
+
+export default defineNitroConfig({
+  // ... your nitro config
+  modules: ["workflow/nitro"],
+  plugins: ["plugins/start-pg-world.ts"],
+});
+```
+
+<Callout>
+  En savoir plus sur les [Nitro Plugins](https://v3.nitro.build/docs/plugins)
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Comment cela fonctionne
+
+Le Monde PostgreSQL utilise PostgreSQL comme backend durable pour l'exécution des workflows :
+
+- **File d'attente de jobs**: Utilise [pg-boss](https://github.com/timgit/pg-boss) pour un traitement fiable des jobs
+- **Streaming d'événements**: Tire parti de NOTIFY/LISTEN de PostgreSQL pour la distribution d'événements en temps réel
+- **Persistance d'état**: Tout l'état des workflows est stocké dans des tables PostgreSQL
+- **Gestion des workers**: Prend en charge des workers concurrents configurables pour le traitement des jobs
+
+Cette configuration garantit que vos workflows peuvent survivre aux redémarrages et aux pannes de l'application, avec tout l'état persistant de manière fiable dans votre base de données PostgreSQL.

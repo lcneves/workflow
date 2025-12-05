@@ -1,0 +1,53 @@
+---
+title: 可観測性
+---
+
+Workflow DevKit は、CLI と Web UI を通じてワークフローを検査、監視、デバッグするための強力なツールを提供します。これらのツールにより、ワークフローの実行、ステップ、webhook、イベント、およびストリーム出力を検査できます。
+
+## クイックスタート
+
+```bash
+npx workflow
+```
+
+この CLI は Workflow DevKit に同梱されており、`workflow` コマンドを登録します。`workflow` パッケージがまだインストールされていない場合、`npx workflow` はそれをグローバルにインストールするか、利用可能な場合はローカルにインストールされたバージョンを使用します。
+
+ローカルのワークフローを検査するには:
+
+```bash
+# See all available commands
+npx workflow inspect --help
+
+# List recent workflow runs
+npx workflow inspect runs
+```
+
+## Web UI
+
+Workflow DevKit には、ワークフローを検査するためのローカルの Web UI が付属しています。CLI は `--web` フラグを使用するとローカルで Web UI を起動します。
+
+```bash
+# Launch Web UI for visual exploration
+npx workflow inspect runs --web
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit の Web UI" />
+
+## バックエンド
+
+Workflow DevKit CLI は任意の [World](/docs/deploying#what-are-worlds) からデータを検査できます。デフォルトでは、ローカル開発環境のデータを検査します。例えば、ローカルでワークフローを開発するために Next.js を使用している場合、CLI は `.next/workflow-data/` ディレクトリでデータを見つけます。
+
+本番環境にワークフローをデプロイしているが、CLI を使ってデータを検査したい場合は、使用している world の名前またはパッケージ名（例: `vercel`）を `--backend` フラグに指定できます。
+
+<Callout>
+バックエンドは追加の設定を必要とする場合があります。環境変数が不足している場合は、World パッケージがそれを設定する方法についての指示を提供しているはずです。
+</Callout>
+
+### Vercel バックエンド
+
+Vercel 上で実行されているワークフローを検査するには、Vercel CLI にログインし、プロジェクトがリンクされていることを確認してください。詳細については、[Vercel CLI の認証およびプロジェクトリンクに関するドキュメント](https://vercel.com/docs/cli/project-linking) を参照してください。次に、バックエンドを単に `vercel` と指定します。
+
+```bash
+# Inspect workflows running on Vercel
+npx workflow inspect runs --backend vercel
+```

@@ -1,0 +1,595 @@
+---
+title: Memahami Direktif
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+<Callout>
+Panduan ini menjelaskan bagaimana direktif JavaScript memungkinkan model eksekusi Workflow DevKit. Untuk memulai dengan alur kerja, lihat panduan [memulai](/docs/getting-started) untuk framework Anda.
+</Callout>
+
+The Workflow Development Kit uses JavaScript directives (`"use workflow"` and `"use step"`) as the foundation for its durable execution model. Directives provide the compile-time semantic boundary necessary for workflows to suspend, resume, and maintain deterministic behavior across replays.
+
+Halaman ini menjelaskan bagaimana direktif memungkinkan model eksekusi ini dan prinsip desain yang membawa kita ke sini.
+
+Untuk memahami bagaimana direktif bekerja, mari kita pahami terlebih dahulu apa itu alur kerja dan langkah dalam Workflow DevKit.
+
+## Pengantar Alur Kerja dan Langkah
+
+The Workflow DevKit has two types of functions:
+
+**Fungsi langkah** adalah operasi yang menimbulkan efek samping dengan akses penuh ke runtime Node.js. Anggaplah seperti panggilan RPC bernama — mereka dijalankan sekali, hasilnya dipersistensikan, dan dapat [dicoba ulang saat gagal](/docs/foundations/errors-and-retries):
+
+```typescript lineNumbers
+async function fetchUserData(userId: string) {
+  "use step";
+
+  // Full Node.js access: database calls, API requests, file I/O
+  const user = await db.query("SELECT * FROM users WHERE id = ?", [userId]);
+  return user;
+}
+```
+
+**Fungsi workflow** adalah pengatur deterministik yang mengoordinasikan langkah. Mereka harus berupa fungsi murni — selama replay, hasil langkah yang sama selalu menghasilkan keluaran yang sama. Ini diperlukan karena alur kerja melanjutkan dengan memutar ulang kode mereka dari awal menggunakan hasil langkah yang di-cache; logika non-deterministik akan merusak kelanjutan. Mereka berjalan di lingkungan ter-sandbox tanpa akses langsung ke Node.js:
+
+```typescript lineNumbers
+export async function onboardUser(userId: string) {
+  "use workflow";
+
+  const user = await fetchUserData(userId); // Calls step
+
+  // Non-deterministic code would break replay behavior // [!code highlight]
+  if (Math.random() > 0.5) { // [!code highlight]
+    await sendWelcomeEmail(user); // [!code highlight]
+  } // [!code highlight]
+
+  return `Onboarded ${user.name}!`;
+}
+```
+
+**Wawasan utama:** Alur kerja melanjutkan dari suspensi dengan memutar ulang kode mereka menggunakan hasil langkah yang di-cache dari log peristiwa. Ketika sebuah langkah seperti `await fetchUserData(userId)` dipanggil:
+
+- **Jika sudah dijalankan:** Mengembalikan hasil yang di-cache segera dari log peristiwa
+- **Jika belum dijalankan:** Menangguhkan alur kerja, memasukkan langkah ke antrean untuk eksekusi latar belakang, dan melanjutkan nanti dengan hasilnya
+
+Mekanisme replay ini membutuhkan kode yang deterministik. Jika `Math.random()` tidak di-seed, eksekusi pertama mungkin mengembalikan `0.7` (mengirim email) tetapi replay mungkin mengembalikan `0.3` (melewatkannya), sehingga merusak kelanjutan. Sandbox Workflow DevKit menyediakan `Math.random()` dan `Date` yang di-seed untuk memastikan perilaku konsisten di seluruh replay.
+
+<Callout>
+Untuk pembahasan lebih mendalam tentang alur kerja dan langkah, lihat [Alur Kerja dan Langkah](/docs/foundations/workflows-and-steps).
+</Callout>
+
+## Tantangan Utama
+
+Model eksekusi ini memungkinkan fitur durabilitas yang kuat — alur kerja dapat ditangguhkan selama berhari-hari, bertahan dari restart, dan dilanjutkan dari titik manapun. Namun, ini juga membutuhkan batas semantik dalam kode yang memberi tahu **kompiler, runtime, dan pengembang** bahwa semantik eksekusi telah berubah.
+
+Tantangannya: bagaimana kita menandai batas ini sedemikian rupa sehingga:
+
+1. Memungkinkan transformasi dan validasi pada waktu kompilasi
+2. Mencegah penggunaan API non-deterministik secara tidak sengaja
+3. Memungkinkan analisis statis terhadap struktur alur kerja
+4. Terasa natural bagi pengembang JavaScript
+
+Mari lihat di mana direktif pernah digunakan sebelumnya, dan alternatif yang kami pertimbangkan:
+
+## Praktik Sebelumnya terkait Direktif
+
+Direktif JavaScript memiliki preseden untuk mengubah semantik eksekusi dalam ruang lingkup tertentu:
+
+- `"use strict"` (diperkenalkan di ECMAScript 5 pada 2009, distandarisasi oleh TC39) mengubah aturan bahasa untuk membuat runtime lebih cepat, lebih aman, dan lebih dapat diprediksi.
+- `"use client"` dan `"use server"` (diperkenalkan oleh [React Server Components](https://react.dev/reference/rsc/server-components)) mendefinisikan batas eksplisit "di mana" kode dijalankan — JavaScript sisi klien di browser vs Node.js sisi server.
+- `"use workflow"` (diperkenalkan oleh Workflow DevKit) mendefinisikan baik "di mana" kode berjalan (di lingkungan sandbox yang deterministik) maupun "bagaimana" kode berjalan (semantik eksekusi yang deterministik, dapat dilanjutkan, dan ter-sandbox).
+
+Direktif menyediakan kontrak pada waktu build.
+
+Ketika Workflow DevKit melihat `"use workflow"`, ia:
+
+- Menggabungkan workflow dan dependensinya menjadi kode yang dapat dijalankan di sandbox
+- Membatasi akses ke API Node.js dalam sandbox tersebut
+- Memungkinkan fungsionalitas dan optimisasi di masa depan yang hanya mungkin dengan alat build
+  - Misalnya, kode workflow yang dibundel dapat dianalisis secara statis untuk menghasilkan diagram/visualisasi UML dari alur kerja
+
+Selain penting untuk kompiler, `"use workflow"` secara eksplisit memberi sinyal kepada pengembang bahwa Anda memasuki mode eksekusi yang berbeda.
+
+<Callout type="info">
+Direktif `"use workflow"` juga digunakan oleh Language Server Plugin yang dikirim bersama Workflow DevKit untuk menyediakan IntelliSense di IDE Anda. Periksa petunjuk [memulai](/docs/getting-started) untuk framework Anda untuk detail pengaturan Language Server Plugin.
+</Callout>
+
+Tapi kami tidak sampai pada solusi ini secara langsung. Dibutuhkan penjelajahan untuk sampai ke sini:
+
+## Alternatif yang Kami Jelajahi
+
+Sebelum memutuskan direktif, kami membuat prototipe beberapa pendekatan lain. Masing-masing memiliki keterbatasan signifikan yang membuatnya tidak cocok untuk penggunaan produksi.
+
+### API "Suspense" Hanya Runtime
+
+Bukti konsep pertama kami menggunakan API berbasis pembungkus tanpa langkah build:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(() => {
+  const message = run(async () => step());
+  return `${message}!`;
+});
+```
+
+Implementasi ini menggunakan "throwing promises" (mirip dengan Suspense React awal) untuk menangguhkan eksekusi. Ketika sebuah langkah perlu dijalankan, kami melempar sebuah promise, menangkapnya di batas workflow, mengeksekusi langkah, dan memutar ulang workflow dengan hasilnya.
+
+**Masalahnya:**
+
+**1. Setiap efek samping perlu dibungkus**
+
+Setiap operasi yang dapat menghasilkan hasil non-deterministik harus dibungkus dalam `run()`:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // These would be non-deterministic without wrapping
+  const now = await run(() => Date.now()); // [!code highlight]
+  const random = await run(() => Math.random()); // [!code highlight]
+  const user = await run(() => fetchUser()); // [!code highlight]
+
+  return { now, random, user };
+});
+```
+
+Ini verbose dan mudah terlupakan. Selain itu, jika pengembang lupa membungkus sesuatu yang tampak sepele seperti penggunaan `Date.now()`, itu menyebabkan perilaku runtime yang tidak stabil.
+
+Sebagai contoh:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // Nothing stops you from doing this:
+  const now = Date.now(); // Non-deterministic, untracked! // [!code highlight]
+  const user = await run(() => fetchUser());
+
+  // This workflow would produce different results on replay // [!code highlight]
+  return { now, user };
+});
+```
+
+**2. Penutupan (closures) dan mutasi menjadi tidak dapat diprediksi**
+
+Variabel yang ditangkap dalam closure akan berperilaku tak terduga ketika langkah melakukan mutasi:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  let counter = 0;
+
+  await run(() => {
+    counter++; // This mutation happens during step execution // [!code highlight]
+    return saveToDatabase(counter);
+  });
+
+  console.log(counter); // What is counter here? // [!code highlight]
+  // During execution: 1 (mutation preserved) // [!code highlight]
+  // During replay: 0 (mutation lost) // [!code highlight]
+  // Inconsistent behavior! // [!code highlight]
+});
+```
+
+Fungsi workflow akan diputar ulang beberapa kali, tetapi mutasi di dalam callback `run()` tidak akan bertahan lintas replay. Ini membuat penalaran tentang state hampir tidak mungkin.
+
+**3. Penanganan error terdegradasi**
+
+Karena kami menggunakan promise yang dilempar untuk alur kontrol, blok `try/catch` menjadi tidak dapat diandalkan:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  try {
+    const result = await run(() => step());
+    return result;
+  } catch (error) { // [!code highlight]
+    // This could catch: // [!code highlight]
+    // 1. A real error from the step // [!code highlight]
+    // 2. The thrown promise used for suspension // [!code highlight]
+    // 3. An error during replay // [!code highlight]
+    // Hard to distinguish without special handling // [!code highlight]
+    console.error(error);
+  }
+});
+```
+
+### API Berbasis Generator
+
+Kami mengeksplorasi penggunaan generator untuk titik-titik suspensi eksplisit, terinspirasi oleh pustaka seperti Effect.ts:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const message = yield* run(() => step());
+  return `${message}!`;
+});
+```
+
+<Callout type="info">
+Kami penggemar berat [Effect.ts](https://effect.website/) dan kekuatan API berbasis generator untuk manajemen efek. Namun, untuk orkestrasi workflow secara khusus, kami menemukan sintaksnya terlalu berat bagi pengembang yang tidak familiar dengan generator.
+</Callout>
+
+**Masalahnya:**
+
+**1. Sintaks terasa lebih seperti DSL daripada JavaScript**
+
+Generator membutuhkan model mental yang berbeda signifikan dari pola async/await yang familiar. Sintaks `yield*` dan delegasi generator terasa asing bagi banyak pengembang:
+
+```typescript lineNumbers
+// Standard async/await (familiar)
+const result = await fetchData();
+
+// Generator-based (unfamiliar)
+const result = yield* run(() => fetchData()); // [!code highlight]
+```
+
+Workflow yang kompleks menjadi sangat verbose dan sulit dibaca:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const user = yield* run(() => fetchUser());
+
+  // Can't use Promise.all directly - need sequential calls or custom helpers // [!code highlight]
+  const orders = yield* run(() => fetchOrders(user.id)); // [!code highlight]
+  const payments = yield* run(() => fetchPayments(user.id)); // [!code highlight]
+
+  // Or create a custom generator-aware parallel helper: // [!code highlight]
+  const [orders2, payments2] = yield* all([ // [!code highlight]
+    run(() => fetchOrders(user.id)), // [!code highlight]
+    run(() => fetchPayments(user.id)) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { user, orders, payments };
+});
+```
+
+**2. Masih tidak ada sandboxing pada waktu kompilasi**
+
+Seperti pendekatan hanya-runtime, generator tidak bisa mencegah kode non-deterministik:
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const now = Date.now(); // Still possible, still problematic // [!code highlight]
+  const user = yield* run(() => fetchUser());
+  return { now, user };
+});
+```
+
+Sintaks generator mengatasi suspensi tetapi tidak menyelesaikan masalah sandboxing fundamental.
+
+### Konvensi Berbasis Sistem Berkas
+
+Kami mengeksplorasi penggunaan konvensi sistem berkas untuk mengidentifikasi workflow dan langkah, mirip dengan bagaimana framework modern menangani routing (Next.js, Hono, Nitro, SvelteKit):
+
+<Files>
+  <Folder name="workflows" defaultOpen>
+    <File name="onboarding.ts" />
+    <File name="checkout.ts" />
+  </Folder>
+  <Folder name="steps" defaultOpen>
+    <File name="send-email.ts" />
+    <File name="charge-payment.ts" />
+  </Folder>
+</Files>
+
+Dengan pendekatan ini, fungsi mana pun di direktori `workflows/` akan diubah menjadi workflow, dan fungsi mana pun di `steps/` akan menjadi langkah. Tidak perlu direktif, cukup lokasi file.
+
+**Mengapa ini bisa bekerja:**
+
+- Pemisahan tanggung jawab yang jelas
+- Memungkinkan transformasi kompiler berdasarkan path file
+- Pola yang familiar bagi pengembang yang terbiasa dengan routing berbasis file, misalnya Next.js
+
+**Mengapa kami meninggalkannya:**
+
+**1. Terlalu beropini untuk ekosistem yang beragam**
+
+Berbagai framework dan pengembang memiliki opini kuat tentang struktur proyek. Memaksa tata letak direktori tertentu sering menyebabkan konflik dengan berbagai konvensi, terutama di basis kode yang sudah ada.
+
+**2. Tidak mendukung fungsi yang dapat dipublikasi dan dapat digunakan kembali**
+
+Kami ingin pengembang dapat menerbitkan pustaka ke npm yang menyertakan direktif step dan workflow. Idealnya, logika bersifat isomorfik sehingga dapat digunakan dengan dan tanpa Workflow DevKit. Konvensi sistem berkas membuat ini menjadi tidak mungkin.
+
+**3. Migrasi dan penggunaan ulang kode menjadi sulit**
+
+Memigrasi kode yang ada mengharuskan memindahkan file dan merestrukturisasi proyek daripada menambahkan satu baris.
+
+Pendekatan direktif menyelesaikan semua masalah ini: ia bekerja di struktur proyek apa pun, mendukung penggunaan ulang kode dan migrasi, memungkinkan paket npm, dan memungkinkan fungsi beradaptasi dengan konteks eksekusinya.
+
+### Dekorator
+
+Kami mempertimbangkan dekorator, tetapi mereka menghadirkan tantangan signifikan baik teknis maupun ergonomis.
+
+**Dekorator belum menjadi standar dan berfokus pada kelas**
+
+Dekorator belum menjadi sintaks standar ([TC39 proposal](https://github.com/tc39/proposal-decorators)) dan saat ini hanya bekerja dengan kelas. Pendekatan dekorator kelas bisa terlihat seperti ini:
+
+```typescript lineNumbers
+import {workflow, step} from "workflow";
+
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) { // [!code highlight]
+    const order = await this.fetchOrder(orderId);
+    const payment = await this.processPayment(order);
+    return { orderId, payment };
+  }
+
+  @step() // [!code highlight]
+  static async fetchOrder(orderId: string) { // [!code highlight]
+    // ...
+  }
+}
+```
+
+Pendekatan ini membutuhkan:
+
+- Menulis boilerplate kelas dengan metode statis
+- Menyimpan/mem-mutasi properti kelas tidak jelas (masalah closure/mutasi serupa seperti pendekatan hanya-runtime)
+- Sintaks berbasis kelas yang tidak terasa "native JavaScript" bagi pengembang yang terbiasa dengan pola fungsional
+
+Karena ekosistem JavaScript bergerak menuju pemrograman yang berfokus pada fungsi (dicontohkan oleh perubahan React dari komponen kelas ke fungsi dan hooks), mewajibkan pengembang menggunakan kelas terasa seperti langkah mundur dan juga tidak sesuai selera pribadi kami sebagai penulis DevKit.
+
+**Masalah inti: Menyajikan workflow sebagai kode runtime biasa**
+
+Walaupun dekorator dapat ditangani pada waktu kompilasi dengan dukungan alat build, mereka menyajikan fungsi workflow seolah-olah merupakan kode JavaScript runtime yang biasa dan dapat dikomposisikan, padahal sebenarnya deklarasi pada waktu kompilasi yang membutuhkan penanganan khusus.
+
+<Callout>
+Lihat bagian [Macro Wrapper](#macro-wrapper-approach) di bawah untuk pembahasan lebih dalam mengapa pendekatan ini runtuh dengan contoh konkret.
+</Callout>
+
+### Pendekatan Pembungkus Makro
+
+Kami juga mengeksplorasi pendekatan makro pada waktu kompilasi — menggunakan kompiler untuk mentransformasi fungsi pembungkus atau dekorator menjadi kode berbasis direktif:
+
+```typescript lineNumbers
+// Function wrapper approach
+import { useWorkflow } from "workflow"
+
+export const processOrder = useWorkflow(async (orderId: string) => { // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+});
+
+// Decorator approach (would work similarly)
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) {
+    const order = await fetchOrder(orderId);
+    return { orderId };
+  }
+
+  // ...
+}
+```
+
+Kompiler bisa mentransformasikan keduanya menjadi setara dengan pendekatan direktif WDK:
+
+```typescript lineNumbers
+export const processOrder = async (orderId: string) => {
+  "use workflow"; // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+};
+```
+
+Keuntungannya adalah makro dapat menegakkan tipe dan menyediakan fitur LSP seperti "Go To Definition" secara langsung.
+
+Namun, **masalah inti tetap: Workflows bukanlah nilai runtime**
+
+Isu mendasar adalah bahwa baik pembungkus maupun dekorator membuat workflow tampak sebagai nilai runtime kelas satu ketika sebenarnya mereka adalah deklarasi pada waktu kompilasi. Ketidaksesuaian ini antara sintaks dan semantik menciptakan banyak mode kegagalan.
+
+**Contoh konkret bagaimana ini runtuh:**
+
+```typescript lineNumbers
+// Someone writes a "helpful" utility
+function withRetry(fn: Function) {
+  return useWorkflow(async (...args) => { // Works with useWorkflow // [!code highlight]
+    try {
+      return await fn(...args);
+    } catch (error) {
+      return await fn(...args); // Retry once
+    }
+  });
+}
+
+// Note: the same utility would be written similarly for a decorator based syntax
+
+// Usage looks innocent in both cases
+export const processOrder = withRetry(async (orderId: string) => { // [!code highlight]
+  // Is this deterministic? Can it call steps?
+  // Nothing in this function indicates the developer is in the
+  // deterministic sandboxed workflow
+  // Also where is the retry happening? inside or outside the workflow?
+  const order = await fetchOrder(orderId);
+  return order;
+});
+```
+
+Pengembang yang menulis `processOrder` tidak memiliki sinyal yang jelas bahwa mereka berada dalam lingkungan ter-sandbox dan deterministik. Juga ambigu apakah logika retry dijalankan di dalam workflow atau di luar, dan perilaku yang sebenarnya kemungkinan tidak sesuai intuisi pengembang.
+
+**Mengapa kompiler tidak bisa menangkap ini:**
+
+Untuk mendeteksi bahwa `processOrder` sebenarnya adalah workflow, kompiler harus melakukan analisis program secara keseluruhan untuk melacak bahwa:
+
+1. `withRetry` mengembalikan hasil dari `useWorkflow`
+2. Oleh karena itu `processOrder = withRetry(...)` adalah sebuah workflow
+3. Fungsi yang dikirim ke `withRetry` akan dieksekusi dalam konteks sandboxed
+
+Tingkat analisis lintas-fungsi ini tidak praktis untuk alat build — ini akan memerlukan analisis setiap rantai pemanggilan fungsi di seluruh basis kode Anda dan semua dependensi. Kompiler hanya dapat mendeteksi secara andal panggilan langsung `useWorkflow`, bukan panggilan yang tersembunyi di balik abstraksi.
+
+## Bagaimana Direktif Menyelesaikan Masalah Ini
+
+Direktif mengatasi semua masalah yang kami temui dengan pendekatan sebelumnya:
+
+**1. Batas semantik pada waktu kompilasi**
+
+Direktif `"use workflow"` memberi tahu kompiler untuk memperlakukan kode ini secara berbeda:
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow"; // Compiler knows: transform this for sandbox execution // [!code highlight]
+
+  const order = await fetchOrder(orderId); // Compiler knows: this is a step call // [!code highlight]
+  return { orderId, order };
+}
+```
+
+**2. Validasi pada waktu build**
+
+Kompiler dapat menegakkan pembatasan sebelum deployment:
+
+```typescript lineNumbers
+export async function badWorkflow() {
+  "use workflow";
+
+  const crypto = require("crypto"); // Build error: Node.js module in workflow // [!code highlight]
+  return crypto.randomBytes(16);
+}
+```
+
+Faktanya, Workflow DevKit akan memunculkan error yang menautkan ke halaman error ini: [Modul Node.js dalam workflow](/docs/errors/node-js-module-in-workflow)
+
+**3. Tiada ambiguitas closure**
+
+Langkah diubah menjadi pemanggilan fungsi yang berkomunikasi dengan runtime:
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  let counter = 0;
+
+  // This essentially becomes: await enqueueStep("updateCounter", [counter])
+  // The step receives counter as a parameter, not a closure
+  await updateCounter(counter); // [!code highlight]
+
+  console.log(counter); // Always 0, consistently // [!code highlight]
+}
+```
+
+Namun, callback berjalan di dalam sandbox workflow dan berfungsi sebagaimana mestinya:
+
+```typescript lineNumbers
+export async function processOrders(orderIds: string[]) {
+  "use workflow";
+
+  let successCount = 0;
+
+  // Callbacks run in the workflow context, not skipped on replay
+  await Promise.all(orderIds.map(async (orderId) => {
+    const order = await fetchOrder(orderId); // Step call
+    if (order.status === "completed") {
+      successCount++; // Mutation works correctly // [!code highlight]
+    }
+  }));
+
+  console.log(successCount); // Consistent across replays
+  return { total: orderIds.length, successful: successCount };
+}
+```
+
+Callback tersebut berjalan di sandbox workflow, sehingga pembacaan closure dan mutasi berperilaku konsisten lintas replay.
+
+**4. Sintaks natural**
+
+Terlihat dan terasa seperti JavaScript biasa:
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Standard async/await patterns work naturally // [!code highlight]
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // [!code highlight]
+    fetchUser(userId) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { order, user };
+}
+```
+
+**5. Sintaks konsisten untuk langkah**
+
+Direktif `"use step"` mempertahankan konsistensi. Meskipun langkah berjalan di runtime Node.js penuh dan *bisa* bekerja tanpa direktif, mereka membutuhkan cara untuk memberi sinyal ke runtime workflow bahwa mereka adalah langkah.
+
+Kita bisa saja menggunakan pembungkus fungsi hanya untuk langkah:
+
+```typescript lineNumbers
+// Mixed approach (inconsistent)
+export async function processOrder(orderId: string) {
+  "use workflow"; // Directive for workflow // [!code highlight]
+
+  const order = await step(async () => fetchOrder(orderId));
+  return order;
+}
+
+const fetchOrder = useStep(() => { // Wrapper for step? // [!code highlight]
+  // ...
+})
+```
+
+Mencampur sintaks terasa tidak konsisten.
+
+Pendekatan alternatif yang kami pertimbangkan adalah memperlakukan *semua* pemanggilan fungsi async sebagai langkah secara default:
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Every async call becomes a step automatically?
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // Step
+    fetchUser(userId)    // Step
+  ]);
+
+  return { order, user };
+}
+```
+
+Ini runtuh karena banyak operasi async yang valid di dalam workflow bukanlah langkah:
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // These are valid async calls that SHOULD NOT be steps:
+  const results = await Promise.all([...]); // Language primitive // [!code highlight]
+  const winner = await Promise.race([...]); // Language primitive // [!code highlight]
+
+  // Helper function that formats data
+  const formatted = await formatOrderData(order); // Pure JavaScript helper // [!code highlight]
+}
+```
+
+Dengan mewajibkan direktif `"use step"` yang eksplisit, pengembang memiliki kontrol granular atas apa yang menjadi langkah yang tahan lama dan dapat dicoba ulang versus apa yang dijalankan inline di sandbox workflow.
+
+<Callout>
+Untuk memahami bagaimana direktif ditransformasikan pada waktu kompilasi, lihat [How the Code Transform Works](/docs/how-it-works/code-transform).
+</Callout>
+
+## Apa yang Dimungkinkan oleh Direktif
+
+Karena `"use workflow"` mendefinisikan batas semantik pada waktu kompilasi, kami dapat menyediakan:
+
+<Cards>
+  <Card title="Build-Time Validation">
+    Kompiler menangkap pola yang tidak valid sebelum deployment: mendeteksi impor yang dilarang, mencegah efek samping langsung, dan memvalidasi struktur workflow.
+  </Card>
+  <Card title="Static Analysis">
+    Menganalisis kode workflow tanpa menjalankannya: menghasilkan diagram UML atau DAG secara otomatis, menyediakan observabilitas dan visualisasi, serta mengoptimalkan jalur eksekusi.
+  </Card>
+  <Card title="Durable Execution">
+    Alur kerja dapat dengan aman ditangguhkan dan dilanjutkan: menyimpan state eksekusi antar langkah, melanjutkan dari checkpoint setelah kegagalan atau deploy, dan menskalakan ke nol tanpa kehilangan progres.
+  </Card>
+  <Card title="Future Optimizations">
+    Batas semantik memungkinkan perbaikan yang direncanakan: state yang diserialisasi lebih kecil untuk checkpoint yang lebih cepat, penjadwalan yang lebih cerdas berdasarkan struktur workflow, dan penangguhan serta pelanjutan yang lebih efisien.
+  </Card>
+</Cards>
+
+## Direktif sebagai Pola JavaScript
+
+Direktif dalam JavaScript selalu menjadi kontrak antara pengembang dan lingkungan eksekusi. `"use strict"` membuat pola ini familiar — itu adalah literal string yang mengubah cara kode diinterpretasikan.
+
+Walaupun JavaScript belum memiliki dukungan first-class untuk direktif kustom (seperti Rust `#[attribute]` atau C++ `#pragma`), literal string sebagai direktif adalah alat paling pragmatis yang tersedia saat ini.
+
+Sebagai anggota TC39, kami di Vercel aktif bekerja dengan badan standar dan ekosistem lebih luas untuk mengeksplorasi spesifikasi formal untuk sintaks pragma-seperti atau anotasi makro yang dapat mengekspresikan semantik eksekusi.
+
+## Penutup
+
+Direktif bukan sekadar preferensi sintaks, melainkan tentang mengekspresikan batas semantik. `"use workflow"` memberi tahu kompiler, pengembang, dan runtime bahwa kode ini deterministic, dapat dilanjutkan, dan ter-sandbox.
+
+Kejelasan ini memungkinkan Workflow Development Kit menyediakan eksekusi yang tahan lama dengan pola JavaScript yang familiar, sambil mempertahankan jaminan pada waktu kompilasi yang diperlukan untuk orkestrasi workflow yang andal.

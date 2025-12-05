@@ -1,0 +1,289 @@
+---
+title: getWritable
+description: Mengambil stream writable default dari run workflow saat ini.
+---
+
+Stream writable dapat diperoleh di fungsi workflow dan diteruskan ke step, atau dipanggil langsung di dalam fungsi step untuk menulis data yang dapat dibaca di luar workflow dengan menggunakan properti `readable` dari [objek `Run`](/docs/api-reference/workflow-api/get-run).
+
+Gunakan fungsi ini di workflow dan step Anda untuk menghasilkan output streaming yang dapat dikonsumsi oleh klien secara real-time.
+
+<Callout type="warn">
+  Fungsi ini hanya dapat dipanggil di dalam fungsi workflow atau fungsi step (fungsi
+  dengan direktif "use workflow" atau "use step")
+</Callout>
+
+<Callout type="error">
+  **Penting:** Meskipun Anda dapat memanggil `getWritable()` di dalam fungsi workflow
+  untuk memperoleh stream, Anda **tidak dapat berinteraksi dengan stream secara langsung** di
+  konteks workflow (misalnya, memanggil `getWriter()`, `write()`, atau `close()`). Stream
+  harus diteruskan ke fungsi step sebagai argumen, atau step dapat memanggil
+  `getWritable()` langsung sendiri.
+</Callout>
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function myWorkflow() {
+  "use workflow";
+
+  // Get the writable stream
+  const writable = getWritable(); // [!code highlight]
+
+  // Pass it to a step function to interact with it
+  await writeToStream(writable); // [!code highlight]
+}
+
+async function writeToStream(writable: WritableStream) {
+  "use step";
+
+  const writer = writable.getWriter();
+  await writer.write(new TextEncoder().encode("Hello from workflow!"));
+  writer.releaseLock();
+  await writable.close();
+}
+```
+
+## Tanda tangan API
+
+### Parameter
+
+<TSDoc
+  definition={`
+import { getWritable } from "workflow";
+export default getWritable;`}
+  showSections={["parameters"]}
+/>
+
+### Mengembalikan
+
+<TSDoc
+  definition={`
+import { getWritable } from "workflow";
+export default getWritable;`}
+  showSections={["returns"]}
+/>
+
+Mengembalikan sebuah `WritableStream<W>` di mana `W` adalah tipe data yang Anda rencanakan untuk ditulis ke stream.
+
+## Hal yang Perlu Diketahui
+
+- **Fungsi workflow hanya dapat memperoleh stream** - Panggil `getWritable()` di workflow untuk mendapatkan referensi stream, tetapi Anda tidak dapat memanggil metode seperti `getWriter()`, `write()`, atau `close()` langsung di konteks workflow.
+- **Fungsi step dapat berinteraksi dengan stream** - Step dapat menerima stream sebagai argumen atau memanggil `getWritable()` langsung, dan mereka dapat berinteraksi bebas dengannya (menulis, menutup, dll.).
+- Saat dipanggil dari workflow, stream harus diteruskan sebagai argumen ke step untuk bisa diinteraksikan.
+- Saat dipanggil dari sebuah step, fungsi ini mengambil stream yang sama yang berskala untuk workflow secara langsung.
+- Selalu lepaskan kunci writer setelah menulis untuk mencegah kebocoran sumber daya.
+- Stream dapat menulis data biner (menggunakan `TextEncoder`) atau objek terstruktur.
+- Ingat untuk menutup stream saat selesai untuk menandakan penyelesaian.
+
+## Contoh
+
+### Streaming Teks Dasar
+
+Berikut contoh sederhana yang melakukan streaming data teks:
+
+```typescript lineNumbers
+import { sleep, getWritable } from "workflow";
+
+export async function outputStreamWorkflow() {
+  "use workflow";
+
+  const writable = getWritable(); // [!code highlight]
+
+  await sleep("1s");
+  await stepWithOutputStream(writable);
+  await sleep("1s");
+  await stepCloseOutputStream(writable);
+
+  return "done";
+}
+
+async function stepWithOutputStream(writable: WritableStream) {
+  "use step";
+
+  const writer = writable.getWriter();
+  // Write binary data using TextEncoder
+  await writer.write(new TextEncoder().encode("Hello, world!"));
+  writer.releaseLock();
+}
+
+async function stepCloseOutputStream(writable: WritableStream) {
+  "use step";
+
+  // Close the stream to signal completion
+  await writable.close();
+}
+```
+
+### Memanggil `getWritable()` di Dalam Step
+
+Anda juga dapat memanggil `getWritable()` langsung di dalam fungsi step tanpa perlu meneruskannya sebagai parameter:
+
+```typescript lineNumbers
+import { sleep, getWritable } from "workflow";
+
+export async function outputStreamFromStepWorkflow() {
+  "use workflow";
+
+  // No need to create or pass the stream - steps can get it themselves
+  await sleep("1s");
+  await stepWithOutputStreamInside();
+  await sleep("1s");
+  await stepCloseOutputStreamInside();
+
+  return "done";
+}
+
+async function stepWithOutputStreamInside() {
+  "use step";
+
+  // Call getWritable() directly inside the step // [!code highlight]
+  const writable = getWritable(); // [!code highlight]
+  const writer = writable.getWriter();
+
+  await writer.write(new TextEncoder().encode("Hello from step!"));
+  writer.releaseLock();
+}
+
+async function stepCloseOutputStreamInside() {
+  "use step";
+
+  // Call getWritable() to get the same stream // [!code highlight]
+  const writable = getWritable(); // [!code highlight]
+  await writable.close();
+}
+```
+
+### Menggunakan Stream dengan Namespace di Step
+
+Anda juga dapat menggunakan stream bernamespace ketika memanggil `getWritable()` dari step:
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function multiStreamWorkflow() {
+  "use workflow";
+
+  // Steps will access both streams by namespace
+  await writeToDefaultStream();
+  await writeToNamedStream();
+  await closeStreams();
+
+  return "done";
+}
+
+async function writeToDefaultStream() {
+  "use step";
+
+  const writable = getWritable(); // Default stream
+  const writer = writable.getWriter();
+  await writer.write({ message: "Default stream data" });
+  writer.releaseLock();
+}
+
+async function writeToNamedStream() {
+  "use step";
+
+  const writable = getWritable({ namespace: "logs" }); // [!code highlight]
+  const writer = writable.getWriter();
+  await writer.write({ log: "Named stream data" });
+  writer.releaseLock();
+}
+
+async function closeStreams() {
+  "use step";
+
+  await getWritable().close(); // Close default stream
+  await getWritable({ namespace: "logs" }).close(); // Close named stream
+}
+```
+
+### Streaming Chat Lanjutan
+
+Berikut contoh yang lebih kompleks yang menunjukkan bagaimana Anda dapat melakukan streaming respons chat AI:
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+import { generateId, streamText, type UIMessageChunk } from "ai";
+
+export async function chat(messages: UIMessage[]) {
+  "use workflow";
+
+  // Get typed writable stream for UI message chunks
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+
+  // Start the stream
+  await startStream(writable);
+
+  let currentMessages = [...messages];
+
+  // Process messages in steps
+  for (let i = 0; i < MAX_STEPS; i++) {
+    const result = await streamTextStep(currentMessages, writable);
+    currentMessages.push(result.messages);
+
+    if (result.finishReason !== "tool-calls") {
+      break;
+    }
+  }
+
+  // End the stream
+  await endStream(writable);
+}
+
+async function startStream(writable: WritableStream<UIMessageChunk>) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Send start message
+  writer.write({
+    type: "start",
+    messageMetadata: {
+      createdAt: Date.now(),
+      messageId: generateId(),
+    },
+  });
+
+  writer.releaseLock();
+}
+
+async function streamTextStep(
+  messages: UIMessage[],
+  writable: WritableStream<UIMessageChunk>
+) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Call streamText from the AI SDK
+  const result = streamText({
+    model: "gpt-4",
+    messages,
+    /* other options */
+  });
+
+  // Pipe the AI stream into the writable stream
+  const reader = result
+    .toUIMessageStream({ sendStart: false, sendFinish: false })
+    .getReader();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    await writer.write(value);
+  }
+
+  reader.releaseLock();
+
+  // Close the stream
+  writer.close();
+  writer.releaseLock();
+}
+
+async function endStream(writable: WritableStream<UIMessageChunk>) {
+  "use step";
+
+  // Close the stream to signal completion
+  await writable.close();
+}
+```

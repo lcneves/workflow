@@ -1,0 +1,235 @@
+---
+title: resumeWebhook
+---
+
+Melanjutkan eksekusi workflow dengan mengirim `Request` HTTP ke sebuah webhook yang diidentifikasi oleh tokennya.
+
+Fungsi ini membuat event `hook_received` dan memicu ulang workflow agar melanjutkan eksekusi. Fungsi ini dirancang untuk dipanggil dari rute API atau aksi server yang menerima permintaan HTTP eksternal.
+
+<Callout type="warn">
+`resumeWebhook` adalah fungsi runtime yang harus dipanggil dari luar sebuah fungsi workflow.
+</Callout>
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    return new Response("Missing token", { status: 400 });
+  }
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    return new Response("Webhook not found", { status: 404 });
+  }
+}
+```
+
+## Tanda Tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { resumeWebhook } from "workflow/api";
+export default resumeWebhook;`}
+showSections={['parameters']}
+/>
+
+### Mengembalikan
+
+Mengembalikan sebuah `Promise<Response>` yang menyelesaikan menjadi:
+
+- `Response`: Respons HTTP dari pemanggilan `respondWith()` workflow
+
+Melempar sebuah error jika token webhook tidak ditemukan atau tidak valid.
+
+## Contoh
+
+### Rute API Dasar
+
+Meneruskan permintaan HTTP masuk ke webhook berdasarkan token:
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    return new Response("Token required", { status: 400 });
+  }
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response; // Returns the workflow's custom response
+  } catch (error) {
+    return new Response("Webhook not found", { status: 404 });
+  }
+}
+```
+
+### Penangan Webhook GitHub
+
+Menangani event webhook GitHub dan meneruskannya ke workflow:
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+import { verifyGitHubSignature } from "@/lib/github";
+
+export async function POST(request: Request) {
+  // Extract repository name from URL
+  const url = new URL(request.url);
+  const repo = url.pathname.split("/").pop();
+
+  // Verify GitHub signature
+  const signature = request.headers.get("x-hub-signature-256");
+  const isValid = await verifyGitHubSignature(request, signature);
+
+  if (!isValid) {
+    return new Response("Invalid signature", { status: 401 });
+  }
+
+  // Construct deterministic token
+  const token = `github_webhook:${repo}`;
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    return new Response("Workflow not found", { status: 404 });
+  }
+}
+```
+
+### Penangan Perintah Slash Slack
+
+Memproses perintah slash Slack dan mengarahkannya ke webhook workflow:
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const formData = await request.formData();
+  const channelId = formData.get("channel_id") as string;
+  const command = formData.get("command") as string;
+
+  // Verify Slack request signature
+  const slackSignature = request.headers.get("x-slack-signature");
+  if (!slackSignature) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Construct token from channel ID
+  const token = `slack_command:${channelId}`;
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    // If no workflow is listening, return a default response
+    return new Response(
+      JSON.stringify({
+        response_type: "ephemeral",
+        text: "No active workflow for this channel"
+      }),
+      {
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+  }
+}
+```
+
+### Router Webhook Multi-Tenant
+
+Mengarahkan webhook ke workflow berbeda berdasarkan tenant/organisasi:
+
+```typescript lineNumbers
+import { resumeWebhook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+
+  // Extract tenant and webhook ID from path
+  // e.g., /api/webhooks/tenant-123/webhook-abc
+  const [, , , tenantId, webhookId] = url.pathname.split("/");
+
+  if (!tenantId || !webhookId) {
+    return new Response("Invalid webhook URL", { status: 400 });
+  }
+
+  // Verify API key for tenant
+  const apiKey = request.headers.get("authorization");
+  const isAuthorized = await verifyTenantApiKey(tenantId, apiKey);
+
+  if (!isAuthorized) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Construct namespaced token
+  const token = `tenant:${tenantId}:webhook:${webhookId}`;
+
+  try {
+    const response = await resumeWebhook(token, request); // [!code highlight]
+    return response;
+  } catch (error) {
+    return new Response("Webhook not found or expired", { status: 404 });
+  }
+}
+
+async function verifyTenantApiKey(tenantId: string, apiKey: string | null) {
+  // Verify API key logic
+  return apiKey === process.env[`TENANT_${tenantId}_API_KEY`];
+}
+```
+
+### Aksi Server (Next.js)
+
+Gunakan `resumeWebhook` dalam aksi server Next.js:
+
+```typescript lineNumbers
+"use server";
+
+import { resumeWebhook } from "workflow/api";
+
+export async function triggerWebhook(
+  token: string,
+  payload: Record<string, any>
+) {
+  // Create a Request object from the payload
+  const request = new Request("http://localhost/webhook", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  try {
+    const response = await resumeWebhook(token, request);
+
+    // Parse and return the response
+    const contentType = response.headers.get("content-type");
+    if (contentType?.includes("application/json")) {
+      return await response.json();
+    }
+
+    return await response.text();
+  } catch (error) {
+    throw new Error("Webhook not found");
+  }
+}
+```
+
+## Fungsi Terkait
+
+- [`createWebhook()`](/docs/api-reference/workflow/create-webhook) - Membuat webhook dalam sebuah workflow
+- [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) - Melanjutkan hook dengan payload arbitrer
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - Helper hook yang aman secara tipe

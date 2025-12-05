@@ -1,0 +1,151 @@
+---
+title: シリアル化
+---
+
+すべての関数引数とワークフローとステップ関数間で渡される戻り値はシリアライズ可能でなければなりません。Workflow DevKit は [devalue](https://github.com/sveltejs/devalue) をベースにしたカスタムのシリアライズシステムを使用します。このシステムは標準的な JSON 型に加え、いくつかの一般的な Web API 型もサポートします。
+
+<Callout type="info">
+シリアライズシステムは、ワークフローのサスペンドと再開の間でデータが正しく永続化されることを保証し、耐久性のある実行を可能にします。
+</Callout>
+
+## サポートされるシリアライズ可能な型
+
+以下の型はシリアライズ可能であり、ワークフロー関数を通じて渡すことができます。
+
+**標準のJSON型:**
+
+- `string`
+- `number`
+- `boolean`
+- `null`
+- シリアライズ可能な値の配列
+- 文字列キーとシリアライズ可能な値を持つオブジェクト
+
+**拡張型:**
+
+- `undefined`
+- `bigint`
+- `ArrayBuffer`
+- `BigInt64Array`, `BigUint64Array`
+- `Date`
+- `Float32Array`, `Float64Array`
+- `Int8Array`, `Int16Array`, `Int32Array`
+- `Map<Serializable, Serializable>`
+- `RegExp`
+- `Set<Serializable>`
+- `URL`
+- `URLSearchParams`
+- `Uint8Array`, `Uint8ClampedArray`, `Uint16Array`, `Uint32Array`
+
+**注記:**
+
+<Callout type="info">
+これらの型には特別な取り扱いがあり、以下のセクションで詳しく説明します。
+</Callout>
+
+- `Headers`
+- `Request`
+- `Response`
+- `ReadableStream<Serializable>`
+- `WritableStream<Serializable>`
+
+## ストリーミング
+
+`ReadableStream` と `WritableStream` は特別な取り扱いでシリアライズ可能な型としてサポートされています。これらのストリームはワークフローとステップ関数間でストリーミング能力を維持したまま渡すことができます。
+
+AI ストリーミング、ファイル処理、進捗更新のパターンを含む、ワークフローでのストリーム使用に関する完全な情報は [ストリーミングガイド](/docs/foundations/streaming) を参照してください。
+
+## Request と Response
+
+Web API の [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) および [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) API はシリアライズシステムでサポートされており、他のデータ型と同様にワークフローとステップ関数間で渡すことができます。
+
+便宜上、ワークフロー関数内で使用する際にはこれら二つの API はやや異なる扱いを受けます: `text()` / `json()` / `arrayBuffer()` のインスタンスメソッドを呼び出すことは自動的にステップ関数の呼び出しとして扱われます。これにより、ワークフローコンテキスト内でボディを直接消費しながら、適切なシリアライズとキャッシュを維持できます。
+
+たとえば、Webhook リクエストを受け取ると、ワークフローコンテキストに `Request` インスタンス全体が提供されることを考えてみてください。そのリクエストのボディをワークフロー内で直接消費することができ、これはワークフローの将来の再開のためにステップ結果としてキャッシュされます:
+
+```typescript title="workflows/webhook.ts" lineNumbers
+import { createWebhook } from "workflow";
+
+export async function handleWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+  const request = await webhook;
+
+  // The body of the request will only be consumed once // [!code highlight]
+  const body = await request.json(); // [!code highlight]
+
+  // …
+}
+```
+
+### ワークフロー内での `fetch` の使用
+
+`Request` と `Response` がシリアライズ可能であるため、Workflow DevKit はワークフロー関数内で直接使用できる `fetch` 関数を提供します:
+
+```typescript title="workflows/api-call.ts" lineNumbers
+import { fetch } from "workflow"; // [!code highlight]
+
+export async function apiWorkflow() {
+  "use workflow";
+
+  // fetch can be called directly in workflows // [!code highlight]
+  const response = await fetch("https://api.example.com/data"); // [!code highlight]
+  const data = await response.json();
+
+  return data;
+}
+```
+
+実装は単純です — ワークフローからの `fetch` は標準の `fetch` をラップするステップ関数です:
+
+```typescript title="Implementation" lineNumbers
+export async function fetch(...args: Parameters<typeof globalThis.fetch>) {
+  "use step";
+  return globalThis.fetch(...args);
+}
+```
+
+これにより、ワークフロー関数内で HTTP リクエストを直接実行しつつ、自動キャッシュを通じて決定論的なリプレイ動作を維持できます。
+
+## 値渡しのセマンティクス
+
+**パラメータは参照ではなく値で渡されます。** ステップはデシリアライズされたデータのコピーを受け取ります。ステップ内での変更はワークフロー内の元のデータに影響を与えません。
+
+**誤った例:**
+
+```typescript title="workflows/incorrect-mutation.ts" lineNumbers
+export async function updateUserWorkflow(userId: string) {
+  "use workflow";
+
+  let user = { id: userId, name: "John", email: "john@example.com" };
+  await updateUserStep(user);
+
+  // user.email is still "john@example.com" // [!code highlight]
+  console.log(user.email); // [!code highlight]
+}
+
+async function updateUserStep(user: { id: string; name: string; email: string }) {
+  "use step";
+  user.email = "newemail@example.com"; // Changes are lost // [!code highlight]
+}
+```
+
+**正しい方法 - 修正されたデータを返す:**
+
+```typescript title="workflows/correct-mutation.ts" lineNumbers
+export async function updateUserWorkflow(userId: string) {
+  "use workflow";
+
+  let user = { id: userId, name: "John", email: "john@example.com" };
+  user = await updateUserStep(user); // Reassign the return value // [!code highlight]
+
+  console.log(user.email); // "newemail@example.com"
+}
+
+async function updateUserStep(user: { id: string; name: string; email: string }) {
+  "use step";
+  user.email = "newemail@example.com";
+  return user; // [!code highlight]
+}
+```

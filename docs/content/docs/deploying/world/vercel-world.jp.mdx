@@ -1,0 +1,205 @@
+---
+title: Vercel World
+---
+
+The **Vercel World** (`@workflow/world-vercel`) は、Vercel のインフラと統合された本番対応のワークフロー・バックエンドです。Vercel プラットフォーム上でのワークフロー展開に対して、スケーラブルなストレージ、堅牢なキューイング、および安全な認証を提供します。
+
+Vercel World は本番展開向けに設計されており、以下を提供します:
+
+- **スケーラブルなストレージ** - クラウドベースのワークフローデータ永続化
+- **分散キューイング** - 信頼できる非同期ステップ実行
+- **安全な認証** - API トークンベースのアクセス制御
+- **マルチ環境サポート** - 本番、プレビュー、開発の各環境を分離
+- **チームサポート** - Vercel のチームおよびプロジェクトとの統合
+
+## 仕組み
+
+### ストレージ
+
+Vercel World は Vercel の Workflow Storage API を使用してワークフローデータを保存します:
+
+- Runs、steps、hooks、streams は Vercel のクラウドインフラに保存されます
+- データは自動的にレプリケートおよびバックアップされます
+- ストレージはアプリケーションに応じて自動的にスケールします
+- データは保存時および転送時に暗号化されます
+
+### キューイング
+
+Vercel World は Vercel の分散キューシステムを使用します:
+
+1. ステップがキューに入れられると、Vercel のキューサービスに追加されます
+2. キューは利用可能なサーバーレス関数にステップを分配します
+3. ステップは自動リトライとエラー処理で実行されます
+4. 失敗したステップはリトライポリシーに従って再試行されます
+
+### 認証
+
+Vercel World はトークンベースの認証を使用します:
+
+- API リクエストには認証ヘッダーが含まれます
+- トークンは特定のプロジェクトおよびチームにスコープされます
+- トークンは環境別（production、preview、development）に設定可能です
+- 認証は Vercel 展開時に自動的に処理されます
+
+## Vercel へのデプロイ
+
+### 自動構成
+
+Vercel にデプロイすると、World は自動的に構成されます:
+
+```bash
+npx vercel deploy
+```
+
+追加の設定は不要で、Vercel は自動的に以下を行います:
+
+- Vercel World バックエンドを選択します
+- 認証を設定します
+- プロジェクトおよびチーム ID を構成します
+- ストレージおよびキューイングのインフラを提供します
+
+### デプロイワークフロー
+
+Vercel CLI を使ってアプリケーションを Vercel にデプロイします:
+
+```bash
+npx vercel deploy --prod
+```
+
+ワークフローは自動的に実行されます:
+
+- 本番で Vercel World を使用します
+- データは Vercel のインフラに保存されます
+- ステップは Vercel のサーバーレス関数でキューイングおよび実行されます
+
+## マルチ環境サポート
+
+Vercel World は複数の環境をサポートします:
+
+- **本番** - ライブの本番デプロイメント
+- **プレビュー** - プルリクエスト用のプレビューデプロイメント
+- **開発** - 開発環境でのテスト
+
+各環境はワークフローデータを分離して保持し、開発やテストが本番ワークフローに影響を与えないようにします。
+
+## リモートアクセスの構成
+
+ローカルマシンから [observability tools](/docs/observability) を使って本番ワークフローを検査するには、CLI フラグでリモートアクセスを構成できます。
+
+ほとんどの場合、これらのフラグは不要です。CLI は Vercel CLI のトークンストレージから自動的に認証トークンを取得し、カレントワーキングディレクトリと Vercel プロジェクトのリンク状態に基づいてチームおよびプロジェクト ID を推測します。
+
+### CLI フラグ
+
+自動構成を上書きする必要がある場合は、CLI フラグで構成を渡せます:
+
+```bash
+npx workflow inspect runs \
+  --backend vercel \
+  --env production \
+  --project my-project \
+  --team my-team \
+  --authToken <your-token>
+```
+
+リモート検査の詳細は [Observability](/docs/observability) セクションを参照してください。
+
+## チームサポート
+
+プロジェクトが Vercel チームに属している場合、Vercel World は自動的にチームの権限と統合されます:
+
+- チームのアクセス制御を尊重します
+- チームスコープの認証トークンを必要とします
+- チームごとにワークフローデータを分離します
+
+## スケーラビリティ
+
+Vercel World は本番規模を想定して設計されています:
+
+- **自動スケーリング** - 任意の並列ワークフロー数を処理します
+- **分散実行** - ステップは複数のサーバーレス関数にまたがって実行されます
+- **グローバル分散** - Vercel のグローバルエッジネットワークで動作します
+- **高可用性** - 組み込みの冗長性とフェイルオーバー
+
+## セキュリティ
+
+Vercel World はセキュリティのベストプラクティスを実装しています:
+
+- **トークンベースの認証** - 安全な API アクセス
+- **環境の分離** - 本番、プレビュー、開発のデータは分離されています
+- **暗号化** - データは保存時および転送時に暗号化されます
+- **チーム権限** - Vercel のチームアクセス制御を尊重します
+
+## API リファレンス
+
+### createVercelWorld
+
+Vercel World インスタンスを作成します:
+
+```typescript
+function createVercelWorld(
+  config?: APIConfig
+): World
+```
+
+**パラメータ:**
+
+- `config.token` - 認証トークン
+- `config.headers` - 以下を含むカスタムヘッダー:
+  - `x-vercel-environment` - 環境名
+  - `x-vercel-project-id` - プロジェクト ID
+  - `x-vercel-team-id` - チーム ID
+- `config.baseUrl` - API ベース URL（デフォルト: `https://api.vercel.com/v1/workflow`）
+
+**戻り値:**
+
+- `World` - World インターフェースを実装するワールドインスタンス
+
+**例:**
+
+```typescript
+import { createVercelWorld } from "@workflow/world-vercel";
+
+const world = createVercelWorld({
+  token: process.env.WORKFLOW_VERCEL_AUTH_TOKEN,
+  headers: {
+    "x-vercel-environment": "production",
+    "x-vercel-project-id": "my-project",
+    "x-vercel-team-id": "my-team",
+  },
+});
+```
+
+## トラブルシューティング
+
+### 認証エラー
+
+認証エラーが発生する場合:
+
+1. トークンが有効か確認する: `vercel whoami --token <your-token>`
+2. トークンに必要なスコープがあるか確認する
+3. プロジェクトおよびチーム ID が正しいことを確認する
+
+### 環境が見つからない
+
+環境が見つからない場合:
+
+1. 環境名（`production`、`preview`、`development`）を確認する
+2. プロジェクトがその環境にデプロイされているか確認する
+3. トークンがプロジェクトにアクセスできることを確認する
+
+### デプロイの問題
+
+デプロイ後にワークフローが動作しない場合:
+
+1. `withWorkflow()` が Next.js の設定をラップしていることを確認する
+2. ビルドログにエラーがないか確認する
+3. ワークフローファイルが正しいディレクトリにあることを確認する
+4. まず [Local World](/docs/deploying/world/local-world) でローカルテストを行う
+
+## 詳細情報
+
+- [World Interface](/docs/deploying/world) - World インターフェースの理解
+- [Local World](/docs/deploying/world/local-world) - ローカル開発向け
+- [Observability](/docs/observability) - 監視およびデバッグツール
+- [Vercel Deployment Documentation](https://vercel.com/docs/deployments/overview)
+- [Workflow Documentation on Vercel](https://vercel.com/docs/workflow)

@@ -1,0 +1,353 @@
+---
+title: ヒューマン・イン・ザ・ループ
+---
+
+一般的に、AI エージェントを本番環境で実行するための前提条件の一つは、進行する前に人間の入力や外部イベントを待機できることです。
+
+Workflow DevKit の [webhook](/docs/api-reference/workflow/create-webhook) と [hook](/docs/api-reference/workflow/define-hook) プリミティブは、ワークフローが人間のアクションが行われるまで一時停止する「ヒューマン・イン・ザ・ループ」パターンを可能にします。これにより、数日間の非アクティブの後でもワークフローをスムーズに再開でき、コードのデプロイ間でも安定性が確保されます。
+
+外部イベントにプログラム的に反応する必要がある場合は、詳細については [hooks](/docs/foundations/hooks) ドキュメントを参照してください。本ガイドのこの部分は、より一般的なフックパターンのサブセットであるヒューマン・イン・ザ・ループパターンに焦点を当てます。
+
+## 仕組み
+
+<Steps>
+
+<Step>
+`defineHook()` はワークフロー内で await できる型付きフックを作成します。ツールが呼び出されると、ツール呼び出し ID をトークンとして使用してフックインスタンスを作成します。
+</Step>
+
+<Step>
+ワークフローは `await hook` で一時停止します — 人間のアクションを待っている間、計算リソースは消費されません。
+</Step>
+
+<Step>
+UI は保留中のツール呼び出しとその入力データ（フライトの詳細、価格など）を表示し、承認操作用のコントロールをレンダリングします。
+</Step>
+
+<Step>
+ユーザーは API エンドポイントを通じて決定を送信し、これにより承認データでフックが再開されます。
+</Step>
+
+<Step>
+ワークフローは承認データを受け取り、実行を再開します。
+</Step>
+
+</Steps>
+
+このデモではクライアント側のボタンで人による承認を行いますが、承認リンクをメールや Slack 経由で送信するために webhook を作成してエージェントを再開させることも簡単にできます。
+
+## 予約承認ツールの作成
+
+エージェントがフライト予約を人が承認または却下するまで実行を故意に一時停止できるツールを追加します。
+
+<Steps>
+
+<Step>
+
+### フックの定義
+
+検証のための Zod スキーマを持つ型付きフックを作成します：
+
+```typescript title="workflow/steps/tools.ts" lineNumbers
+import { defineHook } from "workflow";
+import { z } from "zod";
+// ... existing imports ...
+
+export const bookingApprovalHook = defineHook({
+  schema: z.object({
+    approved: z.boolean(),
+    comment: z.string().optional(),
+  }),
+});
+
+// ... tool definitions ...
+```
+
+</Step>
+
+<Step>
+
+### ツールの実装
+
+ツール呼び出し ID をトークンとして使用してフックインスタンスを作成するツールを作成します。UI はこの ID を使用して承認を送信します。
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { z } from "zod";
+
+// ...
+
+async function executeBookingApproval( // [!code highlight]
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number }, // [!code highlight]
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - hooks are workflow-level primitives // [!code highlight]
+
+  // Use the toolCallId as the hook token so the UI can reference it // [!code highlight]
+  const hook = bookingApprovalHook.create({ token: toolCallId }); // [!code highlight]
+
+  // Workflow pauses here until the hook is resolved // [!code highlight]
+  const { approved, comment } = await hook; // [!code highlight]
+
+  if (!approved) {
+    return `Booking rejected: ${comment || "No reason provided"}`;
+  }
+
+  return `Booking approved for ${passengerName} on flight ${flightNumber}${comment ? ` - Note: ${comment}` : ""}`;
+}
+
+// Adding the tool to the existing tool definitions
+export const flightBookingTools = {
+  // ... existing tool definitions ...
+  bookingApproval: {
+    description: "Request human approval before booking a flight",
+    inputSchema: z.object({
+      flightNumber: z.string().describe("Flight number to book"),
+      passengerName: z.string().describe("Name of the passenger"),
+      price: z.number().describe("Total price of the booking"),
+    }),
+    execute: executeBookingApproval,
+  },
+};
+```
+
+</Step>
+
+<Callout type="info">
+`defineHook().create()` 関数はステップ内ではなくワークフローコンテキスト内から呼び出す必要があることに注意してください。そのため `executeBookingApproval` には `"use step"` がありません — この関数はフックが利用可能なワークフローコンテキストで実行されます。
+</Callout>
+
+</Step>
+
+<Step>
+
+### API ルートの作成
+
+UI が承認の決定を送信するために呼び出す新しい API エンドポイントを作成します：
+
+```typescript title="app/api/approve-booking/route.ts" lineNumbers
+import { bookingApprovalHook } from "@/workflow/steps/tools";
+
+export async function POST(request: Request) {
+  const { toolCallId, approved, comment } = await request.json();
+
+  // Schema validation happens automatically // [!code highlight]
+  // Can throw a zod schema validation error, or a
+  await bookingApprovalHook.resume(toolCallId, { // [!code highlight]
+    approved,
+    comment,
+  });
+
+  return Response.json({ success: true });
+}
+```
+
+</Step>
+
+<Step>
+
+### 承認コンポーネントの作成
+
+ツール呼び出しデータに反応し、ユーザーが予約を承認または却下できるようにする新しいコンポーネントを構築します：
+
+```typescript title="components/booking-approval.tsx" lineNumbers
+"use client";
+
+import { useState } from "react";
+
+interface BookingApprovalProps {
+  toolCallId: string;
+  input: {
+    flightNumber: string;
+    passengerName: string;
+    price: number;
+  };
+  output?: string;
+}
+
+export function BookingApproval({ toolCallId, input, output }: BookingApprovalProps) {
+  const [comment, setComment] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // If we have output, the approval has been processed
+  if (output) {
+    return (
+      <div className="border rounded-lg p-4">
+        <p className="text-sm text-muted-foreground">{output}</p>
+      </div>
+    );
+  }
+
+  const handleSubmit = async (approved: boolean) => {
+    setIsSubmitting(true);
+    try {
+      await fetch("/api/approve-booking", { // [!code highlight]
+        method: "POST", // [!code highlight]
+        headers: { "Content-Type": "application/json" }, // [!code highlight]
+        body: JSON.stringify({ toolCallId, approved, comment }), // [!code highlight]
+      }); // [!code highlight]
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="border rounded-lg p-4 space-y-4">
+      <div className="space-y-2">
+        <p className="font-medium">Approve this booking?</p>
+        <div className="text-sm text-muted-foreground">
+          <div>Flight: {input.flightNumber}</div>
+          <div>Passenger: {input.passengerName}</div>
+          <div>Price: ${input.price}</div>
+        </div>
+      </div>
+
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Add a comment (optional)..."
+        className="w-full border rounded p-2 text-sm"
+        rows={2}
+      />
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => handleSubmit(true)}
+          disabled={isSubmitting}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+        >
+          {isSubmitting ? "Submitting..." : "Approve"}
+        </button>
+        <button
+          onClick={() => handleSubmit(false)}
+          disabled={isSubmitting}
+          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+        >
+          {isSubmitting ? "Submitting..." : "Reject"}
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+</Step>
+
+<Step>
+
+### UI にツールの状況を表示する
+
+先ほど作成したコンポーネントを使用して、チャットインターフェース内にツール呼び出しと承認コントロールをレンダリングします：
+
+```typescript title="app/page.tsx" lineNumbers
+// ... existing imports ...
+import { BookingApproval } from "@/components/booking-approval";
+
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                      ) {
+                        // ... render other tools
+                      }
+                      if (part.type === "tool-bookingApproval") { // [!code highlight]
+                        return ( // [!code highlight]
+                          <BookingApproval // [!code highlight]
+                            key={partIndex} // [!code highlight]
+                            toolCallId={part.toolCallId} // [!code highlight]
+                            input={part.input} // [!code highlight]
+                            output={part.output} // [!code highlight]
+                          /> // [!code highlight]
+                        ); // [!code highlight]
+                      } // [!code highlight]
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+```
+
+</Step>
+
+</Steps>
+
+## Webhook を直接使用する
+
+型安全な検証やプログラム的な再開が不要なより単純なケースでは、[`createWebhook()`](/docs/api-reference/workflow/create-webhook) を直接使用できます。これにより、ワークフローを再開するために呼び出せる一意の URL が生成されます：
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { createWebhook } from "workflow";
+import { z } from "zod";
+
+async function executeBookingApproval(
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number },
+  { toolCallId }: { toolCallId: string }
+) {
+  const webhook = createWebhook(); // [!code highlight]
+
+  // The webhook URL could be logged, sent via email, or stored for later use
+  console.log("Approval URL:", webhook.url);
+
+  // Workflow pauses here until the webhook is called // [!code highlight]
+  const request = await webhook; // [!code highlight]
+  const { approved, comment } = await request.json(); // [!code highlight]
+
+  if (!approved) {
+    return `Booking rejected: ${comment || "No reason provided"}`;
+  }
+
+  return `Booking approved for ${passengerName} on flight ${flightNumber}`;
+}
+```
+
+Webhook URL は承認データを含む POST リクエストで直接呼び出すことができます。これは次のような場合に便利です：
+
+- 外部システムがワークフローにコールバックする必要がある場合
+- 支払いプロバイダのコールバック
+- メールベースの承認リンク
+
+## 関連ドキュメント
+
+- [フックとウェブフック](/docs/foundations/hooks) - フックとウェブフックの完全ガイド
+- [`createWebhook()` API リファレンス](/docs/api-reference/workflow/create-webhook) - ウェブフックの設定オプション
+- [`defineHook()` API リファレンス](/docs/api-reference/workflow/define-hook) - 型安全なフック定義

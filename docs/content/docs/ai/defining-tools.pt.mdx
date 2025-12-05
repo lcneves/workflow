@@ -1,0 +1,71 @@
+---
+title: Padrões para Definição de Ferramentas
+---
+
+Esta página aborda os detalhes de alguns padrões comuns ao definir ferramentas para agentes de IA usando o Workflow DevKit.
+
+Usando DurableAgent, modelamos a maioria das ferramentas como passos. Estes podem ser desde uma simples chamada de função até um fluxo de trabalho que dure vários dias.
+
+## Acessando o contexto de mensagens em ferramentas
+
+Assim como nas definições de ferramentas do AI SDK comuns, as ferramentas em DurableAgent são chamadas com o primeiro argumento contendo os parâmetros de entrada da ferramenta e o segundo argumento contendo o contexto da chamada da ferramenta.
+
+Quando sua ferramenta precisa acessar todo o histórico de mensagens, você pode acessá-lo através da propriedade `messages` do contexto da chamada da ferramenta:
+
+```typescript title="tools.ts" lineNumbers
+async function getWeather(
+  { city }: { city: string },
+  { messages, toolCallId }: { messages: LanguageModelV2Prompt, toolCallId: string }) { // [!code highlight]
+  "use step";
+  return `Weather in ${city} is sunny`;
+}
+```
+
+## Gravando em Fluxos
+
+Como discutido em [Atualizações em Streaming de Ferramentas](/docs/ai/streaming-updates-from-tools), é comum usar um passo apenas para chamar `getWritable()` para escrever partes de dados personalizadas no fluxo.
+
+Isso pode ser generalizado criando uma função auxiliar de passo para escrever dados arbitrários no fluxo:
+
+```typescript title="tools.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeToStream(data: any) {
+  "use step";
+
+  const writable = getWritable();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## Ferramentas em Nível de Passo vs Nível de Fluxo de Trabalho
+
+As ferramentas podem ser implementadas tanto no nível de passo quanto no nível de fluxo de trabalho, com diferentes capacidades e restrições.
+
+| Capacidade | Nível de Passo (`"use step"`) | Nível de Fluxo de Trabalho (`"use workflow"`) |
+|------------|---------------------------|----------------|
+| `getWritable()` | ✅ | ❌ |
+| Automatic retries | ✅ | ❌ |
+| Side-effects (e.g. API calls) allowed | ✅ | ❌ |
+| `sleep()` | ❌ | ✅ |
+| `createWebhook()` | ❌ | ✅ |
+
+As ferramentas também podem combinar ambos começando no nível de fluxo de trabalho e chamando passos para operações de E/S, da seguinte forma:
+
+```typescript title="tools.ts" lineNumbers
+// Step: handles I/O with retries
+async function performFetch(url: string) {
+  "use step";
+  const response = await fetch(url);
+  return response.json();
+}
+
+// Workflow-level: orchestrates steps and can use sleep()
+async function executeFetchWithDelay({ url }: { url: string }) {
+  const result = await performFetch(url);
+  await sleep("5s"); // Only available at workflow level
+  return result;
+}
+```

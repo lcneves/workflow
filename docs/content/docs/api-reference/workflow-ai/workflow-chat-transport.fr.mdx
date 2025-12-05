@@ -1,0 +1,253 @@
+---
+title: WorkflowChatTransport
+---
+
+<Callout type="warn">
+Le package `@workflow/ai` est actuellement en développement actif et doit être considéré comme expérimental.
+</Callout>
+
+Une implémentation de transport de chat pour le SDK AI qui fournit un streaming de messages fiable avec reconnexion automatique aux flux interrompus. Ce transport est un remplacement plug-and-play du transport par défaut du SDK AI, permettant une récupération transparente des problèmes réseau, des actualisations de page ou des timeouts de Vercel Function.
+
+<Callout>
+`WorkflowChatTransport` implémente l'interface [`ChatTransport`](https://ai-sdk.dev/docs/ai-sdk-ui/transport) du SDK AI et est conçu pour fonctionner avec des applications de chat basées sur des workflows. Il requiert des endpoints qui renvoient l'en-tête `x-workflow-run-id` pour permettre la reprise du flux.
+</Callout>
+
+```typescript lineNumbers
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+
+export default function Chat() {
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport(),
+  });
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>{m.content}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Signature de l'API
+
+### Classe
+
+<TSDoc
+definition={`
+import { WorkflowChatTransport } from "@workflow/ai";
+export default WorkflowChatTransport;`}
+/>
+
+### WorkflowChatTransportOptions
+
+<TSDoc
+definition={`
+import type { WorkflowChatTransportOptions } from "@workflow/ai";
+export default WorkflowChatTransportOptions;`}
+/>
+
+## Principales fonctionnalités
+
+- **Reconnexion automatique**: Récupère automatiquement les flux interrompus avec des limites de nouvelle tentative configurables
+- **Intégration aux workflows**: Fonctionne de manière transparente avec des endpoints basés sur des workflows qui fournissent l'en-tête `x-workflow-run-id`
+- **Requêtes personnalisables**: Permet d'intercepter et de modifier les requêtes via `prepareSendMessagesRequest` et `prepareReconnectToStreamRequest`
+- **Callbacks de flux**: Fournit des hooks pour suivre le cycle de vie du chat via `onChatSendMessage` et `onChatEnd`
+- **Fetch personnalisé**: Prend en charge des implémentations fetch personnalisées pour des cas d'utilisation avancés
+
+## Bon à savoir
+
+- Le transport attend que les endpoints de chat renvoient l'en-tête `x-workflow-run-id` dans la réponse pour permettre la reprise du flux
+- Par défaut, le transport poste vers `/api/chat` et se reconnecte via `/api/chat/{runId}/stream`
+- Le callback `onChatSendMessage` reçoit l'objet de réponse complet, ce qui vous permet d'extraire et de stocker l'ID d'exécution du workflow pour la reprise de session
+- Les interruptions de flux sont détectées automatiquement lorsqu'un chunk "finish" n'est pas reçu dans la réponse initiale
+- L'option `maxConsecutiveErrors` contrôle le nombre de tentatives de reconnexion avant d'abandonner (par défaut : 3)
+
+## Exemples
+
+### Configuration de base du chat
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useState } from "react";
+
+export default function BasicChat() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport(),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+### Avec persistance et reprise de session
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useMemo, useState } from "react";
+
+export default function ChatWithResumption() {
+  const [input, setInput] = useState("");
+  const activeWorkflowRunId = useMemo(() => {
+    if (typeof window === "undefined") return;
+    return localStorage.getItem("active-workflow-run-id") ?? undefined;
+  }, []);
+
+  const { messages, sendMessage } = useChat({
+    resume: !!activeWorkflowRunId,
+    transport: new WorkflowChatTransport({
+      onChatSendMessage: (response, options) => {
+        // Save chat history to localStorage
+        localStorage.setItem(
+          "chat-history",
+          JSON.stringify(options.messages)
+        );
+
+        // Extract and store the workflow run ID for session resumption
+        const workflowRunId = response.headers.get("x-workflow-run-id");
+        if (workflowRunId) {
+          localStorage.setItem("active-workflow-run-id", workflowRunId);
+        }
+      },
+      onChatEnd: ({ chatId, chunkIndex }) => {
+        console.log(`Chat ${chatId} completed with ${chunkIndex} chunks`);
+        // Clear the active run ID when chat completes
+        localStorage.removeItem("active-workflow-run-id");
+      },
+    }),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+### Avec configuration de requêtes personnalisée
+
+```typescript
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai";
+import { useState } from "react";
+
+export default function ChatWithCustomConfig() {
+  const [input, setInput] = useState("");
+  const { messages, sendMessage } = useChat({
+    transport: new WorkflowChatTransport({
+      prepareSendMessagesRequest: async (config) => {
+        return {
+          ...config,
+          api: "/api/chat",
+          headers: {
+            ...config.headers,
+            "Authorization": `Bearer ${process.env.NEXT_PUBLIC_API_TOKEN}`,
+            "X-Custom-Header": "custom-value",
+          },
+          credentials: "include",
+        };
+      },
+      prepareReconnectToStreamRequest: async (config) => {
+        return {
+          ...config,
+          headers: {
+            ...config.headers,
+            "Authorization": `Bearer ${process.env.NEXT_PUBLIC_API_TOKEN}`,
+          },
+          credentials: "include",
+        };
+      },
+      maxConsecutiveErrors: 5,
+    }),
+  });
+
+  return (
+    <div>
+      <div className="space-y-4">
+        {messages.map((m) => (
+          <div key={m.id}>
+            <strong>{m.role}:</strong> {m.content}
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          value={input}
+          placeholder="Say something..."
+          onChange={(e) => setInput(e.currentTarget.value)}
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+## Voir aussi
+
+- [DurableAgent](/docs/api-reference/workflow-ai/durable-agent) - Construire des agents IA durables au sein des workflows
+- [Documentation AI SDK de `useChat`](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat) - Utiliser `useChat` avec des transports personnalisés
+- [Workflows et étapes](/docs/foundations/workflows-and-steps) - Comprendre les fondamentaux des workflows
+- ["flight-booking-app" Exemple](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) - Une application exemple qui utilise `WorkflowChatTransport`

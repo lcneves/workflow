@@ -1,0 +1,233 @@
+---
+title: Astro
+---
+
+本指南将指导你在 Astro 应用中设置你的第一个工作流。在此过程中，你将更多地了解在自己的项目中使用开发工具包时的基本概念。
+
+---
+
+<Steps>
+
+<Step>
+## 创建你的 Astro 项目
+
+首先创建一个新的 Astro 项目。此命令会创建一个名为 `my-workflow-app` 的新目录，并在其中设置一个最小的 Astro 项目。
+
+```bash
+npm create astro@latest my-workflow-app -- --template minimal --install --yes
+```
+
+进入新创建的目录：
+
+```bash
+cd my-workflow-app
+```
+
+### 安装 `workflow`
+
+```package-install
+npm i workflow
+```
+
+### 配置 Astro
+
+在你的 Astro 配置中添加 `workflow()`。这将启用对 `"use workflow"` 和 `"use step"` 指令的使用。
+
+```typescript title="astro.config.mjs" lineNumbers
+// @ts-check
+import { defineConfig } from "astro/config";
+import { workflow } from "workflow/astro";
+
+// https://astro.build/config
+export default defineConfig({
+  integrations: [workflow()],
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### 为 TypeScript 设置 IntelliSense（可选）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+要在你的 IDE 中启用有用的提示，请在 `tsconfig.json` 中设置 workflow 插件：
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 创建你的第一个工作流
+
+为我们的第一个工作流创建一个新文件：
+
+```typescript title="src/workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+我们接下来会填充那些函数，但先看一下这段代码：
+
+* 我们使用指令 `"use workflow"` 定义了一个 **工作流** 函数。将该工作流函数视为各个 **步骤** 的 _协调者_。
+* Workflow DevKit 的 `sleep` 函数允许我们暂停工作流的执行而不消耗任何资源。sleep 可以持续几秒、几小时、几天，甚至几个月。
+
+## 创建你的工作流步骤
+
+现在来定义那些缺失的函数。
+
+```typescript title="src/workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+看一下这段代码：
+
+* 业务逻辑位于 **步骤** 内。当在 **工作流** 内调用一个步骤时，它会被排队在单独的请求中运行，同时工作流处于挂起状态，就像 `sleep` 一样。
+* 如果步骤抛出错误（例如在 `sendWelcomeEmail` 中），该步骤将自动重试，直到成功（或达到步骤的最大重试次数）。
+* 如果错误是有意的且不应重试，步骤可以抛出 `FatalError`。
+
+<Callout>
+我们将在 [Foundations](/docs/foundations) 中更深入地探讨工作流、步骤以及暂停或处理事件的其他方法。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 创建你的路由处理器
+
+要调用你新的工作流，需要将其添加到一个 `POST` API 路由处理器中，即 `src/pages/api/signup.ts`，代码如下：
+
+```typescript title="src/pages/api/signup.ts"
+import type { APIRoute } from "astro";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../../workflows/user-signup";
+
+export const POST: APIRoute = async ({ request }: { request: Request }) => {
+  const { email } = await request.json();
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return Response.json({
+    message: "User signup workflow started",
+  });
+};
+
+export const prerender = false; // Don't prerender this page since it's an API route
+```
+
+该路由处理器会在 `/api/signup` 创建一个 `POST` 请求端点，用于触发你的工作流。
+
+<Callout>
+工作流可以从 API 路由或任何服务器端代码触发。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 在开发环境中运行
+
+要启动开发服务器，在 Vite 根目录的终端中运行以下命令：
+
+```bash
+npm run dev
+```
+
+一旦开发服务器运行，你可以在终端中运行以下命令来触发你的工作流：
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+检查 Astro 开发服务器日志以查看工作流的执行以及正在处理的步骤。
+
+此外，你可以使用 [Workflow DevKit CLI 或 Web UI](/docs/observability) 来详细检查工作流运行和步骤。
+
+```bash
+npx workflow inspect runs
+# or add '--web' for an interactive Web based UI
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit Web 界面" />
+
+---
+
+## 部署到生产环境
+
+Workflow DevKit 应用目前在部署到 [Vercel](https://vercel.com/home) 时表现最佳，无需特殊配置。
+
+要将你的 Astro 项目部署到 Vercel，请确保已配置 [Astro Vercel adapter](https://docs.astro.build/en/guides/integrations-guide/vercel)：
+
+```bash
+npx astro add vercel
+```
+
+另外，请查看 [Deploying](/docs/deploying) 部分，以了解如何在其他地方部署你的工作流。
+
+## 下一步
+
+* 了解更多关于 [Foundations](/docs/foundations) 的内容。
+* 如果遇到问题，请查看 [Errors](/docs/errors)。
+* 浏览 [API Reference](/docs/api-reference)。

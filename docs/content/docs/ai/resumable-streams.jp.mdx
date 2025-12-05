@@ -1,0 +1,155 @@
+---
+title: 再開可能なストリーム
+---
+
+チャットインターフェースを構築する際、ネットワークの中断、ページのリフレッシュ、サーバーレス関数のタイムアウトに遭遇することがよくあり、進行中のエージェントとの接続が途切れることがあります。
+
+通常のチャット実装では、ユーザーはメッセージを再送して再度全ての応答を待つ必要がありますが、ワークフロー実行は耐久性があり、それに紐づくストリームも同様です。つまり、ストリームは任意のポイントから再開でき、オプションで最後の接続以降に失われたデータだけを同期することもできます。
+
+再開可能なストリームは Workflow DevKit によって標準で提供されますが、クライアントはストリームの存在を認識し、どのストリームに再接続するかを把握し、どこから開始するかを知る必要があります。そのために、Workflow DevKit は [`WorkflowChatTransport`](/docs/api-reference/workflow-ai/workflow-chat-transport) ヘルパーを提供しており、AI SDK のドロップイン可能なトランスポートとして、クライアント側の再開ロジックを処理します。
+
+## ストリーム再開の実装
+
+[耐久性のあるAIエージェントの構築](/docs/ai) ガイドで作成したフライト予約エージェントにストリーム再開を追加してみましょう。
+
+<Steps>
+
+<Step>
+
+### APIからRun IDを返す
+
+チャットエンドポイントを変更して、レスポンスヘッダーにワークフロー実行の Run ID を含めてください。Run ID は実行のストリームを一意に識別するため、クライアントがどのストリームに再接続すべきかを知ることができます。
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+// ... imports ...
+
+export async function POST(req: Request) {
+
+  // ... existing logic to create the workflow ...
+
+  const run = await start(chatWorkflow, [modelMessages]);
+
+  return createUIMessageStreamResponse({
+    stream: run.readable,
+    headers: { // [!code highlight
+      "x-workflow-run-id": run.runId, // [!code highlight]
+    }, // [!code highlight]
+  });
+}
+```
+
+</Step>
+
+<Step>
+
+### ストリーム再接続用のエンドポイントを追加する
+
+現在は常に新しい実行を作成する1つの API エンドポイントしかないため、既存の実行のストリームを返す新しい API ルートを作成する必要があります。
+
+```typescript title="app/api/chat/[id]/stream/route.ts" lineNumbers
+import { createUIMessageStreamResponse } from "ai";
+import { getRun } from "workflow/api"; // [!code highlight]
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+
+  // Client provides the last chunk index they received
+  const startIndexParam = searchParams.get("startIndex"); // [!code highlight]
+  const startIndex = startIndexParam
+    ? parseInt(startIndexParam, 10)
+    : undefined;
+
+  // Instead of starting a new run, we fetch an existing run.
+  const run = getRun(id); // [!code highlight]
+  const stream = run.getReadable({ startIndex }); // [!code highlight]
+
+  return createUIMessageStreamResponse({ stream }); // [!code highlight]
+}
+```
+
+`startIndex` パラメータにより、クライアントはストリームの再開位置を選択できます。例えば、関数がストリーミング中にタイムアウトした場合、チャットトランスポートは最後に受信したトークンから正確にストリームを再開するために `startIndex` を使用します。
+
+</Step>
+
+<Step>
+
+### クライアントで `WorkflowChatTransport` を使用する
+
+AI-SDK の `useChat` のデフォルトのトランスポートを [`WorkflowChatTransport`](/docs/api-reference/workflow-ai/workflow-chat-transport) に置き換え、最新の Run ID を保存して使用するようにコールバックを更新します。ここではとりあえず Run ID を localStorage に保存します。実際のアプリでは、セッション情報を保存している場所に格納してください。
+
+```typescript title="app/page.tsx" lineNumbers
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai"; // [!code highlight]
+import { useMemo, useState } from "react";
+
+export default function ChatPage() {
+
+  // Check for an active workflow run on mount
+  const activeRunId = useMemo(() => { // [!code highlight]
+    if (typeof window === "undefined") return; // [!code highlight]
+    return localStorage.getItem("active-workflow-run-id") ?? undefined; // [!code highlight]
+  }, []); // [!code highlight]
+
+  const { messages, sendMessage, status } = useChat({
+    resume: Boolean(activeRunId), // [!code highlight]
+    transport: new WorkflowChatTransport({ // [!code highlight]
+      api: "/api/chat",
+
+      // Store the run ID when a new chat starts
+      onChatSendMessage: (response) => { // [!code highlight]
+        const workflowRunId = response.headers.get("x-workflow-run-id"); // [!code highlight]
+        if (workflowRunId) { // [!code highlight]
+          localStorage.setItem("active-workflow-run-id", workflowRunId); // [!code highlight]
+        } // [!code highlight]
+      }, // [!code highlight]
+
+      // Clear the run ID when the chat completes
+      onChatEnd: () => { // [!code highlight]
+        localStorage.removeItem("active-workflow-run-id"); // [!code highlight]
+      }, // [!code highlight]
+
+      // Use the stored run ID for reconnection
+      prepareReconnectToStreamRequest: ({ api, ...rest }) => { // [!code highlight]
+        const runId = localStorage.getItem("active-workflow-run-id"); // [!code highlight]
+        if (!runId) throw new Error("No active workflow run ID found"); // [!code highlight]
+        return { // [!code highlight]
+          ...rest, // [!code highlight]
+          api: `/api/chat/${encodeURIComponent(runId)}/stream`, // [!code highlight]
+        }; // [!code highlight]
+      }, // [!code highlight]
+    }), // [!code highlight]
+  });
+
+  // ... render your chat UI
+}
+```
+
+</Step>
+
+</Steps>
+
+別タブでフライト予約の例をもう一度試してみてください。ページを開き直したり、リフレッシュを連打したりして、クライアントが毎回同じチャットストリームに接続する様子を確認してください。
+
+## 動作の仕組み
+
+1. ユーザーがメッセージを送信すると、`WorkflowChatTransport` が `/api/chat` に POST を行います
+2. API はワークフローを開始し、`x-workflow-run-id` ヘッダーで Run ID を返します
+3. `onChatSendMessage` がこの Run ID を localStorage に保存します
+4. ストリームが「finish」チャンクを受信する前に中断された場合、トランスポートは自動的に再接続します
+5. `prepareReconnectToStreamRequest` は保存された Run ID を使用して再接続用の URL（`/api/chat/{runId}/stream`）を構築します
+6. 再接続用エンドポイントは、クライアントが中断した位置からストリームを返します
+7. ストリームが完了すると、`onChatEnd` が保存された Run ID をクリアします
+
+このアプローチはページのリフレッシュにも対応しており、UI が保存された Run ID とともにロードされると、クライアントは最後に知られている位置から自動的にストリームに再接続します。これは [AI SDK のストリーム再開](https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-resume-streams#chatbot-resume-streams) の動作に従います。
+
+## 関連ドキュメント
+
+- [`WorkflowChatTransport` API Reference](/docs/api-reference/workflow-ai/workflow-chat-transport) - 完全な設定オプション
+- [Streaming](/docs/foundations/streaming) - ワークフローのストリームについて理解する
+- [`getRun()` API Reference](/docs/api-reference/workflow-api/get-run) - 既存のランの取得

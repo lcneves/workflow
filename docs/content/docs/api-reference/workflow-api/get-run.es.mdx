@@ -1,0 +1,78 @@
+---
+title: getRun
+---
+
+Recupera los metadatos y la información de estado de una ejecución del flujo de trabajo para un ID de ejecución dado. Esta función proporciona acceso inmediato a los detalles de la ejecución del flujo de trabajo sin esperar a que finalice, por lo que es ideal para comprobar el estado y la supervisión.
+
+Utiliza esta función cuando necesites comprobar el estado del flujo de trabajo, obtener información de tiempos o acceder a los metadatos del flujo de trabajo sin bloquear la ejecución hasta la finalización.
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+const run = getRun("my-run-id");
+```
+
+## Firma de la API
+
+### Parámetros
+
+<TSDoc
+definition={`
+import { getRun } from "workflow/api";
+export default getRun;`}
+showSections={["parameters"]}
+/>
+
+### Devuelve
+
+Devuelve un objeto `Run`:
+
+<TSDoc
+definition={`
+import { Run } from "workflow/api";
+export default Run;`}
+showSections={["returns"]}
+/>
+
+#### WorkflowReadableStreamOptions
+
+<TSDoc
+definition={`
+import type { WorkflowReadableStreamOptions } from "workflow/api";
+export default WorkflowReadableStreamOptions;`}
+/>
+
+## Ejemplos
+
+### Comprobación básica del estado
+
+Comprueba el estado actual de una ejecución del flujo de trabajo:
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const runId = url.searchParams.get("runId");
+
+  if (!runId) {
+    return Response.json({ error: "No runId provided" }, { status: 400 });
+  }
+
+  try {
+    const run = getRun(runId); // [!code highlight]
+    const status = await run.status;
+
+    return Response.json({ status });
+  } catch (error) {
+    return Response.json(
+      { error: "Workflow run not found" },
+      { status: 404 }
+    );
+  }
+}
+```
+
+## Funciones relacionadas
+
+- [`start()`](/docs/api-reference/workflow-api/start) - Inicia un nuevo flujo de trabajo y obtiene su ID de ejecución.

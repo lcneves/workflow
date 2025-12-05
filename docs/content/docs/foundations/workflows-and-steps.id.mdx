@@ -1,0 +1,196 @@
+---
+title: Alur Kerja dan Langkah-langkah
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+Alur kerja (a.k.a. *durable functions*) adalah model pemrograman untuk membangun logika aplikasi yang berjalan lama dan berstatus yang dapat mempertahankan status eksekusinya saat terjadi restart, kegagalan, atau kejadian pengguna. Tidak seperti fungsi serverless tradisional yang kehilangan semua status saat mereka berhenti, alur kerja mempertahankan progres mereka dan dapat melanjutkan persis dari tempat terakhir.
+
+Selain itu, alur kerja memungkinkan Anda memodelkan proses kompleks ber-multi-langkah dengan kode yang sederhana dan elegan. Untuk melakukan ini, kami memperkenalkan dua entitas dasar:
+
+1. **Fungsi Alur Kerja**: Fungsi yang mengatur/menyusun langkah-langkah
+2. **Fungsi Langkah**: Fungsi yang melaksanakan pekerjaan aktual
+
+## Fungsi Alur Kerja
+
+*Direktif: `"use workflow"`*
+
+Fungsi alur kerja mendefinisikan titik masuk sebuah alur kerja dan mengatur bagaimana fungsi langkah dipanggil. Jenis fungsi ini tidak memiliki akses ke runtime Node.js penuh, dan paket `npm` yang dapat digunakan terbatas.
+
+Meskipun ini mungkin terasa membatasi pada awalnya, fitur ini penting agar eksekusi alur kerja dapat ditangguhkan dan dilanjutkan dengan akurat.
+
+Lebih mudah memikirkan fungsi alur kerja bukan seperti runtime JavaScript penuh tetapi lebih seperti "menggabungkan" berbagai langkah menggunakan kondisi, loop, handler try/catch, `Promise.all`, dan primitif bahasa lainnya.
+
+```typescript lineNumbers
+export async function processOrderWorkflow(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // Orchestrate multiple steps
+  const order = await fetchOrder(orderId);
+  const payment = await chargePayment(order);
+
+  return { orderId, status: "completed" };
+}
+```
+
+**Karakteristik Kunci:**
+
+- Berjalan di lingkungan ter-sandbox tanpa akses Node.js penuh
+- Semua hasil langkah disimpan ke log peristiwa
+- Harus **deterministik** agar dapat dilanjutkan setelah kegagalan
+
+Determinisme dalam alur kerja diperlukan untuk melanjutkan alur kerja dari saat penangguhan. Pada dasarnya, kode alur kerja dijalankan ulang beberapa kali selama siklus hidupnya, setiap kali menggunakan log peristiwa untuk melanjutkan alur kerja ke posisi yang benar.
+
+Lingkungan ter-sandbox tempat alur kerja berjalan sudah memastikan determinisme. Misalnya, `Math.random` dan konstruktor `Date` dipatok pada nilai tetap dalam eksekusi alur kerja, jadi Anda aman menggunakannya, dan framework memastikan bahwa nilainya tidak berubah di antara pemutaran ulang.
+
+## Fungsi Langkah
+
+*Direktif: `"use step"`*
+
+Fungsi langkah melaksanakan pekerjaan aktual dalam sebuah alur kerja dan memiliki akses runtime penuh.
+
+```typescript lineNumbers
+async function chargePayment(order: Order) {
+  "use step"; // [!code highlight]
+
+  // Full Node.js access - use any npm package
+  const stripe = new Stripe(process.env.STRIPE_KEY);
+
+  const charge = await stripe.charges.create({
+    amount: order.total,
+    currency: "usd",
+    source: order.paymentToken
+  });
+
+  return { chargeId: charge.id };
+}
+```
+
+**Karakteristik Kunci:**
+
+- Akses runtime Node.js penuh dan paket npm
+- Percobaan ulang otomatis saat terjadi kesalahan
+- Hasil disimpan untuk pengulangan
+
+Secara default, langkah memiliki maksimal 3 upaya percobaan ulang sebelum mereka gagal dan meneruskan kesalahan ke alur kerja. Pelajari lebih lanjut tentang kesalahan dan percobaan ulang di halaman [Kesalahan & Percobaan Ulang](/docs/foundations/errors-and-retries).
+
+<Callout type="warning">
+**Penting:** Karena serialisasi, parameter diteruskan berdasarkan **nilai, bukan referensi**. Jika Anda meneruskan sebuah objek atau array ke sebuah langkah dan memodifikasinya, perubahan tersebut **tidak** akan terlihat di konteks alur kerja. Selalu kembalikan data yang dimodifikasi dari fungsi langkah Anda sebagai gantinya. Lihat [Semantik Pass-by-Value](/docs/foundations/serialization#pass-by-value-semantics) untuk rincian dan contoh.
+</Callout>
+
+<Callout type="info">
+Fungsi langkah terutama dimaksudkan untuk digunakan di dalam sebuah alur kerja.
+</Callout>
+
+Memanggil sebuah langkah dari luar alur kerja atau dari langkah lain pada dasarnya akan menjalankan langkah tersebut di proses yang sama seperti fungsi normal (dengan kata lain, direktif `use step` menjadi no-op). Ini berarti Anda dapat menggunakan kembali fungsi langkah di bagian lain dari basis kode Anda tanpa perlu menduplikasi logika bisnis.
+
+
+```typescript lineNumbers
+async function updateUser(userId: string) {
+  "use step";
+  await db.insert(...);
+}
+
+// Used inside a workflow
+export async function userOnboardingWorkflow(userId: string) {
+  "use workflow";
+  await updateUser(userId);
+  // ... more steps
+}
+
+// Used directly outside a workflow
+export async function POST() {
+  await updateUser("123");
+  // ... more logic
+}
+```
+
+<Callout type="info">
+Perlu diingat bahwa memanggil fungsi langkah di luar fungsi alur kerja tidak akan memiliki semantik percobaan ulang, dan juga tidak akan dapat diamati. Selain itu, fungsi tertentu yang spesifik untuk alur kerja seperti [`getStepMetadata()`](/docs/api-reference/workflow/get-step-metadata) akan melemparkan kesalahan ketika digunakan di dalam sebuah langkah yang dipanggil di luar alur kerja.
+</Callout>
+
+### Penangguhan dan Pelanjutan
+
+Fungsi alur kerja memiliki kemampuan untuk secara otomatis menangguhkan diri saat menunggu pekerjaan asinkron. Saat ditangguhkan, status alur kerja disimpan melalui log peristiwa dan tidak ada sumber daya komputasi yang digunakan sampai alur kerja melanjutkan eksekusi.
+
+Ada beberapa cara alur kerja dapat ditangguhkan:
+
+- Menunggu sebuah fungsi langkah: alur kerja me-yield sementara langkah dijalankan di runtime langkah.
+- Menggunakan `sleep()` untuk jeda selama durasi tetap.
+- Menunggu sebuah promise yang dikembalikan oleh [`createWebhook()`](/docs/api-reference/workflow/create-webhook), yang melanjutkan alur kerja ketika sistem eksternal memasukkan data ke alur kerja.
+
+```typescript lineNumbers
+import { sleep, createWebhook } from "workflow";
+
+export async function documentReviewProcess(userId: string) {
+  "use workflow";
+
+  await sleep("1 month"); // Sleep will suspend without consuming any resources [!code highlight]
+
+  // Create a webhook for external workflow resumption
+  const webhook = createWebhook();
+
+  // Send the webhook url to some external service or in an email, etc.
+  await sendHumanApprovalEmail("Click this link to accept the review", webhook.url)
+
+  const data = await webhook; // The workflow suspends till the URL is resumed [!code highlight]
+
+  console.log("Document reviewed!")
+}
+```
+
+## Menulis Alur Kerja
+
+### Struktur Dasar
+
+Alur kerja paling sederhana terdiri dari sebuah fungsi alur kerja dan satu atau lebih fungsi langkah.
+
+```typescript lineNumbers
+// Workflow function (orchestrates the steps)
+export async function greetingWorkflow(name: string) {
+  "use workflow";
+
+  const message = await greet(name);
+  return { message };
+}
+
+// Step function (does the actual work)
+async function greet(name: string) {
+  "use step";
+
+  // Access Node.js APIs
+  const message = `Hello ${name} at ${new Date().toISOString()}`;
+  console.log(message);
+  return message;
+}
+```
+
+### Struktur proyek
+
+Meskipun Anda dapat mengatur fungsi alur kerja dan fungsi langkah sesuai keinginan, kami menemukan bahwa proyek yang lebih besar mendapat manfaat dari beberapa struktur:
+<Files>
+  <Folder name="workflows" defaultOpen disabled>
+    <Folder name="userOnboarding" defaultOpen disabled>
+      <File name="index.ts" />
+      <File name="steps.ts" />
+    </Folder>
+    <Folder name="aiVideoGeneration" defaultOpen disabled>
+      <File name="index.ts" />
+      <Folder name="steps" defaultOpen disabled>
+        <File name="transcribeUpload.ts" />
+        <File name="generateVideo.ts" />
+        <File name="notifyUser.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="shared" defaultOpen disabled>
+      <File name="validateInput.ts" />
+      <File name="logActivity.ts" />
+    </Folder>
+  </Folder>
+</Files>
+
+Anda dapat memilih untuk mengorganisir langkah-langkah Anda ke dalam sebuah file `steps.ts` tunggal atau file terpisah di dalam folder `steps`. Folder `shared` adalah tempat yang baik untuk menaruh langkah umum yang digunakan oleh beberapa alur kerja.
+
+<Callout type="info">
+Memecah langkah dan alur kerja juga akan membantu menghindari sebagian besar bug terkait bundler dengan Workflow DevKit.
+</Callout>

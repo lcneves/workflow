@@ -1,0 +1,138 @@
+---
+title: Pembaruan Streaming dari Alat
+---
+
+Setelah [membangun agen AI yang tahan lama](/docs/ai), kita sudah mendapatkan potongan pesan UI untuk menampilkan pemanggilan alat dan nilai yang dikembalikan. Namun, untuk langkah-langkah yang berjalan lama, kita mungkin ingin menampilkan pembaruan progres, atau melakukan streaming output langkah ke pengguna saat sedang dihasilkan.
+
+Workflow DevKit memungkinkan hal ini dengan membiarkan fungsi langkah menulis potongan kustom ke aliran yang sama yang digunakan agen. Potongan ini muncul sebagai bagian data dalam pesan Anda, yang dapat Anda render sesuai keinginan.
+
+Sebagai contoh, kita akan memperluas Agen Pemesanan Penerbangan untuk menggunakan emit pembaruan progres yang lebih rinci saat mencari penerbangan.
+
+<Steps>
+
+<Step>
+
+### Definisikan Tipe Data Part Anda
+
+Pertama, definisikan tipe TypeScript untuk bagian data kustom Anda. Ini memastikan keamanan tipe di seluruh kode alat dan klien Anda:
+
+```typescript title="schemas/chat.ts" lineNumbers
+export interface FoundFlightDataPart {
+  type: "data-found-flight"; // [!code highlight]
+  id: string;
+  data: {
+    flightNumber: string;
+    from: string;
+    to: string;
+  };
+}
+```
+
+Field `type` harus berupa string yang dimulai dengan `data-` diikuti oleh identifier kustom Anda. Field `id` harus cocok dengan `toolCallId` sehingga klien dapat mengaitkan data dengan pemanggilan alat yang benar. Pelajari lebih lanjut tentang [bagian data](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#data-parts-persistent) dalam dokumentasi AI SDK.
+
+</Step>
+
+<Step>
+
+### Kirim Pembaruan dari Alat Anda
+
+Gunakan [`getWritable()`](/docs/api-reference/workflow/get-writable) di dalam fungsi langkah untuk mendapatkan handle ke aliran. Ini adalah aliran yang sama yang ditulisi oleh LLM dan pemanggilan alat lainnya, sehingga kita dapat menyisipkan paket data kita sendiri secara langsung.
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable } from "workflow"; // [!code highlight]
+import type { UIMessageChunk } from "ai";
+
+export async function searchFlights(
+  { from, to, date }: { from: string; to: string; date: string },
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) {
+  "use step";
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+
+  // ... existing logic to generate flights ...
+
+  for (const flight of generatedFlights) { // [!code highlight]
+
+    // Simulate the time it takes to find each flight
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // [!code highlight]
+
+    await writer.write({ // [!code highlight]
+      id: `${toolCallId}-${flight.flightNumber}`, // [!code highlight]
+      type: "data-found-flight", // [!code highlight]
+      data: flight, // [!code highlight]
+    }); // [!code highlight]
+  } // [!code highlight]
+
+  writer.releaseLock(); // [!code highlight]
+
+  return {
+    message: `Found ${generatedFlights.length} flights from ${from} to ${to} on ${date}`,
+    flights: generatedFlights.sort((a, b) => a.price - b.price), // Sort by price
+  };
+}
+```
+
+Poin penting:
+
+- Panggil `getWritable<UIMessageChunk>()` untuk mendapatkan aliran
+- Gunakan `getWriter()` untuk memperoleh writer
+- Tulis objek dengan field `type`, `id`, dan `data`
+- Selalu panggil `releaseLock()` ketika selesai menulis (pelajari lebih lanjut tentang [streaming](/docs/foundations/streaming))
+
+</Step>
+
+<Step>
+### Tangani Data Parts di Klien
+
+Perbarui komponen chat Anda untuk mendeteksi dan merender bagian data kustom. Bagian data disimpan di array `parts` pesan bersama dengan bagian teks dan pemanggilan alat:
+
+```typescript title="app/page.tsx" lineNumbers
+{message.parts.map((part, partIndex) => {
+  // Render text parts
+  if (part.type === "text") {
+    return (
+      <Response key={`${message.id}-text-${partIndex}`}>
+        {part.text}
+      </Response>
+    );
+  }
+
+  // Render streaming flight data parts // [!code highlight]
+  if (part.type === "data-found-flight") { // [!code highlight]
+    const flight = part.data as { // [!code highlight]
+      flightNumber: string; // [!code highlight]
+      airline: string; // [!code highlight]
+      from: string; // [!code highlight]
+      to: string; // [!code highlight]
+    }; // [!code highlight]
+    return ( // [!code highlight]
+      <div key={`${part.id}-${flight.flightNumber}`} className="p-3 bg-muted rounded-md"> // [!code highlight]
+        <div className="font-medium">{flight.airline} - {flight.flightNumber}</div> // [!code highlight]
+        <div className="text-muted-foreground">{flight.from} → {flight.to}</div> // [!code highlight]
+      </div> // [!code highlight]
+    ); // [!code highlight]
+  } // [!code highlight]
+
+  // ... other rendering logic ...
+})}
+```
+
+Polanya adalah:
+
+1. Bagian data memiliki field `type` yang dimulai dengan `data-`
+2. Cocokkan tipe tersebut dengan identifier kustom Anda (mis. `data-found-flight`)
+3. Gunakan payload bagian data untuk menampilkan progres atau hasil sementara
+
+</Step>
+
+</Steps>
+
+Sekarang, ketika Anda menjalankan agen untuk mencari penerbangan, Anda akan melihat hasil penerbangan muncul satu per satu. Ini akan sangat berguna jika Anda memiliki pemanggilan alat yang memakan waktu berjam-jam atau beberapa menit untuk selesai, dan Anda perlu menunjukkan pembaruan progres yang rinci kepada pengguna.
+
+## Dokumentasi Terkait
+
+- [Membangun Agen AI yang Tahan Lama](/docs/ai) - Panduan lengkap untuk agen yang tahan lama
+- [`getWritable()` Referensi API](/docs/api-reference/workflow/get-writable) - Detil API Stream
+- [Streaming](/docs/foundations/streaming) - Memahami aliran workflow

@@ -1,0 +1,225 @@
+---
+title: createWebhook
+---
+
+HTTP リクエストを受け取ることでワークフローの実行を一時停止および再開するために使用できる webhook を作成します。
+
+Webhooks は外部システムがワークフローに直接 HTTP リクエストを送信するための手段を提供します。任意のペイロードを受け付ける hooks と異なり、webhooks は標準の HTTP `Request` オブジェクトを扱い、HTTP `Response` オブジェクトを返すことができます。
+
+```ts lineNumbers
+import { createWebhook } from "workflow"
+
+export async function webhookWorkflow() {
+  "use workflow";
+  const webhook = createWebhook();  // [!code highlight]
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook; // Suspends until HTTP request received
+  console.log("Received request:", request.method, request.url);
+}
+```
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['parameters']}
+/>
+
+### 戻り値
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['returns']}
+/>
+
+返される `Webhook` オブジェクトは以下を持ちます:
+
+- `url`: 外部システムが呼び出すことができる HTTP エンドポイントの URL
+- `token`: この webhook を識別する一意のトークン
+- 複数のリクエストを処理するために `AsyncIterable<RequestWithResponse>` を実装しています
+
+`RequestWithResponse` 型は標準の `Request` インターフェースを拡張し、呼び出し元にカスタムレスポンスを返すための `respondWith(response: Response)` メソッドを提供します。
+
+## 例
+
+### 基本的な使用例
+
+HTTP リクエストを受け取り、リクエストの詳細をログに出力する webhook を作成します:
+
+```typescript lineNumbers
+import { createWebhook } from "workflow"
+
+export async function basicWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook(); // [!code highlight]
+  console.log("Send requests to:", webhook.url);
+
+  const request = await webhook;
+
+  console.log("Method:", request.method);
+  console.log("Headers:", Object.fromEntries(request.headers));
+
+  const body = await request.text();
+  console.log("Body:", body);
+}
+```
+
+### Webhook リクエストへの応答
+
+`respondWith()` メソッドを使用してカスタム HTTP レスポンスを送信します。`respondWith()` はステップ関数の中から呼び出す必要があることに注意してください:
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendResponse(request: RequestWithResponse) { // [!code highlight]
+  "use step"; // [!code highlight]
+  await request.respondWith( // [!code highlight]
+    new Response(JSON.stringify({ success: true, message: "Received!" }), { // [!code highlight]
+      status: 200, // [!code highlight]
+      headers: { "Content-Type": "application/json" } // [!code highlight]
+    }) // [!code highlight]
+  ); // [!code highlight]
+} // [!code highlight]
+
+export async function respondingWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook;
+
+  // Send a custom response back to the caller
+  await sendResponse(request);
+
+  // Continue workflow processing
+  const data = await request.json();
+  await processData(data);
+}
+
+async function processData(data: any) {
+  "use step";
+  // Process the webhook data
+  console.log("Processing:", data);
+}
+```
+
+### トークンのカスタマイズ
+
+トークンは特定の webhook を識別するために使用されます。ユースケースに応じてトークンをより具体的にカスタマイズできます。
+
+```typescript lineNumbers
+import { type RequestWithResponse } from "workflow"
+
+async function sendAck(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response(JSON.stringify({ received: true }), {
+      headers: { "Content-Type": "application/json" }
+    })
+  );
+}
+
+export async function githubWebhookWorkflow(repoName: string) {
+  "use workflow";
+
+  // Use a deterministic token based on the repository
+  const webhook = createWebhook({ // [!code highlight]
+    token: `github_webhook:${repoName}`, // [!code highlight]
+  }); // [!code highlight]
+
+  console.log("Configure GitHub webhook:", webhook.url);
+
+  const request = await webhook;
+  const event = await request.json();
+
+  await sendAck(request);
+
+  await deployCommit(event);
+}
+
+async function deployCommit(event: any) {
+  "use step";
+  // Deploy logic here
+}
+```
+
+### 複数のリクエストを待つ
+
+`for await...of` 構文を使用して複数のリクエストを待つこともできます。
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendSlackResponse(request: RequestWithResponse, message: string) {
+  "use step";
+  await request.respondWith(
+    new Response(
+      JSON.stringify({
+        response_type: "in_channel",
+        text: message
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+}
+
+async function sendStopResponse(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response("Stopping workflow...")
+  );
+}
+
+export async function slackCommandWorkflow(channelId: string) {
+  "use workflow";
+
+  const webhook = createWebhook({
+    token: `slack_command:${channelId}`,
+  });
+
+  for await (const request of webhook) { // [!code highlight]
+    const formData = await request.formData();
+    const command = formData.get("command");
+    const text = formData.get("text");
+
+    if (command === "/status") {
+      // Respond immediately to Slack
+      await sendSlackResponse(request, "Checking status...");
+
+      // Process the command
+      const status = await checkSystemStatus();
+      await postToSlack(channelId, `Status: ${status}`);
+    }
+
+    if (text === "stop") {
+      await sendStopResponse(request);
+      break;
+    }
+  }
+}
+
+async function checkSystemStatus() {
+  "use step";
+  return "All systems operational";
+}
+
+async function postToSlack(channelId: string, message: string) {
+  "use step";
+  // Post message to Slack
+}
+```
+
+## 関連関数
+
+- [`createHook()`](/docs/api-reference/workflow/create-hook) - より低レベルの、任意のペイロード向けのフックプリミティブ
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - 型安全なフックヘルパー
+- [`resumeWebhook()`](/docs/api-reference/workflow-api/resume-webhook) - API ルートから webhook を再開する

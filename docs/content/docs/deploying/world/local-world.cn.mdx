@@ -1,0 +1,261 @@
+---
+title: 本地 World
+---
+
+The **本地 World** (`@workflow/world-local`) 是一种基于文件系统的工作流后端，专为本地开发和测试设计。它将工作流数据以 JSON 文件的形式存储在磁盘上，并提供内存队列功能。
+
+本地 World 非常适合本地开发，因为它：
+
+- 无需外部服务或配置
+- 将数据以可读的 JSON 文件存储，便于调试
+- 在开发过程中提供即时反馈
+- 与 Next.js 开发服务器无缝协作
+
+## 工作原理
+
+### 存储
+
+本地 World 将所有工作流数据以 JSON 文件的形式存储在可配置的目录中：
+
+```
+.workflow-data/
+├── runs/
+│   └── <run-id>.json
+├── steps/
+│   └── <run-id>/
+│       └── <step-id>.json
+├── hooks/
+│   └── <hook-id>.json
+└── streams/
+    └── <run-id>/
+        └── <stream-id>.json
+```
+
+每个文件包含一个运行、步骤、钩子或流的完整状态，使直接检查工作流数据变得简单。
+
+### 队列
+
+本地 World 使用带有 HTTP 传输的内存队列：
+
+1. 当一个步骤被入队时，它会被添加到内存队列中
+2. 队列通过向你的开发服务器发送 HTTP 请求来处理步骤
+3. 步骤在 `.well-known/workflow/v1/step` 端点执行
+
+队列会自动检测你的开发服务器端口并相应调整队列 URL。
+
+### 身份验证
+
+本地 World 提供了一个简单的身份验证实现，因为在本地开发中不需要或不强制身份验证。
+
+```typescript
+getAuthHeaders(): Promise<Record<string, string>> {
+  return Promise.resolve({});
+}
+```
+
+## 配置
+
+### 数据目录
+
+默认情况下，工作流数据存储在项目根目录下的 `.workflow-data/`。可以通过环境变量或以编程方式进行自定义。
+
+**环境变量：**
+
+```bash
+export WORKFLOW_LOCAL_DATA_DIR=./custom-workflow-data
+```
+
+**以编程方式：**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ dataDir: "./custom-workflow-data" });
+```
+
+### 端口
+
+默认情况下，本地 World **自动检测**你的应用正在监听的端口，使用进程检测实现。对于像 SvelteKit、Vite 以及其他使用非标准端口的框架，这能无缝工作。
+
+**自动检测示例**（推荐）：
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Port is automatically detected - no configuration needed!
+const world = createLocalWorld();
+```
+
+如果自动检测失败，World 会回退到 `PORT` 环境变量，然后回退到端口 `3000`。
+
+**手动端口覆盖**（在需要时）：
+
+你可以通过显式指定端口来覆盖自动检测的端口：
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ port: 3000 });
+```
+
+### 基础 URL
+
+对于像 HTTPS 或自定义主机名这样的高级用例，你可以覆盖整个基础 URL。设置后，这将优先于所有端口检测和其他配置。
+
+**用例：**
+
+- HTTPS 开发服务器（例如，`next dev --experimental-https`）
+- 自定义主机名（例如，`local.example.com`）
+- 非 localhost 的开发环境
+
+**环境变量：**
+
+```bash
+export WORKFLOW_LOCAL_BASE_URL=https://local.example.com:3000
+```
+
+**以编程方式：**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// HTTPS
+const world = createLocalWorld({
+  baseUrl: "https://localhost:3000"
+});
+
+// Custom hostname
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+```
+
+## 使用方式
+
+### 自动（推荐）
+
+本地 World 在本地开发期间会自动使用：
+
+```bash
+# Start your Next.js dev server
+npm run dev
+
+# Workflows automatically use local world
+```
+
+### 手动
+
+你可以通过环境变量显式设置本地 World：
+
+```bash
+export WORKFLOW_TARGET_WORLD=local
+
+npm run dev
+```
+
+## 开发流程
+
+使用本地 World 的典型开发流程：
+
+1. **启动你的开发服务器：**
+
+   ```bash
+   npm run dev
+   ```
+
+2. **触发一个工作流：**
+
+   ```bash
+   curl -X POST --json '{"email":"test@example.com"}' http://localhost:3000/api/signup
+   ```
+
+3. **检查结果：**
+   - 使用 [CLI 或 Web UI](/docs/observability)
+   - 检查 `.workflow-data/` 中的 JSON 文件
+   - 查看开发服务器日志
+
+## 检查数据
+
+### 使用可观测性工具
+
+本地 World 与 Workflow DevKit 的可观测性工具集成：
+
+```bash
+# View runs with CLI
+npx workflow inspect runs
+
+# View runs with Web UI
+npx workflow inspect runs --web
+```
+
+在 [可观测性](/docs/observability) 部分了解更多信息。
+
+## 限制
+
+本地 World 为开发设计，不适合生产：
+
+- **不可扩展** - 使用内存队列
+- **非持久化** - 数据存储在本地文件中
+- **单实例** - 无法处理分布式部署
+- **无身份验证** - 仅适用于本地开发
+
+对于生产部署，请使用 [Vercel World](/docs/deploying/world/vercel-world)。
+
+## API 参考
+
+### `createLocalWorld`
+
+创建一个本地 World 实例：
+
+```typescript
+function createLocalWorld(
+  args?: Partial<{
+    dataDir: string;
+    port: number;
+    baseUrl: string;
+  }>
+): World
+```
+
+**参数：**
+
+- `args` - 可选的配置对象：
+  - `dataDir` - 存储工作流数据的目录（默认：`.workflow-data/` 或 `WORKFLOW_LOCAL_DATA_DIR` 环境变量）
+  - `port` - 队列传输的端口覆盖（默认：自动检测 → `PORT` 环境变量 → `3000`）
+  - `baseUrl` - 队列传输的完整基础 URL 覆盖（默认：`http://localhost:{port}` 或 `WORKFLOW_LOCAL_BASE_URL` 环境变量）
+
+**返回：**
+
+- `World` - 一个实现 World 接口的 World 实例
+
+**示例：**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Use all defaults (recommended - auto-detects port)
+const world = createLocalWorld();
+
+// Custom data directory
+const world = createLocalWorld({ dataDir: "./my-data" });
+
+// Override port
+const world = createLocalWorld({ port: 3000 });
+
+// HTTPS with custom hostname
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+
+// Multiple options
+const world = createLocalWorld({
+  dataDir: "./my-data",
+  baseUrl: "https://localhost:3000"
+});
+```
+
+## 了解更多
+
+- [World 接口](/docs/deploying/world) - 了解 World 接口
+- [Vercel World](/docs/deploying/world/vercel-world) - 适用于生产部署
+- [可观测性](/docs/observability) - 监控和调试工具

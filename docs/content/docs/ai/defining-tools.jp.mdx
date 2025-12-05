@@ -1,0 +1,71 @@
+---
+title: ツール定義のパターン
+---
+
+このページでは、Workflow DevKitを使用してAIエージェント向けのツールを定義する際の一般的なパターンの詳細を説明します。
+
+DurableAgentを使用すると、ほとんどのツールをステップとしてモデリングします。これらは簡単な関数呼び出しから、数日にわたる大規模なワークフローまで何でもあり得ます。
+
+## ツール内でのメッセージコンテキストへのアクセス
+
+通常のAI SDKのツール定義と同様に、DurableAgentのツールは最初の引数にツールの入力パラメータ、2番目の引数にツール呼び出しコンテキストを与えて呼び出されます。
+
+ツールがメッセージ全履歴にアクセスする必要がある場合、ツール呼び出しコンテキストの `messages` プロパティでアクセスできます：
+
+```typescript title="tools.ts" lineNumbers
+async function getWeather(
+  { city }: { city: string },
+  { messages, toolCallId }: { messages: LanguageModelV2Prompt, toolCallId: string }) { // [!code highlight]
+  "use step";
+  return `Weather in ${city} is sunny`;
+}
+```
+
+## ストリームへの書き込み
+
+[ツールからのストリーミング更新](/docs/ai/streaming-updates-from-tools) で説明したように、カスタムデータパーツをストリームに書き込むために `getWritable()` を呼び出すだけのステップを使うことが一般的です。
+
+これは汎用化して、任意のデータをストリームに書き込むヘルパーステップ関数を作成することで実現できます：
+
+```typescript title="tools.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeToStream(data: any) {
+  "use step";
+
+  const writable = getWritable();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## ステップレベルとワークフローレベルのツール
+
+ツールはステップレベルまたはワークフローレベルのいずれかで実装でき、それぞれで能力や制約が異なります。
+
+| 機能 | ステップレベル (`"use step"`) | ワークフローレベル (`"use workflow"`) |
+|------------|---------------------------|----------------|
+| `getWritable()` | ✅ | ❌ |
+| 自動再試行 | ✅ | ❌ |
+| 副作用（例：API呼び出し）が可能 | ✅ | ❌ |
+| `sleep()` | ❌ | ✅ |
+| `createWebhook()` | ❌ | ✅ |
+
+ツールは、ワークフローレベルで開始し、I/O操作のためにステップを呼び出すことで、両方を組み合わせることもできます。以下のように：
+
+```typescript title="tools.ts" lineNumbers
+// Step: handles I/O with retries
+async function performFetch(url: string) {
+  "use step";
+  const response = await fetch(url);
+  return response.json();
+}
+
+// Workflow-level: orchestrates steps and can use sleep()
+async function executeFetchWithDelay({ url }: { url: string }) {
+  const result = await performFetch(url);
+  await sleep("5s"); // Only available at workflow level
+  return result;
+}
+```

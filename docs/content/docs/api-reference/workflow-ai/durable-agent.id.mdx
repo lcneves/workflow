@@ -1,0 +1,424 @@
+---
+title: DurableAgent
+---
+
+<Callout type="warn">
+Paket `@workflow/ai` saat ini sedang dalam pengembangan aktif dan harus dianggap eksperimental.
+</Callout>
+
+Kelas `DurableAgent` memungkinkan Anda membuat agen bertenaga AI yang dapat mempertahankan state di seluruh langkah workflow, memanggil alat (tools), dan menangani interupsi serta melanjutkan secara elegan.
+
+Panggilan alat dapat diimplementasikan sebagai langkah workflow untuk percobaan ulang otomatis, atau sebagai logika tingkat workflow biasa yang memanfaatkan fitur inti perpustakaan seperti [`sleep()`](/docs/api-reference/workflow/sleep) dan [Hooks](/docs/foundations/hooks).
+
+```typescript lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function getWeather({ city }: { city: string }) {
+  "use step";
+
+  return `Weather in ${city} is sunny`;
+}
+
+async function myAgent() {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    system: "You are a helpful weather assistant.",
+    tools: {
+      getWeather: {
+        description: "Get weather for a city",
+        inputSchema: z.object({ city: z.string() }),
+        execute: getWeather,
+      },
+    },
+  });
+
+  // The agent will stream its output to the workflow
+  // run's default output stream
+  const writable = getWritable<UIMessageChunk>();
+
+  await agent.stream({
+    messages: [{ role: "user", content: "How is the weather in San Francisco?" }],
+    writable,
+  });
+}
+```
+
+## Tanda Tangan API
+
+### Class
+
+<TSDoc
+definition={`
+import { DurableAgent } from "@workflow/ai/agent";
+export default DurableAgent;`}
+/>
+
+### DurableAgentOptions
+
+<TSDoc
+definition={`
+import type { DurableAgentOptions } from "@workflow/ai/agent";
+export default DurableAgentOptions;`}
+/>
+
+### DurableAgentStreamOptions
+
+<TSDoc
+definition={`
+import type { DurableAgentStreamOptions } from "@workflow/ai/agent";
+export default DurableAgentStreamOptions;`}
+/>
+
+### PrepareStepInfo
+
+Informasi yang diteruskan ke callback `prepareStep`:
+
+<TSDoc
+definition={`
+import type { PrepareStepInfo } from "@workflow/ai/agent";
+export default PrepareStepInfo;`}
+/>
+
+### PrepareStepResult
+
+Tipe pengembalian dari callback `prepareStep`:
+
+<TSDoc
+definition={`
+import type { PrepareStepResult } from "@workflow/ai/agent";
+export default PrepareStepResult;`}
+/>
+
+## Fitur Utama
+
+- **Eksekusi Tahan**: Agen dapat dihentikan dan dilanjutkan tanpa kehilangan keadaan
+- **Implementasi Alat yang Fleksibel**: Alat dapat diimplementasikan sebagai langkah workflow untuk percobaan ulang otomatis, atau sebagai logika tingkat workflow biasa
+- **Pemrosesan Aliran**: Menangani respons streaming dan pemanggilan alat dengan cara yang terstruktur
+- **Native pada Workflow**: Terintegrasi penuh dengan Workflow DevKit untuk keandalan tingkat produksi
+
+## Hal yang Perlu Diketahui
+
+- Alat dapat diimplementasikan sebagai langkah workflow (menggunakan `"use step"` untuk percobaan ulang otomatis), atau sebagai logika tingkat workflow biasa
+- Alat dapat menggunakan fitur inti perpustakaan seperti `sleep()` dan Hooks di dalam fungsi `execute` mereka
+- Agen memproses pemanggilan alat secara iteratif sampai selesai
+- Metode `stream()` mengembalikan `{ messages }` yang berisi riwayat percakapan lengkap, termasuk pesan awal, respons asisten, dan hasil alat
+- Callback `prepareStep` dijalankan sebelum setiap langkah dan dapat memodifikasi model atau pesan secara dinamis
+
+## Contoh
+
+### Agen Dasar dengan Alat
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function getWeather({ location }: { location: string }) {
+  "use step";
+  // Fetch weather data
+  const response = await fetch(`https://api.weather.com?location=${location}`);
+  return response.json();
+}
+
+async function weatherAgentWorkflow(userQuery: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      getWeather: {
+        description: "Get current weather for a location",
+        inputSchema: z.object({ location: z.string() }),
+        execute: getWeather,
+      },
+    },
+    system: "You are a helpful weather assistant. Always provide accurate weather information.",
+  });
+
+  await agent.stream({
+    messages: [
+      {
+        role: "user",
+        content: userQuery,
+      },
+    ],
+    writable: getWritable<UIMessageChunk>(),
+  });
+}
+```
+
+### Beberapa Alat
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function getWeather({ location }: { location: string }) {
+  "use step";
+  return `Weather in ${location}: Sunny, 72°F`;
+}
+
+async function searchEvents({ location, category }: { location: string; category: string }) {
+  "use step";
+  return `Found 5 ${category} events in ${location}`;
+}
+
+async function multiToolAgentWorkflow(userQuery: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      getWeather: {
+        description: "Get weather for a location",
+        inputSchema: z.object({ location: z.string() }),
+        execute: getWeather,
+      },
+      searchEvents: {
+        description: "Search for upcoming events in a location",
+        inputSchema: z.object({ location: z.string(), category: z.string() }),
+        execute: searchEvents,
+      },
+    },
+  });
+
+  await agent.stream({
+    messages: [
+      {
+        role: "user",
+        content: userQuery,
+      },
+    ],
+    writable: getWritable<UIMessageChunk>(),
+  });
+}
+```
+
+### Percakapan Multi-langkah
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { z } from "zod";
+
+async function searchProducts({ query }: { query: string }) {
+  "use step";
+  // Search product database
+  return `Found 3 products matching "${query}"`;
+}
+
+async function multiTurnAgentWorkflow() {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      searchProducts: {
+        description: "Search for products",
+        inputSchema: z.object({ query: z.string() }),
+        execute: searchProducts,
+      },
+    },
+  });
+
+  const writable = getWritable<UIMessageChunk>();
+
+  // First user message
+  //   - Result is streamed to the provided `writable` stream
+  //   - Message history is returned in `messages` for LLM context
+  let { messages } = await agent.stream({
+    messages: [
+      { role: "user", content: "Find me some laptops" }
+    ],
+    writable,
+  });
+
+  // Continue the conversation with the accumulated message history
+  const result = await agent.stream({
+    messages: [
+      ...messages,
+      { role: "user", content: "Which one has the best battery life?" }
+    ],
+    writable,
+  });
+
+  // result.messages now contains the complete conversation history
+  return result.messages;
+}
+```
+
+### Alat dengan Fitur Perpustakaan Workflow
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { sleep, defineHook, getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+// Define a reusable hook type
+const approvalHook = defineHook<{ approved: boolean; reason: string }>();
+
+async function scheduleTask({ delaySeconds }: { delaySeconds: number }) {
+  // Note: No "use step" for this tool call,
+  // since `sleep()` is a workflow level function
+  await sleep(`${delaySeconds}s`);
+  return `Slept for ${delaySeconds} seconds`;
+}
+
+async function requestApproval({ message }: { message: string }) {
+  // Note: No "use step" for this tool call either,
+  // since hooks are awaited at the workflow level
+
+  // Utilize a Hook for Human-in-the-loop approval
+  const hook = approvalHook.create({
+    metadata: { message }
+  });
+
+  console.log(`Approval needed - token: ${hook.token}`);
+
+  // Wait for the approval payload
+  const approval = await hook;
+
+  if (approval.approved) {
+    return `Request approved: ${approval.reason}`;
+  } else {
+    throw new Error(`Request denied: ${approval.reason}`);
+  }
+}
+
+async function agentWithLibraryFeaturesWorkflow(userRequest: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    tools: {
+      scheduleTask: {
+        description: "Pause the workflow for the specified number of seconds",
+        inputSchema: z.object({
+          delaySeconds: z.number(),
+        }),
+        execute: scheduleTask,
+      },
+      requestApproval: {
+        description: "Request approval for an action",
+        inputSchema: z.object({ message: z.string() }),
+        execute: requestApproval,
+      },
+    },
+  });
+
+  await agent.stream({
+    messages: [{ role: "user", content: userRequest }],
+    writable: getWritable<UIMessageChunk>(),
+  });
+}
+```
+
+### Konteks Dinamis dengan prepareStep
+
+Gunakan `prepareStep` untuk memodifikasi pengaturan sebelum setiap langkah dalam loop agen:
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import type { UIMessageChunk } from "ai";
+
+async function agentWithPrepareStep(userMessage: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "openai/gpt-4.1-mini", // Default model
+    system: "You are a helpful assistant.",
+  });
+
+  await agent.stream({
+    messages: [{ role: "user", content: userMessage }],
+    writable: getWritable<UIMessageChunk>(),
+    prepareStep: async ({ stepNumber, messages }) => {
+      // Switch to a stronger model for complex reasoning after initial steps
+      if (stepNumber > 2 && messages.length > 10) {
+        return {
+          model: "anthropic/claude-sonnet-4.5",
+        };
+      }
+
+      // Trim context if messages grow too large
+      if (messages.length > 20) {
+        return {
+          messages: [
+            messages[0], // Keep system message
+            ...messages.slice(-10), // Keep last 10 messages
+          ],
+        };
+      }
+
+      return {}; // No changes
+    },
+  });
+}
+```
+
+### Penyuntikan Pesan dengan prepareStep
+
+Suntikkan pesan dari sumber eksternal (seperti hooks) sebelum setiap panggilan LLM:
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable, defineHook } from "workflow";
+import type { UIMessageChunk } from "ai";
+
+const messageHook = defineHook<{ message: string }>();
+
+async function agentWithMessageQueue(initialMessage: string) {
+  "use workflow";
+
+  const messageQueue: Array<{ role: "user"; content: string }> = [];
+
+  // Listen for incoming messages via hook
+  const hook = messageHook.create();
+  hook.then(({ message }) => {
+    messageQueue.push({ role: "user", content: message });
+  });
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    system: "You are a helpful assistant.",
+  });
+
+  await agent.stream({
+    messages: [{ role: "user", content: initialMessage }],
+    writable: getWritable<UIMessageChunk>(),
+    prepareStep: ({ messages }) => {
+      // Inject queued messages before the next step
+      if (messageQueue.length > 0) {
+        const newMessages = messageQueue.splice(0);
+        return {
+          messages: [
+            ...messages,
+            ...newMessages.map(m => ({
+              role: m.role,
+              content: [{ type: "text" as const, text: m.content }],
+            })),
+          ],
+        };
+      }
+      return {};
+    },
+  });
+}
+```
+
+## Lihat Juga
+
+- [Membangun Agen AI yang Tahan](/docs/ai) - Panduan lengkap untuk membuat agen tahan
+- [Mengantri Pesan Pengguna](/docs/ai/message-queueing) - Menggunakan prepareStep untuk penyuntikan pesan
+- [WorkflowChatTransport](/docs/api-reference/workflow-ai/workflow-chat-transport) - Lapisan transport untuk stream SDK AI
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - Memahami dasar-dasar workflow
+- [Kontrol Loop AI SDK](https://ai-sdk.dev/docs/agents/loop-control) - Pola kontrol loop agen di AI SDK

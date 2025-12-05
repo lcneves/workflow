@@ -1,0 +1,227 @@
+---
+title: SvelteKit
+description: このガイドでは、SvelteKit アプリで最初のワークフローを設定する方法を順を追って説明します。途中で、開発キットを自身のプロジェクトで使用するために必要な基本概念についても学びます。
+---
+
+<Steps>
+
+<Step>
+## SvelteKit プロジェクトを作成する
+
+最初に新しい SvelteKit プロジェクトを作成します。このコマンドは `my-workflow-app` という名前の新しいディレクトリを最小構成で作成し、その中に SvelteKit プロジェクトをセットアップします。
+
+```bash
+npx sv create my-workflow-app --template=minimal --types=ts --no-add-ons
+```
+
+作成したディレクトリに移動します:
+
+```bash
+cd my-workflow-app
+```
+
+### `workflow` をインストールする
+
+```package-install
+npm i workflow
+```
+
+### Vite を設定する
+
+Vite の設定に `workflowPlugin()` を追加します。これにより `"use workflow"` と `"use step"` ディレクティブの使用が可能になります。
+
+```typescript title="vite.config.ts" lineNumbers
+import { sveltekit } from "@sveltejs/kit/vite";
+import { defineConfig } from "vite";
+import { workflowPlugin } from "workflow/sveltekit"; // [!code highlight]
+
+export default defineConfig({
+  plugins: [sveltekit(), workflowPlugin()], // [!code highlight]
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### TypeScript の IntelliSense をセットアップ（任意）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+IDE で有用なヒントを有効にするには、`tsconfig.json` に workflow プラグインを設定します:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 最初のワークフローを作成する
+
+最初のワークフロー用の新しいファイルを作成します:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+次にこれらの関数を埋めていきますが、このコードを見てみましょう:
+
+* 私たちは **workflow** 関数をディレクティブ `"use workflow"` とともに定義しています。workflow 関数は個々の **steps** のオーケストレーターだと考えてください（_orchestrator_）。
+* Workflow DevKit の `sleep` 関数は、ワークフローの実行をリソースを消費することなく一時停止することを可能にします。sleep は数秒、数時間、数日、あるいは数か月に及ぶことがあります。
+
+## ワークフローステップを作成する
+
+不足している関数を定義しましょう。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+このコードを見てみると:
+
+* ビジネスロジックは **steps** の中に存在します。ステップが **workflow** の中で呼び出されると、`sleep` と同様にワークフローが一時停止している間に別のリクエストで実行されるようキューに入れられます。
+* `sendWelcomeEmail` のようにステップがエラーをスローすると、そのステップは成功するまで（またはステップの最大再試行回数に達するまで）自動的に再試行されます。
+* エラーが意図的で再試行されるべきでない場合は、ステップ内で `FatalError` をスローできます。
+
+<Callout>
+ワークフロー、ステップ、およびイベントの一時停止や処理の他の方法については [基礎](/docs/foundations) で詳しく説明します。
+</Callout>
+
+</Step>
+
+<Step>
+
+## ルートハンドラーを作成する
+
+新しいワークフローを呼び出すには、`POST` API ルートハンドラー `src/routes/api/signup/+server.ts` にワークフローを追加する必要があります。以下のコードを使用してください:
+
+```typescript title="src/routes/api/signup/+server.ts"
+import { start } from "workflow/api";
+import { handleUserSignup } from "../../../../workflows/user-signup";
+import { json, type RequestHandler } from "@sveltejs/kit";
+
+export const POST: RequestHandler = async ({
+  request,
+}: {
+  request: Request;
+}) => {
+  const { email } = await request.json();
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+
+  return json({ message: "User signup workflow started" });
+};
+
+```
+
+このルートハンドラーは `/api/signup` に `POST` リクエストのエンドポイントを作成し、ワークフローをトリガーします。
+
+<Callout>
+ワークフローは API ルートや任意のサーバーサイドコードからトリガーできます。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 開発環境で実行する
+
+開発サーバーを起動するには、SvelteKit ルートディレクトリで次のコマンドを実行します:
+
+```bash
+npm run dev
+```
+
+開発サーバーが起動したら、ターミナルから次のコマンドを実行してワークフローをトリガーできます:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+SvelteKit 開発サーバーのログを確認して、ワークフローの実行と処理されているステップを確認してください。
+
+さらに、ワークフローの実行やステップを詳細に確認するには [Workflow DevKit CLI または Web UI](/docs/observability) を使用できます。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit の Web UI" />
+
+## 本番環境へのデプロイ
+
+Workflow DevKit アプリは現在 [Vercel](https://vercel.com/home) にデプロイする場合に最も良く動作し、特別な設定は不要です。
+
+ワークフローを他の環境にデプロイする方法については [デプロイ](/docs/deploying) セクションを確認してください。
+
+## 次のステップ
+
+* [基礎](/docs/foundations) について詳しく学ぶ。
+* 問題が発生したら [エラー](/docs/errors) を確認する。
+* [API リファレンス](/docs/api-reference) を参照する。

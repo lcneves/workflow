@@ -1,0 +1,196 @@
+---
+title: Fluxos de trabalho e etapas
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+Workflows (a.k.a. *funções duráveis*) são um modelo de programação para construir lógica de aplicação com estado e de longa duração que pode manter seu estado de execução através de reinicializações, falhas ou eventos do usuário. Ao contrário das funções serverless tradicionais que perdem todo o estado quando terminam, os workflows persistem seu progresso e podem retomar exatamente de onde pararam.
+
+Além disso, os workflows permitem modelar facilmente processos complexos de múltiplas etapas em código simples e elegante. Para isso, introduzimos duas entidades fundamentais:
+
+1. **Funções de fluxo de trabalho**: Funções que orquestram/organizam etapas
+2. **Funções de etapa**: Funções que realizam o trabalho propriamente dito
+
+## Funções de fluxo de trabalho
+
+*Diretiva: `"use workflow"`*
+
+Funções de fluxo de trabalho definem o ponto de entrada de um fluxo e organizam como as funções de etapa são chamadas. Esse tipo de função não tem acesso ao runtime completo do Node.js, e os pacotes `npm` utilizáveis são limitados.
+
+Embora isso possa parecer limitador inicialmente, esse recurso é importante para suspender e retomar com precisão a execução dos workflows.
+
+Ajuda pensar na função de fluxo de trabalho menos como um runtime JavaScript completo e mais como "costurar" várias etapas usando condicionais, loops, manipuladores try/catch, `Promise.all` e outros elementos da linguagem.
+
+```typescript lineNumbers
+export async function processOrderWorkflow(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // Orchestrate multiple steps
+  const order = await fetchOrder(orderId);
+  const payment = await chargePayment(order);
+
+  return { orderId, status: "completed" };
+}
+```
+
+**Principais características:**
+
+- Executa em um ambiente isolado sem acesso completo ao Node.js
+- Todos os resultados das etapas são persistidos no registro de eventos
+- Deve ser **determinístico** para permitir a retomada após falhas
+
+Determinismo no fluxo de trabalho é necessário para retomar o workflow a partir de uma suspensão. Essencialmente, o código do fluxo de trabalho é reexecutado várias vezes durante seu ciclo de vida, cada vez usando um registro de eventos para retomar o fluxo no ponto correto.
+
+O ambiente isolado em que os workflows são executados já garante determinismo. Por exemplo, `Math.random` e os construtores `Date` são fixos nas execuções de workflow, então é seguro usá-los, e o framework garante que os valores não mudem entre replays.
+
+## Funções de etapa
+
+*Diretiva: `"use step"`*
+
+Funções de etapa realizam o trabalho real em um workflow e têm acesso completo ao runtime.
+
+```typescript lineNumbers
+async function chargePayment(order: Order) {
+  "use step"; // [!code highlight]
+
+  // Full Node.js access - use any npm package
+  const stripe = new Stripe(process.env.STRIPE_KEY);
+
+  const charge = await stripe.charges.create({
+    amount: order.total,
+    currency: "usd",
+    source: order.paymentToken
+  });
+
+  return { chargeId: charge.id };
+}
+```
+
+**Principais características:**
+
+- Acesso completo ao runtime Node.js e a pacotes npm
+- Retentativa automática em caso de erros
+- Resultados persistidos para reprodução
+
+Por padrão, as etapas têm um máximo de 3 tentativas de retentativa antes de falharem e propagarem o erro para o fluxo de trabalho. Saiba mais sobre erros e retentativas na página [Erros e Retentativas](/docs/foundations/errors-and-retries).
+
+<Callout type="warning">
+**Importante:** Devido à serialização, os parâmetros são passados por **valor, não por referência**. Se você passar um objeto ou array para uma etapa e o mutar, essas alterações **não** serão visíveis no contexto do fluxo de trabalho. Sempre retorne os dados modificados a partir de suas funções de etapa. Veja [Semântica de passagem por valor](/docs/foundations/serialization#pass-by-value-semantics) para detalhes e exemplos.
+</Callout>
+
+<Callout type="info">
+Funções de etapa destinam-se principalmente a serem usadas dentro de um fluxo de trabalho.
+</Callout>
+
+Chamar uma etapa de fora de um fluxo de trabalho ou de outra etapa essencialmente executará a etapa no mesmo processo como uma função normal (em outras palavras, a diretiva `use step` é um no-op). Isso significa que você pode reutilizar funções de etapa em outras partes do seu código sem precisar duplicar a lógica de negócio.
+
+
+```typescript lineNumbers
+async function updateUser(userId: string) {
+  "use step";
+  await db.insert(...);
+}
+
+// Used inside a workflow
+export async function userOnboardingWorkflow(userId: string) {
+  "use workflow";
+  await updateUser(userId);
+  // ... more steps
+}
+
+// Used directly outside a workflow
+export async function POST() {
+  await updateUser("123");
+  // ... more logic
+}
+```
+
+<Callout type="info">
+Tenha em mente que chamar uma função de etapa fora de uma função de fluxo de trabalho não terá semântica de retentativa, nem será observável. Além disso, certas funções específicas de workflow como [`getStepMetadata()`](/docs/api-reference/workflow/get-step-metadata) lançarão um erro quando usadas dentro de uma etapa chamada fora de um fluxo de trabalho.
+</Callout>
+
+### Suspensão e retomada
+
+Funções de fluxo de trabalho têm a capacidade de suspender automaticamente enquanto aguardam trabalho assíncrono. Enquanto suspenso, o estado do fluxo de trabalho é armazenado no registro de eventos e nenhum recurso de computação é usado até que o fluxo retome a execução.
+
+Existem várias maneiras de um fluxo de trabalho ser suspenso:
+
+- Esperando por uma função de etapa: o fluxo de trabalho cede enquanto a etapa é executada no runtime de etapa.
+- Usando `sleep()` para pausar por uma duração fixa.
+- Aguardando uma promise retornada por [`createWebhook()`](/docs/api-reference/workflow/create-webhook), que retoma o fluxo de trabalho quando um sistema externo envia dados para o fluxo.
+
+```typescript lineNumbers
+import { sleep, createWebhook } from "workflow";
+
+export async function documentReviewProcess(userId: string) {
+  "use workflow";
+
+  await sleep("1 month"); // Sleep will suspend without consuming any resources [!code highlight]
+
+  // Create a webhook for external workflow resumption
+  const webhook = createWebhook();
+
+  // Send the webhook url to some external service or in an email, etc.
+  await sendHumanApprovalEmail("Click this link to accept the review", webhook.url)
+
+  const data = await webhook; // The workflow suspends till the URL is resumed [!code highlight]
+
+  console.log("Document reviewed!")
+}
+```
+
+## Escrevendo fluxos de trabalho
+
+### Estrutura básica
+
+O workflow mais simples consiste em uma função de fluxo de trabalho e uma ou mais funções de etapa.
+
+```typescript lineNumbers
+// Workflow function (orchestrates the steps)
+export async function greetingWorkflow(name: string) {
+  "use workflow";
+
+  const message = await greet(name);
+  return { message };
+}
+
+// Step function (does the actual work)
+async function greet(name: string) {
+  "use step";
+
+  // Access Node.js APIs
+  const message = `Hello ${name} at ${new Date().toISOString()}`;
+  console.log(message);
+  return message;
+}
+```
+
+### Estrutura do projeto
+
+Embora você possa organizar funções de fluxo de trabalho e de etapa como preferir, verificamos que projetos maiores se beneficiam de alguma estrutura:
+<Files>
+  <Folder name="workflows" defaultOpen disabled>
+    <Folder name="userOnboarding" defaultOpen disabled>
+      <File name="index.ts" />
+      <File name="steps.ts" />
+    </Folder>
+    <Folder name="aiVideoGeneration" defaultOpen disabled>
+      <File name="index.ts" />
+      <Folder name="steps" defaultOpen disabled>
+        <File name="transcribeUpload.ts" />
+        <File name="generateVideo.ts" />
+        <File name="notifyUser.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="shared" defaultOpen disabled>
+      <File name="validateInput.ts" />
+      <File name="logActivity.ts" />
+    </Folder>
+  </Folder>
+</Files>
+
+Você pode optar por organizar suas etapas em um único arquivo `steps.ts` ou em arquivos separados dentro de uma pasta `steps`. A pasta `shared` é um bom lugar para colocar etapas comuns que são usadas por múltiplos workflows.
+
+<Callout type="info">
+Dividir etapas e workflows também ajudará a evitar a maioria dos bugs relacionados ao bundler com o Workflow DevKit.
+</Callout>

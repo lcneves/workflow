@@ -1,0 +1,154 @@
+---
+title: resumeHook
+---
+
+Reprend une exécution de workflow en envoyant une charge utile à un hook identifié par son token.
+
+Il crée un événement `hook_received` et relance le workflow pour poursuivre l'exécution.
+
+<Callout type="warn">
+`resumeHook` est une fonction d'exécution qui doit être appelée en dehors d'une fonction de workflow.
+</Callout>
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const { token, data } = await request.json();
+
+  try {
+    const result = await resumeHook(token, data); // [!code highlight]
+    return Response.json({
+      runId: result.runId
+    });
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+## Signature de l'API
+
+### Paramètres
+
+<TSDoc
+definition={`
+import { resumeHook } from "workflow/api";
+export default resumeHook;`}
+showSections={["parameters"]}
+/>
+
+### Retour
+
+Retourne une `Promise<Hook>` qui se résout en :
+
+<TSDoc
+definition={`
+import type { Hook } from "@workflow/world";
+export default Hook;`}
+showSections={["returns"]}
+/>
+
+## Exemples
+
+### Route API basique
+
+Utilisation de `resumeHook` dans une route API basique pour reprendre un hook :
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const { token, data } = await request.json();
+
+  try {
+    const result = await resumeHook(token, data); // [!code highlight]
+
+    return Response.json({
+      success: true,
+      runId: result.runId
+    });
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+### Avec typage sécurisé
+
+Définition d'un type de charge utile et utilisation de `resumeHook` pour reprendre un hook avec typage sécurisé :
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+type ApprovalPayload = {
+  approved: boolean;
+  comment: string;
+};
+
+export async function POST(request: Request) {
+  const { token, approved, comment } = await request.json();
+
+  try {
+    const result = await resumeHook<ApprovalPayload>(token, { // [!code highlight]
+      approved, // [!code highlight]
+      comment, // [!code highlight]
+    }); // [!code highlight]
+
+    return Response.json({ runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Invalid token" }, { status: 404 });
+  }
+}
+```
+
+### Action côté serveur (Next.js)
+
+Utilisation de `resumeHook` dans les actions serveur Next.js pour reprendre un hook :
+
+```typescript lineNumbers
+"use server";
+
+import { resumeHook } from "workflow/api";
+
+export async function approveRequest(token: string, approved: boolean) {
+  try {
+    const result = await resumeHook(token, { approved });
+    return result.runId;
+  } catch (error) {
+    throw new Error("Invalid approval token");
+  }
+}
+```
+
+### Gestionnaire de webhook
+
+Utilisation de `resumeHook` dans un gestionnaire générique de webhook pour reprendre un hook :
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+// Generic webhook handler that forwards data to a hook
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+
+  if (!token) {
+    return Response.json({ error: "Missing token" }, { status: 400 });
+  }
+
+  try {
+    const body = await request.json();
+    const result = await resumeHook(token, body);
+
+    return Response.json({ success: true, runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Hook not found" }, { status: 404 });
+  }
+}
+```
+
+## Fonctions associées
+
+- [`createHook()`](/docs/api-reference/workflow/create-hook) - Crée un hook dans un workflow.
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - Assistant de hook avec typage sécurisé.

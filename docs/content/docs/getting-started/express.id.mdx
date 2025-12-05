@@ -1,0 +1,259 @@
+---
+title: Express
+---
+
+Panduan ini akan menjelaskan cara menyiapkan alur kerja pertama Anda di aplikasi Express. Sepanjang panduan, Anda akan mempelajari lebih lanjut tentang konsep-konsep yang mendasar untuk menggunakan development kit dalam proyek Anda sendiri.
+
+---
+
+<Steps>
+
+<Step>
+## Buat Proyek Express Anda
+
+Mulailah dengan membuat proyek Express baru.
+
+```bash
+mkdir my-workflow-app
+```
+
+Masuk ke direktori yang baru dibuat:
+
+```bash
+cd my-workflow-app
+```
+
+Inisialisasi proyek:
+
+```bash
+npm init --y
+```
+
+### Install `workflow`, `express`, `nitro`, and `rollup`
+
+```package-install
+npm i workflow express nitro rollup
+```
+
+<Callout>
+Secara default, Express tidak menyertakan sistem build. Nitro menambahkan satu yang memungkinkan pengompilan alur kerja, eksekusi run, dan penyebaran untuk pengembangan dan produksi. Pelajari lebih lanjut tentang Nitro [di sini](https://v3.nitro.build).
+</Callout>
+
+Jika menggunakan TypeScript, Anda perlu menginstal paket `@types/express`.
+
+```bash
+npm i -D @types/express
+```
+
+### Konfigurasikan Nitro
+
+Buat file baru `nitro.config.ts` untuk konfigurasi Nitro Anda dengan modul `workflow/nitro`. Ini memungkinkan penggunaan direktif `"use workflow"` dan `"use step"`.
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineNitroConfig } from "nitro/config";
+
+export default defineNitroConfig({
+  modules: ["workflow/nitro"],
+  vercel: { entryFormat: "node" },
+  routes: {
+    "/**": { handler: "./src/index.ts", format: "node" },
+  },
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Atur IntelliSense untuk TypeScript (Opsional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Untuk mengaktifkan petunjuk yang berguna di IDE Anda, atur plugin workflow di `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+### Perbarui `package.json`
+
+Untuk menggunakan builder Nitro, perbarui `package.json` Anda untuk menyertakan skrip berikut:
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## Buat Alur Kerja Pertama Anda
+
+Buat file baru untuk alur kerja pertama kita:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Kita akan mengisi fungsi-fungsi tersebut berikutnya, tetapi mari kita lihat kode ini:
+
+- Kita mendefinisikan fungsi **alur kerja** dengan direktif `"use workflow"`. Anggap fungsi alur kerja sebagai _orchestrator_ dari **langkah** individual.
+- Fungsi `sleep` dari Workflow DevKit memungkinkan kita menangguhkan eksekusi alur kerja tanpa menggunakan sumber daya. Sebuah jeda dapat berlangsung beberapa detik, jam, hari, atau bahkan bulan.
+
+## Buat Langkah Alur Kerja Anda
+
+Sekarang mari kita definisikan fungsi-fungsi yang belum ada tersebut.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Melihat kode ini:
+
+- Logika bisnis berada di dalam **langkah**. Ketika sebuah langkah dipanggil di dalam sebuah **alur kerja**, langkah tersebut akan dimasukkan ke antrean untuk dijalankan pada permintaan terpisah sementara alur kerja ditangguhkan, sama seperti `sleep`.
+- Jika sebuah langkah melempar error, seperti pada `sendWelcomeEmail`, langkah tersebut akan otomatis dicoba ulang sampai berhasil (atau mencapai jumlah retry maksimum langkah).
+- Langkah dapat melempar `FatalError` jika sebuah error disengaja dan tidak boleh dicoba ulang.
+
+<Callout>
+  Kami akan membahas lebih dalam tentang alur kerja, langkah, dan cara lain untuk menangguhkan atau menangani kejadian di [Dasar](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Buat Penangan Rute Anda
+
+Untuk memicu alur kerja baru Anda, kita akan membuat aplikasi Express dan penangan rute API baru di `src/index.ts` dengan kode berikut:
+
+```typescript title="src/index.ts"
+import express from "express";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = express();
+app.use(express.json());
+
+app.post("/api/signup", async (req, res) => {
+  const { email } = req.body;
+  await start(handleUserSignup, [email]);
+  return res.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+Penangan rute ini membuat endpoint permintaan `POST` di `/api/signup` yang akan memicu alur kerja Anda.
+
+</Step>
+
+<Step>
+
+## Jalankan di pengembangan
+
+Untuk memulai server pengembangan Anda, jalankan perintah berikut di terminal pada direktori root Express Anda:
+
+```bash
+npm run dev
+```
+
+Setelah server pengembangan Anda berjalan, Anda dapat memicu alur kerja dengan menjalankan perintah ini di terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Periksa log server pengembangan Express untuk melihat eksekusi alur kerja Anda serta langkah-langkah yang sedang diproses.
+
+Selain itu, Anda dapat menggunakan [CLI atau UI Web Workflow DevKit](/docs/observability) untuk memeriksa eksekusi dan langkah alur kerja Anda secara rinci.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+---
+
+## Menerapkan ke produksi
+
+Aplikasi Workflow DevKit saat ini bekerja paling baik jika diterapkan ke [Vercel](https://vercel.com/home) dan tidak memerlukan konfigurasi khusus.
+
+Periksa bagian [Penyebaran](/docs/deploying) untuk mempelajari bagaimana alur kerja Anda dapat diterapkan di tempat lain.
+
+## Langkah Selanjutnya
+
+- Pelajari lebih lanjut tentang [Dasar](/docs/foundations).
+- Periksa [Kesalahan](/docs/errors) jika Anda menemui masalah.
+- Jelajahi [Referensi API](/docs/api-reference).

@@ -1,0 +1,261 @@
+---
+title: Mundo Local
+---
+
+O **Mundo Local** (`@workflow/world-local`) é um backend de workflow baseado em sistema de arquivos, projetado para desenvolvimento e testes locais. Ele armazena dados de workflow como arquivos JSON no disco e fornece enfileiramento em memória.
+
+O mundo local é perfeito para desenvolvimento local porque:
+
+- Requer nenhum serviço externo ou configuração
+- Armazena dados como arquivos JSON legíveis para facilitar a depuração
+- Fornece feedback instantâneo durante o desenvolvimento
+- Funciona perfeitamente com o servidor de desenvolvimento Next.js
+
+## Como Funciona
+
+### Armazenamento
+
+O mundo local armazena todos os dados do workflow como arquivos JSON em um diretório configurável:
+
+```
+.workflow-data/
+├── runs/
+│   └── <run-id>.json
+├── steps/
+│   └── <run-id>/
+│       └── <step-id>.json
+├── hooks/
+│   └── <hook-id>.json
+└── streams/
+    └── <run-id>/
+        └── <stream-id>.json
+```
+
+Cada arquivo contém o estado completo de uma execução, etapa, hook ou stream, tornando fácil inspecionar os dados do workflow diretamente.
+
+### Enfileiramento
+
+O mundo local usa uma fila em memória com transporte HTTP:
+
+1. Quando uma etapa é enfileirada, ela é adicionada a uma fila em memória
+2. A fila processa as etapas enviando requisições HTTP para o seu servidor de desenvolvimento
+3. As etapas são executadas no endpoint `.well-known/workflow/v1/step`
+
+A fila detecta automaticamente a porta do seu servidor de desenvolvimento e ajusta a URL da fila conforme necessário.
+
+### Autenticação
+
+O mundo local fornece uma implementação simples de autenticação, já que nenhuma autenticação é exigida ou aplicada no desenvolvimento local.
+
+```typescript
+getAuthHeaders(): Promise<Record<string, string>> {
+  return Promise.resolve({});
+}
+```
+
+## Configuração
+
+### Diretório de Dados
+
+Por padrão, os dados do workflow são armazenados em `.workflow-data/` na raiz do seu projeto. Isso pode ser personalizado por variáveis de ambiente ou programaticamente.
+
+**Variável de ambiente:**
+
+```bash
+export WORKFLOW_LOCAL_DATA_DIR=./custom-workflow-data
+```
+
+**Programaticamente:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ dataDir: "./custom-workflow-data" });
+```
+
+### Porta
+
+Por padrão, o mundo local **detecta automaticamente** em qual porta sua aplicação está escutando usando introspecção do processo. Isso funciona perfeitamente com frameworks como SvelteKit, Vite e outros que usam portas não padrão.
+
+**Exemplo de detecção automática** (recomendado):
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Port is automatically detected - no configuration needed!
+const world = createLocalWorld();
+```
+
+Se a detecção automática falhar, o world usará a variável de ambiente `PORT`, e, em seguida, a porta `3000`.
+
+**Sobrescrita manual da porta** (quando necessário):
+
+Você pode sobrescrever a porta detectada automaticamente especificando-a explicitamente:
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ port: 3000 });
+```
+
+### URL Base
+
+Para casos de uso avançados como HTTPS ou hostnames personalizados, você pode sobrescrever a URL base inteira. Quando definida, isso tem precedência sobre toda detecção de porta e configuração.
+
+**Casos de uso:**
+
+- Servidores dev com HTTPS (ex.: `next dev --experimental-https`)
+- Hostnames personalizados (ex.: `local.example.com`)
+- Desenvolvimento não-localhost
+
+**Variável de ambiente:**
+
+```bash
+export WORKFLOW_LOCAL_BASE_URL=https://local.example.com:3000
+```
+
+**Programaticamente:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// HTTPS
+const world = createLocalWorld({
+  baseUrl: "https://localhost:3000"
+});
+
+// Hostname personalizado
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+```
+
+## Uso
+
+### Automático (Recomendado)
+
+O mundo local é usado automaticamente durante o desenvolvimento local:
+
+```bash
+# Start your Next.js dev server
+npm run dev
+
+# Workflows automatically use local world
+```
+
+### Manual
+
+Você pode definir explicitamente o mundo local por meio de variáveis de ambiente:
+
+```bash
+export WORKFLOW_TARGET_WORLD=local
+
+npm run dev
+```
+
+## Fluxo de Desenvolvimento
+
+Um fluxo de desenvolvimento típico com o mundo local:
+
+1. **Inicie seu servidor de desenvolvimento:**
+
+   ```bash
+   npm run dev
+   ```
+
+2. **Acione um workflow:**
+
+   ```bash
+   curl -X POST --json '{"email":"test@example.com"}' http://localhost:3000/api/signup
+   ```
+
+3. **Inspecione os resultados:**
+   - Use o [CLI ou UI Web](/docs/observability)
+   - Verifique os arquivos JSON em `.workflow-data/`
+   - Veja os logs do servidor de desenvolvimento
+
+## Inspecionando Dados
+
+### Usando Ferramentas de Observabilidade
+
+O mundo local integra-se com as ferramentas de observabilidade do Workflow DevKit:
+
+```bash
+# View runs with CLI
+npx workflow inspect runs
+
+# View runs with Web UI
+npx workflow inspect runs --web
+```
+
+Saiba mais na seção [Observabilidade](/docs/observability).
+
+## Limitações
+
+O mundo local é projetado para desenvolvimento, não para produção:
+
+- **Não escalável** - Usa enfileiramento em memória
+- **Não persistente** - Dados são armazenados em arquivos locais
+- **Instância única** - Não consegue lidar com implantações distribuídas
+- **Sem autenticação** - Adequado apenas para desenvolvimento local
+
+Para implantações em produção, use o [Vercel World](/docs/deploying/world/vercel-world).
+
+## Referência da API
+
+### `createLocalWorld`
+
+Cria uma instância do mundo local:
+
+```typescript
+function createLocalWorld(
+  args?: Partial<{
+    dataDir: string;
+    port: number;
+    baseUrl: string;
+  }>
+): World
+```
+
+**Parâmetros:**
+
+- `args` - Objeto de configuração opcional:
+  - `dataDir` - Diretório para armazenar os dados do workflow (padrão: `.workflow-data/` ou variável de ambiente `WORKFLOW_LOCAL_DATA_DIR`)
+  - `port` - Sobrescrita da porta para o transporte da fila (padrão: detectado automaticamente → variável de ambiente `PORT` → `3000`)
+  - `baseUrl` - Sobrescrita da URL base completa para o transporte da fila (padrão: `http://localhost:{port}` ou variável de ambiente `WORKFLOW_LOCAL_BASE_URL`)
+
+**Retorna:**
+
+- `World` - Uma instância World que implementa a interface World
+
+**Exemplos:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Use all defaults (recommended - auto-detects port)
+const world = createLocalWorld();
+
+// Custom data directory
+const world = createLocalWorld({ dataDir: "./my-data" });
+
+// Override port
+const world = createLocalWorld({ port: 3000 });
+
+// HTTPS with custom hostname
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+
+// Multiple options
+const world = createLocalWorld({
+  dataDir: "./my-data",
+  baseUrl: "https://localhost:3000"
+});
+```
+
+## Saiba Mais
+
+- [Interface do World](/docs/deploying/world) - Entendendo a interface World
+- [Vercel World](/docs/deploying/world/vercel-world) - Para implantações em produção
+- [Observabilidade](/docs/observability) - Ferramentas de monitoramento e depuração

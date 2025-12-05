@@ -1,0 +1,51 @@
+---
+title: withWorkflow
+---
+
+Configura los loaders de webpack/turbopack para transformar el código de workflow (`"use step"`/`"use workflow"` directives)
+
+## Uso
+
+Para habilitar las directivas `"use step"` y `"use workflow"` al desarrollar localmente o al desplegar en producción, envuelve tu `nextConfig` con `withWorkflow`.
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next"; // [!code highlight]
+import type { NextConfig } from "next";
+ 
+const nextConfig: NextConfig = {
+  // … rest of your Next.js config
+};
+
+// not required but allows configuring workflow options
+const workflowConfig = {} 
+
+export default withWorkflow(nextConfig, workflowConfig); // [!code highlight]
+```
+
+Si estás exportando una función en tu `next.config`, necesitarás asegurarte de invocar la función que devuelve `withWorkflow`.
+
+```typescript title="next.config.ts" lineNumbers
+import { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+const withNextIntl = createNextIntlPlugin();
+
+export default async function config(
+  phase: string,
+  ctx: {
+    defaultConfig: NextConfig
+  }
+): Promise<NextConfig> {
+  let nextConfig: NextConfig | typeof config = {};
+
+  for (const configModifier of [withNextIntl, withWorkflow]) {
+    nextConfig = configModifier(nextConfig);
+
+    if (typeof nextConfig === "function") {
+      nextConfig = await nextConfig(phase, ctx);
+    }
+  }
+  return nextConfig;
+}
+```

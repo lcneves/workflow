@@ -1,0 +1,232 @@
+---
+title: Vite
+---
+
+Panduan ini akan membimbing Anda melalui penyiapan workflow pertama di aplikasi Vite. Sepanjang jalan, Anda akan mempelajari lebih banyak tentang konsep-konsep yang mendasar untuk menggunakan kit pengembangan ini dalam proyek Anda sendiri.
+
+---
+
+<Steps>
+
+<Step>
+## Buat Proyek Vite Anda
+
+Mulailah dengan membuat proyek Vite baru. Perintah ini akan membuat direktori baru bernama `my-workflow-app` dengan pengaturan minimal dan menyiapkan proyek Vite di dalamnya.
+
+```bash
+npm create vite@latest my-workflow-app -- --template react-ts
+```
+
+Masuk ke direktori yang baru dibuat:
+
+```bash
+cd my-workflow-app
+```
+
+### Instal `workflow` dan `nitro`
+
+```package-install
+npm i workflow nitro
+```
+
+<Callout>
+Sementara Vite menyediakan tooling build dan server pengembangan, Nitro menambahkan kerangka server yang dibutuhkan untuk route API dan deployment. Bersama-sama mereka memungkinkan pembuatan aplikasi full-stack dengan dukungan workflow. Pelajari lebih lanjut tentang Nitro [di sini](https://v3.nitro.build).
+</Callout>
+
+### Konfigurasikan Vite
+
+Tambahkan `workflow()` ke konfigurasi Vite Anda. Ini mengaktifkan penggunaan direktif `"use workflow"` dan `"use step"`.
+
+```typescript title="vite.config.ts" lineNumbers
+import { nitro } from "nitro/vite";
+import { defineConfig } from "vite";
+import { workflow } from "workflow/vite";
+
+export default defineConfig({
+  plugins: [nitro(), workflow()], // [!code highlight]
+  nitro: { // [!code highlight]
+    serverDir: "./", // [!code highlight]
+  }, // [!code highlight]
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Siapkan IntelliSense untuk TypeScript (Opsional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Untuk mengaktifkan petunjuk yang membantu di IDE Anda, siapkan plugin workflow di `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Buat Workflow Pertama Anda
+
+Buat file baru untuk workflow pertama kita:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+Kita akan mengisi fungsi-fungsi tersebut selanjutnya, tetapi mari lihat sekilas kode ini:
+
+* Kita mendefinisikan sebuah fungsi **workflow** dengan direktif `"use workflow"`. Anggap fungsi workflow sebagai _orchestrator_ dari **steps** individual.
+* Fungsi `sleep` dari Workflow DevKit memungkinkan kita untuk menangguhkan eksekusi workflow tanpa menggunakan sumber daya apa pun. Durasi sleep bisa beberapa detik, jam, hari, atau bahkan bulan.
+
+## Buat Step untuk Workflow Anda
+
+Sekarang mari kita definisikan fungsi-fungsi yang belum ada itu.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Melihat kode ini:
+
+* Logika bisnis berada di dalam **steps**. Ketika sebuah step dipanggil di dalam sebuah **workflow**, step itu akan dimasukkan ke antrean untuk dijalankan pada permintaan terpisah sementara workflow ditangguhkan, sama seperti `sleep`.
+* Jika sebuah step melempar error, seperti pada `sendWelcomeEmail`, step akan otomatis dicoba ulang sampai berhasil (atau mencapai batas percobaan maksimum step tersebut).
+* Steps dapat melempar `FatalError` jika suatu kesalahan disengaja dan tidak boleh dicoba ulang.
+
+<Callout>
+Kita akan membahas lebih dalam tentang workflows, steps, dan cara lain untuk menangguhkan atau menangani event di [Dasar-dasar](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Buat Handler Route Anda
+
+Untuk memanggil workflow baru Anda, kita harus menambahkan workflow ke handler route API `POST`, `api/signup.post.ts` dengan kode berikut:
+
+```typescript title="api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+Handler route ini membuat endpoint permintaan `POST` di `/api/signup` yang akan memicu workflow Anda.
+
+<Callout>
+Workflows dapat dipicu dari route API atau kode sisi-server manapun.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Jalankan di lingkungan pengembangan
+
+Untuk memulai server pengembangan Anda, jalankan perintah berikut di terminal pada direktori root Vite Anda:
+
+```bash
+npm run dev
+```
+
+Setelah server pengembangan berjalan, Anda dapat memicu workflow dengan menjalankan perintah ini di terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+Periksa log server pengembangan Vite untuk melihat eksekusi workflow Anda serta langkah-langkah yang sedang diproses.
+
+Selain itu, Anda dapat menggunakan [CLI atau Antarmuka Web Workflow DevKit](/docs/observability) untuk memeriksa detail run dan step workflow Anda.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+---
+
+## Deploy ke produksi
+
+Aplikasi Workflow DevKit saat ini bekerja paling baik ketika dideploy ke [Vercel](https://vercel.com/home) dan tidak memerlukan konfigurasi khusus.
+
+Periksa bagian [Penempatan](/docs/deploying) untuk mempelajari bagaimana workflow Anda dapat dideploy ke tempat lain.
+
+## Langkah Selanjutnya
+
+* Pelajari lebih lanjut tentang [Dasar-dasar](/docs/foundations).
+* Periksa [Kesalahan](/docs/errors) jika Anda menemui masalah.
+* Jelajahi [Referensi API](/docs/api-reference).

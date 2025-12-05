@@ -1,0 +1,151 @@
+---
+title: Serialización
+---
+
+Todos los argumentos de función y valores de retorno pasados entre funciones de workflow y step deben ser serializables. Workflow DevKit usa un sistema de serialización personalizado construido sobre [devalue](https://github.com/sveltejs/devalue). Este sistema admite los tipos JSON estándar, así como algunos tipos populares adicionales de las Web APIs.
+
+<Callout type="info">
+El sistema de serialización garantiza que todos los datos persistan correctamente a través de las suspensiones y reanudaciones del workflow, permitiendo una ejecución durable.
+</Callout>
+
+## Tipos serializables compatibles
+
+Los siguientes tipos pueden ser serializados y pasados a través de las funciones del workflow:
+
+**Tipos JSON estándar:**
+
+- `string`
+- `number`
+- `boolean`
+- `null`
+- Arrays de valores serializables
+- Objetos con claves de cadena y valores serializables
+
+**Tipos extendidos:**
+
+- `undefined`
+- `bigint`
+- `ArrayBuffer`
+- `BigInt64Array`, `BigUint64Array`
+- `Date`
+- `Float32Array`, `Float64Array`
+- `Int8Array`, `Int16Array`, `Int32Array`
+- `Map<Serializable, Serializable>`
+- `RegExp`
+- `Set<Serializable>`
+- `URL`
+- `URLSearchParams`
+- `Uint8Array`, `Uint8ClampedArray`, `Uint16Array`, `Uint32Array`
+
+**Nota:**
+
+<Callout type="info">
+Estos tipos tienen un manejo especial y se explican en detalle en las secciones siguientes.
+</Callout>
+
+- `Headers`
+- `Request`
+- `Response`
+- `ReadableStream<Serializable>`
+- `WritableStream<Serializable>`
+
+## Transmisión
+
+`ReadableStream` y `WritableStream` son compatibles como tipos serializables con un manejo especial. Estos streams pueden pasarse entre funciones de workflow y step manteniendo sus capacidades de streaming.
+
+Para información completa sobre el uso de streams en workflows, incluyendo patrones para streaming de IA, procesamiento de archivos y actualizaciones de progreso, consulta la [Guía de streaming](/docs/foundations/streaming).
+
+## Request y Response
+
+Las APIs Web [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) y [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) son compatibles con el sistema de serialización, y pueden pasarse entre funciones de workflow y step de forma similar a otros tipos de datos.
+
+Como conveniencia, estas dos APIs se tratan de forma ligeramente diferente cuando se usan dentro de una función de workflow: invocar los métodos de instancia `text()` / `json()` / `arrayBuffer()` se considera automáticamente como una invocación de una función step. Esto te permite consumir el body directamente en el contexto del workflow manteniendo la serialización y el cacheo adecuados.
+
+Por ejemplo, considera cómo recibir una solicitud webhook proporciona la instancia completa de `Request` en el contexto del workflow. Puedes consumir el body de esa solicitud directamente en el workflow, que será cacheado como un resultado de step para futuras reanudaciones del workflow:
+
+```typescript title="workflows/webhook.ts" lineNumbers
+import { createWebhook } from "workflow";
+
+export async function handleWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+  const request = await webhook;
+
+  // The body of the request will only be consumed once // [!code highlight]
+  const body = await request.json(); // [!code highlight]
+
+  // …
+}
+```
+
+### Uso de `fetch` en Workflows
+
+Debido a que `Request` y `Response` son serializables, Workflow DevKit proporciona una función `fetch` que puede usarse directamente en las funciones de workflow:
+
+```typescript title="workflows/api-call.ts" lineNumbers
+import { fetch } from "workflow"; // [!code highlight]
+
+export async function apiWorkflow() {
+  "use workflow";
+
+  // fetch can be called directly in workflows // [!code highlight]
+  const response = await fetch("https://api.example.com/data"); // [!code highlight]
+  const data = await response.json();
+
+  return data;
+}
+```
+
+La implementación es sencilla: `fetch` desde el workflow es una función step que envuelve al `fetch` estándar:
+
+```typescript title="Implementation" lineNumbers
+export async function fetch(...args: Parameters<typeof globalThis.fetch>) {
+  "use step";
+  return globalThis.fetch(...args);
+}
+```
+
+Esto te permite realizar solicitudes HTTP directamente en las funciones de workflow mientras se mantiene un comportamiento determinista de reejecución mediante el cacheo automático.
+
+## Semántica de paso por valor
+
+**Los parámetros se pasan por valor, no por referencia.** Los steps reciben copias deserializadas de los datos. Las mutaciones dentro de un step no afectarán al original en el workflow.
+
+**Incorrecto:**
+
+```typescript title="workflows/incorrect-mutation.ts" lineNumbers
+export async function updateUserWorkflow(userId: string) {
+  "use workflow";
+
+  let user = { id: userId, name: "John", email: "john@example.com" };
+  await updateUserStep(user);
+
+  // user.email is still "john@example.com" // [!code highlight]
+  console.log(user.email); // [!code highlight]
+}
+
+async function updateUserStep(user: { id: string; name: string; email: string }) {
+  "use step";
+  user.email = "newemail@example.com"; // Changes are lost // [!code highlight]
+}
+```
+
+**Correcto - devuelve los datos modificados:**
+
+```typescript title="workflows/correct-mutation.ts" lineNumbers
+export async function updateUserWorkflow(userId: string) {
+  "use workflow";
+
+  let user = { id: userId, name: "John", email: "john@example.com" };
+  user = await updateUserStep(user); // Reassign the return value // [!code highlight]
+
+  console.log(user.email); // "newemail@example.com"
+}
+
+async function updateUserStep(user: { id: string; name: string; email: string }) {
+  "use step";
+  user.email = "newemail@example.com";
+  return user; // [!code highlight]
+}
+```

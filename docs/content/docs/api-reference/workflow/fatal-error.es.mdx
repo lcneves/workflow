@@ -1,0 +1,37 @@
+---
+title: FatalError
+---
+
+Cuando se lanza un `FatalError` en un paso, indica que el flujo de trabajo no debe reintentar ese paso, marcándolo como fallido.
+
+Debe usar esto cuando no quiera que un paso específico se reintente.
+
+```typescript lineNumbers
+import { FatalError } from "workflow"
+
+async function fallibleWorkflow() {
+    "use workflow"
+    await fallibleStep();
+}
+
+async function fallibleStep() {
+    "use step"
+    throw new FatalError("Fallible!") // [!code highlight]
+}
+```
+
+## Firma de la API
+
+### Parámetros
+
+<TSDoc
+definition={`
+interface Error {
+  /**
+
+* The error message.
+   */
+  message: string;
+}
+export default Error;`}
+/>

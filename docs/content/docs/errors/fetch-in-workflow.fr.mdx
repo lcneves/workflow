@@ -1,0 +1,108 @@
+---
+title: fetch-dans-un-workflow
+---
+
+Cette erreur se produit lorsque vous essayez d'utiliser `fetch()` directement dans une fonction de workflow, ou lorsqu'une bibliothèque (comme le SDK d'IA) tente d'appeler `fetch()` en coulisses.
+
+## Message d'erreur
+
+```
+Global "fetch" is unavailable in workflow functions. Use the "fetch" step function from "workflow" to make HTTP requests.
+```
+
+## Pourquoi cela se produit
+
+Les fonctions de workflow s'exécutent dans un environnement sandbox sans accès direct à `fetch()`.
+
+De nombreuses bibliothèques effectuent des requêtes HTTP en coulisses. Par exemple, la fonction `generateText()` du SDK d'IA appelle `fetch()` pour effectuer des requêtes HTTP vers des fournisseurs d'IA. Lorsque ces bibliothèques s'exécutent à l'intérieur d'une fonction de workflow, elles échouent parce que le `fetch` global n'est pas disponible.
+
+## Solution rapide
+
+Importez la fonction d'étape `fetch` depuis le package `workflow` et assignez-la à `globalThis.fetch` à l'intérieur de votre fonction de workflow. Cette version de `fetch` est une fonction d'étape qui enveloppe l'API `fetch` standard, gérant automatiquement la sérialisation et offrant des capacités de retry. Cela rendra également `fetch()` disponible pour toutes les fonctions et bibliothèques dans la fonction de workflow actuelle.
+
+**Avant :**
+
+```typescript lineNumbers title="workflows/ai.ts"
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+export async function chatWorkflow(prompt: string) {
+  "use workflow";
+
+  // Error - generateText() calls fetch() under the hood
+  const result = await generateText({ // [!code highlight]
+    model: openai("gpt-4"), // [!code highlight]
+    prompt, // [!code highlight]
+  }); // [!code highlight]
+
+  return result.text;
+}
+```
+
+**Après :**
+
+```typescript lineNumbers title="workflows/ai.ts"
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { fetch } from "workflow"; // [!code highlight]
+
+export async function chatWorkflow(prompt: string) {
+  "use workflow";
+
+  globalThis.fetch = fetch; // [!code highlight]
+
+  // Now generateText() can make HTTP requests via the fetch step
+  const result = await generateText({
+    model: openai("gpt-4"),
+    prompt,
+  });
+
+  return result.text;
+}
+```
+
+## Scénarios courants
+
+### Intégration du SDK d'IA
+
+C'est le scénario le plus courant : utiliser des fonctions du SDK d'IA qui effectuent des requêtes HTTP :
+
+```typescript lineNumbers
+import { generateText, streamText } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { fetch } from "workflow"; // [!code highlight]
+
+export async function aiWorkflow(userMessage: string) {
+  "use workflow";
+
+  globalThis.fetch = fetch; // [!code highlight]
+
+  // generateText makes HTTP requests to OpenAI
+  const response = await generateText({
+    model: openai("gpt-4"),
+    prompt: userMessage,
+  });
+
+  return response.text;
+}
+```
+
+### Appels d'API directs
+
+Vous pouvez aussi utiliser directement la fonction d'étape `fetch` pour vos propres requêtes HTTP :
+
+```typescript lineNumbers
+import { fetch } from "workflow";
+
+export async function dataWorkflow() {
+  "use workflow";
+
+  // Use fetch directly for HTTP requests
+  const response = await fetch("https://api.example.com/data"); // [!code highlight]
+  const data = await response.json();
+
+  return data;
+}
+```
+
+Pour plus de détails sur la fonction d'étape `fetch`, voir la [Référence de l'API fetch](/docs/api-reference/workflow/fetch).

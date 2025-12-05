@@ -1,0 +1,568 @@
+---
+title: Transmissão
+---
+
+Workflows podem transmitir dados em tempo real para clientes sem esperar que todo o workflow seja concluído. Isso permite que atualizações de progresso, conteúdo gerado por IA, mensagens de log e outros dados incrementais sejam entregues à medida que os workflows são executados.
+
+## Introdução a `getWritable()`
+
+Cada execução de workflow tem uma stream gravável padrão na qual os steps podem escrever usando [`getWritable()`](/docs/api-reference/workflow/get-writable). Os dados escritos nessa stream ficam imediatamente disponíveis para os clientes que consomem a saída do workflow.
+
+```typescript title="workflows/simple-streaming.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeProgress(message: string) {
+  "use step";
+
+  // Steps can write to the run's default stream
+  const writable = getWritable<string>(); // [!code highlight]
+  const writer = writable.getWriter();
+  await writer.write(message);
+  writer.releaseLock();
+}
+
+export async function simpleStreamingWorkflow() {
+  "use workflow";
+
+  await writeProgress("Starting task...");
+  await writeProgress("Processing data...");
+  await writeProgress("Task complete!");
+}
+```
+
+### Consumindo a stream
+
+Use a propriedade `readable` do objeto `Run` para consumir a stream a partir da sua rota de API:
+
+```typescript title="app/api/stream/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { simpleStreamingWorkflow } from "./workflows/simple";
+
+export async function POST() {
+  const run = await start(simpleStreamingWorkflow);
+
+  // Return the readable stream to the client
+  return new Response(run.readable, {
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+```
+
+Quando um cliente faz uma requisição para esse endpoint, ele receberá cada mensagem conforme ela for escrita, sem esperar o término do workflow.
+
+### Retomando streams a partir de um ponto específico
+
+Use `run.getReadable({ startIndex })` para retomar uma stream a partir de uma posição específica. Isso é útil para reconectar após timeouts ou interrupções de rede:
+
+```typescript title="app/api/resume-stream/[runId]/route.ts" lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ runId: string }> }
+) {
+  const { runId } = await params;
+  const { searchParams } = new URL(request.url);
+
+  // Client provides the last chunk index they received
+  const startIndexParam = searchParams.get("startIndex"); // [!code highlight]
+  const startIndex = startIndexParam ? parseInt(startIndexParam, 10) : undefined; // [!code highlight]
+
+  const run = getRun(runId);
+  const stream = run.getReadable({ startIndex }); // [!code highlight]
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+```
+
+Isso permite que os clientes se reconectem e continuem recebendo dados de onde pararam, em vez de reiniciar desde o começo.
+
+## Streams como tipos de dados
+
+[`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream) e [`WritableStream`](https://developer.mozilla.org/en-US/docs/Web/API/WritableStream) são tipos padrão da Web Streams API que o Workflow DevKit torna serializáveis. Estes não são tipos personalizados — seguem o padrão da web — mas o Workflow DevKit adiciona a capacidade de passá-los entre funções mantendo suas capacidades de streaming.
+
+Ao contrário de valores regulares que são totalmente serializados no log de eventos, streams mantêm suas capacidades de streaming quando passadas entre funções.
+
+**Propriedades principais:**
+- Referências de stream podem ser passadas entre funções de workflow e de step
+- Os dados da stream fluem diretamente sem serem armazenados no log de eventos
+- Streams preservam seu estado através dos pontos de suspensão do workflow
+
+<Callout type="info">
+**Como as streams persistem através das suspensões do workflow**
+
+As streams no Workflow DevKit são suportadas por armazenamento persistente e retomável fornecido pela implementação do "mundo". É isso que permite que as streams mantenham seu estado mesmo quando os workflows são suspensos e retomados:
+
+- **Implantações na Vercel**: Streams são suportadas por uma stream baseada em Redis de alto desempenho
+- **Desenvolvimento local**: Fragmentos de stream são armazenados no sistema de arquivos
+</Callout>
+
+### Passando streams como argumentos
+
+Como streams são tipos de dados serializáveis, você não precisa usar o método especial [`getWritable()`](/docs/api-reference/workflow/get-writable). Você pode até mesmo encaminhar suas próprias streams através de workflows, passando-as como argumentos de fora para dentro dos steps.
+
+Aqui está um exemplo de passar a stream do corpo da requisição por um workflow para um step que a processa:
+
+```typescript title="app/api/upload/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { streamProcessingWorkflow } from "./workflows/streaming";
+
+export async function POST(request: Request) {
+  // Streams can be passed as workflow arguments
+  const run = await start(streamProcessingWorkflow, [request.body]); // [!code highlight]
+  await run.result();
+
+  return Response.json({ status: "complete" });
+}
+```
+
+```typescript title="workflows/streaming.ts" lineNumbers
+export async function streamProcessingWorkflow(
+  inputStream: ReadableStream<Uint8Array> // [!code highlight]
+) {
+  "use workflow";
+
+  // Workflow passes stream to step for processing
+  const result = await processInputStream(inputStream); // [!code highlight]
+  return { length: result.length };
+}
+
+async function processInputStream(input: ReadableStream<Uint8Array>) {
+  "use step";
+
+  // Step reads from the stream
+  const chunks: Uint8Array[] = [];
+
+  for await (const chunk of input) {
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+```
+
+## Limitação importante
+
+<Callout type="info">
+**Streams não podem ser usadas diretamente no contexto de Workflow**
+
+Você não pode ler ou escrever em streams diretamente dentro de uma função de workflow. Todas as operações com streams devem ocorrer em funções de step.
+</Callout>
+
+As funções de workflow devem ser determinísticas para suportar replay. Como as streams contornam o log de eventos por desempenho, ler dados de stream em um workflow quebraria a determinismo — cada replay poderia ver dados diferentes. Ao exigir que todas as operações de stream ocorram em steps, o framework garante comportamento consistente.
+
+Para saber mais sobre determinismo e replay, veja [Fluxos de trabalho e etapas](/docs/foundations/workflows-and-steps).
+
+```typescript title="workflows/bad-example.ts" lineNumbers
+export async function badWorkflow() {
+  "use workflow";
+
+  const writable = getWritable<string>();
+
+  // Cannot read/write streams in workflow context
+  const writer = writable.getWriter(); // [!code highlight]
+  await writer.write("data"); // [!code highlight]
+}
+```
+
+```typescript title="workflows/good-example.ts" lineNumbers
+export async function goodWorkflow() {
+  "use workflow";
+
+  // Delegate stream operations to steps
+  await writeToStream("data");
+}
+
+async function writeToStream(data: string) {
+  "use step";
+
+  // Stream operations must happen in steps
+  const writable = getWritable<string>();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## Streams com namespace
+
+Use `getWritable({ namespace: 'name' })` para criar múltiplas streams independentes para diferentes tipos de dados. Isso é útil quando você quer separar logs, métricas, saídas de dados ou outros canais distintos.
+
+```typescript title="workflows/multi-stream.ts" lineNumbers
+import { getWritable } from "workflow";
+
+type LogEntry = { level: string; message: string };
+type MetricEntry = { cpu: number; memory: number };
+
+async function writeLogs() {
+  "use step";
+
+  const logs = getWritable<LogEntry>({ namespace: "logs" }); // [!code highlight]
+  const writer = logs.getWriter();
+
+  await writer.write({ level: "info", message: "Task started" });
+  await writer.write({ level: "info", message: "Processing..." });
+
+  writer.releaseLock();
+}
+
+async function writeMetrics() {
+  "use step";
+
+  const metrics = getWritable<MetricEntry>({ namespace: "metrics" }); // [!code highlight]
+  const writer = metrics.getWriter();
+
+  await writer.write({ cpu: 45, memory: 512 });
+  await writer.write({ cpu: 52, memory: 520 });
+
+  writer.releaseLock();
+}
+
+async function closeStreams() {
+  "use step";
+
+  await getWritable({ namespace: "logs" }).close();
+  await getWritable({ namespace: "metrics" }).close();
+}
+
+export async function multiStreamWorkflow() {
+  "use workflow";
+
+  await writeLogs();
+  await writeMetrics();
+  await closeStreams();
+}
+```
+
+### Consumindo streams com namespace
+
+Use `run.getReadable({ namespace: 'name' })` para acessar streams específicas:
+
+```typescript title="app/api/multi-stream/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { multiStreamWorkflow } from "./workflows/multi";
+
+type LogEntry = { level: string; message: string };
+type MetricEntry = { cpu: number; memory: number };
+
+export async function POST(request: Request) {
+  const run = await start(multiStreamWorkflow);
+
+  // Access specific named streams // [!code highlight]
+  const logs = run.getReadable<LogEntry>({ namespace: "logs" }); // [!code highlight]
+  const metrics = run.getReadable<MetricEntry>({ namespace: "metrics" }); // [!code highlight]
+
+  // Return the logs stream to the client
+  return new Response(logs, {
+    headers: { "Content-Type": "application/json" }
+  });
+}
+```
+
+## Padrões comuns
+
+### Atualizações de progresso para tarefas de longa duração
+
+Envie atualizações de progresso incrementais para manter os usuários informados durante workflows demorados:
+
+```typescript title="workflows/batch-processing.ts" lineNumbers
+import { getWritable, sleep } from "workflow";
+
+type ProgressUpdate = {
+  item: string;
+  progress: number;
+  status: string;
+};
+
+async function processItem(
+  item: string,
+  current: number,
+  total: number
+) {
+  "use step";
+
+  const writable = getWritable<ProgressUpdate>(); // [!code highlight]
+  const writer = writable.getWriter();
+
+  // Simulate processing
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  // Send progress update // [!code highlight]
+  await writer.write({ // [!code highlight]
+    item, // [!code highlight]
+    progress: Math.round((current / total) * 100), // [!code highlight]
+    status: "processing" // [!code highlight]
+  }); // [!code highlight]
+
+  writer.releaseLock();
+}
+
+async function finalizeProgress() {
+  "use step";
+
+  await getWritable().close();
+}
+
+export async function batchProcessingWorkflow(items: string[]) {
+  "use workflow";
+
+  for (let i = 0; i < items.length; i++) {
+    await processItem(items[i], i + 1, items.length);
+    await sleep("1s");
+  }
+
+  await finalizeProgress();
+}
+```
+
+### Transmitindo respostas de IA com `DurableAgent`
+
+Transmita conteúdo gerado por IA usando [`DurableAgent`](/docs/api-reference/workflow-ai/durable-agent) de `@workflow/ai`. Ferramentas também podem emitir atualizações de progresso para a mesma stream usando [data chunks](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#streaming-custom-data) com o tipo [`UIMessageChunk`](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) do AI SDK:
+
+```typescript title="workflows/ai-assistant.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function searchFlights({ query }: { query: string }) {
+  "use step";
+
+  // Tools can emit progress updates to the stream
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+  await writer.write({ // [!code highlight]
+    type: "data-progress", // [!code highlight]
+    data: { message: `Searching flights for ${query}...` }, // [!code highlight]
+    transient: true, // [!code highlight]
+  }); // [!code highlight]
+  writer.releaseLock(); // [!code highlight]
+
+  // ... search logic ...
+  return { flights: [/* results */] };
+}
+
+export async function aiAssistantWorkflow(userMessage: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    system: "You are a helpful flight assistant.",
+    tools: {
+      searchFlights: {
+        description: "Search for flights",
+        inputSchema: z.object({ query: z.string() }),
+        execute: searchFlights,
+      },
+    },
+  });
+
+  // LLM response will be streamed to the run's writable
+  await agent.stream({
+    messages: [{ role: "user", content: userMessage }],
+    writable: getWritable<UIMessageChunk>(), // [!code highlight]
+  });
+}
+```
+
+```typescript title="app/api/ai-assistant/route.ts" lineNumbers
+import { createUIMessageStreamResponse } from "ai";
+import { start } from "workflow/api";
+import { aiAssistantWorkflow } from "./workflows/ai";
+
+export async function POST(request: Request) {
+  const { message } = await request.json();
+
+  const run = await start(aiAssistantWorkflow, [message]);
+
+  return createUIMessageStreamResponse({
+    stream: run.readable,
+  });
+}
+```
+
+<Callout type="info">
+Para uma implementação completa, veja o [exemplo de reserva de voos](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) que demonstra transmissão de respostas de IA com atualizações de progresso das ferramentas.
+</Callout>
+
+### Streaming entre steps
+
+Um step produz uma stream e outro step a consome:
+
+```typescript title="workflows/stream-pipeline.ts" lineNumbers
+export async function streamPipelineWorkflow() {
+  "use workflow";
+
+  // Streams can be passed between steps
+  const stream = await generateData(); // [!code highlight]
+  const results = await consumeData(stream); // [!code highlight]
+
+  return { count: results.length };
+}
+
+async function generateData(): Promise<ReadableStream<number>> {
+  "use step";
+
+  // Producer step creates a stream
+  return new ReadableStream<number>({
+    start(controller) {
+      for (let i = 0; i < 10; i++) {
+        controller.enqueue(i);
+      }
+      controller.close();
+    }
+  });
+}
+
+async function consumeData(readable: ReadableStream<number>) {
+  "use step";
+
+  // Consumer step reads from the stream
+  const values: number[] = [];
+  for await (const value of readable) {
+    values.push(value);
+  }
+  return values;
+}
+```
+
+### Processando arquivos grandes sem sobrecarga de memória
+
+Processe arquivos grandes transmitindo fragmentos através de steps de transformação:
+
+```typescript title="workflows/file-processing.ts" lineNumbers
+export async function fileProcessingWorkflow(fileUrl: string) {
+  "use workflow";
+
+  // Chain streams through multiple processing steps
+  const rawStream = await downloadFile(fileUrl); // [!code highlight]
+  const processedStream = await transformData(rawStream); // [!code highlight]
+  await uploadResult(processedStream); // [!code highlight]
+}
+
+async function downloadFile(url: string): Promise<ReadableStream<Uint8Array>> {
+  "use step";
+  const response = await fetch(url);
+  return response.body!;
+}
+
+async function transformData(input: ReadableStream<Uint8Array>): Promise<ReadableStream<Uint8Array>> {
+  "use step";
+
+  // Transform stream chunks without loading entire file into memory
+  return input.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      // Process each chunk individually
+      controller.enqueue(chunk);
+    }
+  }));
+}
+
+async function uploadResult(stream: ReadableStream<Uint8Array>) {
+  "use step";
+  await fetch("https://storage.example.com/upload", {
+    method: "POST",
+    body: stream,
+  });
+}
+```
+
+## Boas práticas
+
+**Libere bloqueios corretamente:**
+
+```typescript lineNumbers
+const writer = writable.getWriter();
+try {
+  await writer.write(data);
+} finally {
+  writer.releaseLock(); // Always release
+}
+```
+
+<Callout type="info">
+Bloqueios de stream adquiridos em um step aplicam-se apenas dentro desse step, não em outros steps. Isso permite que múltiplos gravadores escrevam na mesma stream concorrentemente.
+</Callout>
+
+<Callout type="info">
+Se um bloqueio não for liberado, o processo do step não poderá terminar. Mesmo que o step retorne e o workflow continue, o processo subjacente permanecerá ativo até expirar o tempo limite.
+</Callout>
+
+**Feche os streams quando terminar:**
+
+```typescript lineNumbers
+async function finalizeStream() {
+  "use step";
+
+  await getWritable().close(); // Signal completion
+}
+```
+
+As streams são fechadas automaticamente quando a execução do workflow é concluída, mas fechá-las explicitamente sinaliza conclusão aos consumidores mais cedo.
+
+**Use streams tipadas para segurança de tipo:**
+
+```typescript lineNumbers
+const writable = getWritable<MyDataType>();
+const writer = writable.getWriter();
+await writer.write({ /* typed data */ });
+```
+
+## Falhas em streams
+
+Quando um step retorna uma stream, o step é considerado bem-sucedido assim que retorna, mesmo se a stream encontrar um erro posteriormente. O workflow não irá reiniciar automaticamente o step. O consumidor da stream deve tratar erros de forma adequada. Para mais sobre comportamento de retentativas, veja [Erros e Retentativas](/docs/foundations/errors-and-retries).
+
+```typescript title="workflows/stream-error-handling.ts" lineNumbers
+import { FatalError } from "workflow";
+
+async function produceStream(): Promise<ReadableStream<number>> {
+  "use step";
+
+  // Step succeeds once it returns the stream
+  return new ReadableStream<number>({
+    start(controller) {
+      controller.enqueue(1);
+      controller.enqueue(2);
+      // Error occurs after step has completed // [!code highlight]
+      controller.error(new Error("Stream failed")); // [!code highlight]
+    }
+  });
+}
+
+async function consumeStream(stream: ReadableStream<number>) {
+  "use step";
+
+  try { // [!code highlight]
+    for await (const value of stream) {
+      console.log(value);
+    }
+  } catch (error) { // [!code highlight]
+    // Retrying won't help since the stream is already errored // [!code highlight]
+    throw new FatalError("Stream failed"); // [!code highlight]
+  } // [!code highlight]
+}
+
+export async function streamErrorWorkflow() {
+  "use workflow";
+
+  const stream = await produceStream(); // Step succeeds // [!code highlight]
+  await consumeStream(stream); // Consumer handles errors // [!code highlight]
+}
+```
+
+<Callout type="info">
+Erros em streams não acionam retentativas automáticas para o step produtor. Projete seus consumidores de stream para tratar erros adequadamente. Como a stream já está em um estado de erro, reexecutar o consumidor não ajudará — use `FatalError` para falhar o workflow imediatamente.
+</Callout>
+
+## Documentação Relacionada
+
+- [`getWritable()` API Reference](/docs/api-reference/workflow/get-writable) - Obter a stream gravável do workflow
+- [`sleep()` API Reference](/docs/api-reference/workflow/sleep) - Pausar a execução do workflow por uma duração
+- [`start()` API Reference](/docs/api-reference/workflow-api/start) - Iniciar workflows e acessar o objeto `Run`
+- [`getRun()` API Reference](/docs/api-reference/workflow-api/get-run) - Recuperar execuções e suas streams posteriormente
+- [DurableAgent](/docs/api-reference/workflow-ai/durable-agent) - Agentes de IA com suporte nativo a streaming
+- [Erros e Retentativas](/docs/foundations/errors-and-retries) - Entendendo o tratamento de erros e o comportamento de retentativas
+- [Serialização](/docs/foundations/serialization) - Entendendo quais tipos de dados podem ser passados em workflows
+- [Fluxos de trabalho e etapas](/docs/foundations/workflows-and-steps) - Conceitos principais da execução de workflows

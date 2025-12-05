@@ -1,0 +1,595 @@
+---
+title: 理解 指令
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+<Callout>
+本指南探讨了 JavaScript 指令如何支持 Workflow DevKit 的执行模型。有关工作流的入门，请参阅您所用框架的 [入门指南](/docs/getting-started)。
+</Callout>
+
+Workflow DevKit 使用 JavaScript 指令（`"use workflow"` 和 `"use step"`）作为其持久化执行模型的基础。指令提供了编译时的语义边界，使工作流能够在挂起后恢复并在重放期间保持确定性行为。
+
+本页将探讨指令如何支持该执行模型以及促成此设计的原则。
+
+要理解指令如何工作，先了解 Workflow DevKit 中的工作流和步骤是什么。
+
+## 工作流与步骤 入门
+
+Workflow DevKit 有两类函数：
+
+**步骤函数** 是具有完整 Node.js 运行时访问权限的有副作用操作。把它们想象为具名的 RPC 调用——它们运行一次，其结果会被持久化，并且可以在失败时被[重试](/docs/foundations/errors-and-retries):
+
+```typescript lineNumbers
+async function fetchUserData(userId: string) {
+  "use step";
+
+  // Full Node.js access: database calls, API requests, file I/O
+  const user = await db.query("SELECT * FROM users WHERE id = ?", [userId]);
+  return user;
+}
+```
+
+**工作流函数** 是负责协调步骤的确定性编排器。它们必须是纯函数——在重放期间，相同的步骤结果总是产生相同的输出。这是必要的，因为工作流通过从头重放代码并使用缓存的步骤结果来恢复；非确定性逻辑会破坏恢复。它们在一个沙箱环境中运行，不能直接访问 Node.js：
+
+```typescript lineNumbers
+export async function onboardUser(userId: string) {
+  "use workflow";
+
+  const user = await fetchUserData(userId); // Calls step
+
+  // Non-deterministic code would break replay behavior // [!code highlight]
+  if (Math.random() > 0.5) { // [!code highlight]
+    await sendWelcomeEmail(user); // [!code highlight]
+  } // [!code highlight]
+
+  return `Onboarded ${user.name}!`;
+}
+```
+
+**关键见解：** 工作流通过重放其代码并使用事件日志中缓存的步骤结果来从挂起处恢复。当执行到像 `await fetchUserData(userId)` 这样的步骤时：
+
+- **如果已执行：** 立即从事件日志返回缓存结果
+- **如果尚未执行：** 挂起工作流，将该步骤加入后台执行队列，并在稍后以结果恢复
+
+该重放机制要求代码是确定性的。如果 `Math.random()` 没有被固定种子，第一次执行可能返回 `0.7`（发送邮件），但重放时可能返回 `0.3`（跳过发送），从而破坏恢复。Workflow DevKit 的沙箱提供了带种子的 `Math.random()` 和 `Date`，以确保重放期间行为一致。
+
+<Callout>
+有关工作流和步骤的更深入介绍，请参阅 [工作流与步骤](/docs/foundations/workflows-and-steps)。
+</Callout>
+
+## 核心挑战
+
+该执行模型带来了强大的持久化功能——工作流可以挂起数天、在重启后存活并从任意点恢复。然而，它也要求在代码中有一个语义边界，告诉**编译器、运行时和开发者** 执行语义已发生变化。
+
+挑战在于：我们如何以一种方式标记这个边界，使其能够做到：
+
+1. 支持编译时的转换和校验
+2. 防止误用非确定性 API
+3. 允许对工作流结构进行静态分析
+4. 对 JavaScript 开发者来说感觉自然
+
+让我们看看指令之前的使用先例，以及我们考虑过的替代方案：
+
+## 指令的既有做法
+
+JavaScript 指令在在定义的作用域内改变执行语义方面已有先例：
+
+- `"use strict"`（在 2009 年 ECMAScript 5 中引入，经 TC39 标准化）改变了语言规则，使运行时更快、更安全、更可预测。
+- `"use client"` 和 `"use server"`（由 [React Server Components](https://react.dev/reference/rsc/server-components) 引入）明确定义了代码执行的“位置”边界——客户端浏览器 JavaScript 与服务器端 Node.js。
+- `"use workflow"`（由 Workflow DevKit 引入）既定义了代码运行的“位置”（在确定性的沙箱环境中）也定义了它的运行方式（确定性、可恢复、沙箱执行语义）。
+
+指令提供了构建时的契约。
+
+当 Workflow DevKit 看到 `"use workflow"` 时，它会：
+
+- 将工作流及其依赖打包为可在沙箱中运行的代码
+- 限制该沙箱中对 Node.js API 的访问
+- 启用仅通过构建工具才可能实现的未来功能和优化
+  - 例如，打包后的工作流代码可以被静态分析以生成工作流的 UML 图/可视化
+
+除了对编译器重要之外，`"use workflow"` 还向开发者明确表示你正在进入不同的执行模式。
+
+<Callout type="info">
+`"use workflow"` 指令也被随 Workflow DevKit 提供的语言服务器插件使用，以向 IDE 提供智能感知。有关设置语言服务器插件的详细信息，请查看您所用框架的[入门说明](/docs/getting-started)。
+</Callout>
+
+但我们并非一开始就采用了这种方式。我们经过了探索才得出此方案：
+
+## 我们探索过的替代方案
+
+在最终确定使用指令之前，我们对几种其他方法进行了原型设计。每种方法都有显著的局限性，令其不适合生产使用。
+
+### 仅运行时的 "Suspense" API
+
+我们的第一个概念验证使用了不需要构建步骤的基于包装器的 API：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(() => {
+  const message = run(async () => step());
+  return `${message}!`;
+});
+```
+
+该实现使用了“抛出 promise”（类似早期 React Suspense）的方式来挂起执行。当某个步骤需要运行时，我们会抛出一个 promise，在工作流边界捕获它，执行该步骤，然后用结果重放工作流。
+
+**问题：**
+
+**1. 每个副作用都需要包装**
+
+任何可能产生非确定性结果的操作都必须用 `run()` 包裹：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // These would be non-deterministic without wrapping
+  const now = await run(() => Date.now()); // [!code highlight]
+  const random = await run(() => Math.random()); // [!code highlight]
+  const user = await run(() => fetchUser()); // [!code highlight]
+
+  return { now, random, user };
+});
+```
+
+这既冗长又容易忘记。此外，如果开发者忘记包装像 `Date.now()` 这样看似无害的调用，就会导致运行时行为不稳定。
+
+例如：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  // Nothing stops you from doing this:
+  const now = Date.now(); // Non-deterministic, untracked! // [!code highlight]
+  const user = await run(() => fetchUser());
+
+  // This workflow would produce different results on replay // [!code highlight]
+  return { now, user };
+});
+```
+
+**2. 闭包与变更变得不可预测**
+
+被闭包捕获的变量在步骤改变它们时会出现意外行为：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  let counter = 0;
+
+  await run(() => {
+    counter++; // This mutation happens during step execution // [!code highlight]
+    return saveToDatabase(counter);
+  });
+
+  console.log(counter); // What is counter here? // [!code highlight]
+  // During execution: 1 (mutation preserved) // [!code highlight]
+  // During replay: 0 (mutation lost) // [!code highlight]
+  // Inconsistent behavior! // [!code highlight]
+});
+```
+
+工作流函数将被多次重放，但 `run()` 回调内的变更不会在重放之间保持。这使得对状态的推理几乎不可能。
+
+**3. 错误处理失效**
+
+由于我们使用抛出的 promise 作为控制流，`try/catch` 变得不可靠：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(async () => {
+  try {
+    const result = await run(() => step());
+    return result;
+  } catch (error) { // [!code highlight]
+    // This could catch: // [!code highlight]
+    // 1. A real error from the step // [!code highlight]
+    // 2. The thrown promise used for suspension // [!code highlight]
+    // 3. An error during replay // [!code highlight]
+    // Hard to distinguish without special handling // [!code highlight]
+    console.error(error);
+  }
+});
+```
+
+### 基于生成器的 API
+
+我们探索了使用生成器来显式表示挂起点，灵感来自类似 Effect.ts 的库：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const message = yield* run(() => step());
+  return `${message}!`;
+});
+```
+
+<Callout type="info">
+我们非常欣赏 [Effect.ts](https://effect.website/) 以及基于生成器的 API 在副作用管理方面的强大能力。然而，针对工作流编排，我们发现这种语法对不熟悉生成器的开发者来说过于繁重。
+</Callout>
+
+**问题：**
+
+**1. 语法更像是 DSL，而非 JavaScript**
+
+生成器要求一种与熟悉的 async/await 模式显著不同的思维模型。`yield*` 语法和生成器委托对许多开发者来说不熟悉：
+
+```typescript lineNumbers
+// Standard async/await (familiar)
+const result = await fetchData();
+
+// Generator-based (unfamiliar)
+const result = yield* run(() => fetchData()); // [!code highlight]
+```
+
+复杂工作流尤其变得冗长且难以阅读：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const user = yield* run(() => fetchUser());
+
+  // Can't use Promise.all directly - need sequential calls or custom helpers // [!code highlight]
+  const orders = yield* run(() => fetchOrders(user.id)); // [!code highlight]
+  const payments = yield* run(() => fetchPayments(user.id)); // [!code highlight]
+
+  // Or create a custom generator-aware parallel helper: // [!code highlight]
+  const [orders2, payments2] = yield* all([ // [!code highlight]
+    run(() => fetchOrders(user.id)), // [!code highlight]
+    run(() => fetchPayments(user.id)) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { user, orders, payments };
+});
+```
+
+**2. 仍然无法在编译时进行沙箱化**
+
+与仅运行时方法类似，生成器无法阻止非确定性代码：
+
+```typescript lineNumbers
+export const myWorkflow = workflow(function*() {
+  const now = Date.now(); // Still possible, still problematic // [!code highlight]
+  const user = yield* run(() => fetchUser());
+  return { now, user };
+});
+```
+
+生成器语法解决了挂起问题，但并未解决根本性的沙箱化问题。
+
+### 基于文件系统的约定
+
+我们探索了使用文件系统约定来识别工作流和步骤，类似于现代框架处理路由的方式（Next.js、Hono、Nitro、SvelteKit 等）：
+
+<Files>
+  <Folder name="workflows" defaultOpen>
+    <File name="onboarding.ts" />
+    <File name="checkout.ts" />
+  </Folder>
+  <Folder name="steps" defaultOpen>
+    <File name="send-email.ts" />
+    <File name="charge-payment.ts" />
+  </Folder>
+</Files>
+
+采用这种方式，`workflows/` 目录中的任何函数都会被转换为工作流，`steps/` 中的任何函数都会被视为步骤。不需要指令，只需文件位置即可。
+
+**为何这可能行得通：**
+
+- 关注点分离明确
+- 基于文件路径支持编译器转换
+- 对习惯文件路由的开发者（例如 Next.js）而言熟悉的模式
+
+**为何我们放弃了：**
+
+**1. 对多样化生态过于武断**
+
+不同框架和开发者对项目结构有强烈偏好。强制采用特定的目录布局常会与各种约定冲突，尤其是在现有代码库中。
+
+**2. 不支持可发布、可重用的函数**
+
+我们希望开发者能够发布包含步骤和工作流指令的 npm 库。理想情况下，逻辑应当是同构的，既可以有也可以没有 Workflow DevKit 的情况下使用。基于文件系统的约定使得这一点变得不可能。
+
+**3. 迁移与代码重用变得困难**
+
+迁移现有代码需要移动文件并重构项目，而不是简单地添加一行代码。
+
+指令方法解决了所有这些问题：它在任何项目结构中均可工作，支持代码重用与迁移，支持 npm 包，并允许函数根据其执行上下文进行适配。
+
+### 装饰器
+
+我们考虑过装饰器，但它们在技术性和可用性方面都带来了重大挑战。
+
+**装饰器尚未成为标准且以类为中心**
+
+装饰器尚未成为标准语法（[TC39 提案](https://github.com/tc39/proposal-decorators)），且目前仅对类生效。基于类的装饰器示例可能如下：
+
+```typescript lineNumbers
+import {workflow, step} from "workflow";
+
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) { // [!code highlight]
+    const order = await this.fetchOrder(orderId);
+    const payment = await this.processPayment(order);
+    return { orderId, payment };
+  }
+
+  @step() // [!code highlight]
+  static async fetchOrder(orderId: string) { // [!code highlight]
+    // ...
+  }
+}
+```
+
+这种方法需要：
+
+- 使用类样板代码和静态方法
+- 存储/变更类属性并不直观（与仅运行时方法类似的闭包/变更问题）
+- 面向类的语法对于习惯函数式模式的开发者来说并不“JavaScript 原生”
+
+随着 JavaScript 生态向以函数为主的编程演进（例如 React 从类组件转向函数与 hooks），要求开发者使用类显得有些倒退，也不符合我们作为 DevKit 作者的偏好。
+
+**核心问题：将工作流呈现为常规运行时代码**
+
+尽管装饰器可以通过构建工具在编译时处理，但它们会将工作流函数呈现为看似普通、可组合的 JavaScript 代码，而实际上它们是需要特殊处理的编译时声明。
+
+<Callout>
+参见下文的 [宏包装器](#macro-wrapper-approach) 部分，了解为何该方法在具体示例中会失效。
+</Callout>
+
+### 宏包装器方法
+
+我们还探索了编译时宏方法——使用编译器将包装函数或装饰器转换为基于指令的代码：
+
+```typescript lineNumbers
+// Function wrapper approach
+import { useWorkflow } from "workflow"
+
+export const processOrder = useWorkflow(async (orderId: string) => { // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+});
+
+// Decorator approach (would work similarly)
+class MyWorkflow {
+  @workflow() // [!code highlight]
+  static async processOrder(orderId: string) {
+    const order = await fetchOrder(orderId);
+    return { orderId };
+  }
+
+  // ...
+}
+```
+
+编译器可以将两者都转换为等同于 WDK 指令方法的形式：
+
+```typescript lineNumbers
+export const processOrder = async (orderId: string) => {
+  "use workflow"; // [!code highlight]
+  const order = await fetchOrder(orderId);
+  return { orderId };
+};
+```
+
+优点是宏可以在类型上施加约束并直接提供 “转到定义” 或其他 LSP 功能。
+
+然而，**核心问题仍然存在：工作流并不是运行时值**
+
+根本问题在于包装器和装饰器会让工作流看起来是**一等的、运行时的值**，而实际上它们是**编译时的声明**。这种语法与语义的不匹配会产生大量失败模式。
+
+**具体示例说明为何会失效：**
+
+```typescript lineNumbers
+// Someone writes a "helpful" utility
+function withRetry(fn: Function) {
+  return useWorkflow(async (...args) => { // Works with useWorkflow // [!code highlight]
+    try {
+      return await fn(...args);
+    } catch (error) {
+      return await fn(...args); // Retry once
+    }
+  });
+}
+
+// Note: the same utility would be written similarly for a decorator based syntax
+
+// Usage looks innocent in both cases
+export const processOrder = withRetry(async (orderId: string) => { // [!code highlight]
+  // Is this deterministic? Can it call steps?
+  // Nothing in this function indicates the developer is in the
+  // deterministic sandboxed workflow
+  // Also where is the retry happening? inside or outside the workflow?
+  const order = await fetchOrder(orderId);
+  return order;
+});
+```
+
+编写 `processOrder` 的开发者看不出自己正处于确定性、受沙箱限制的环境中。同样也不清楚重试逻辑是在工作流内部执行还是外部执行，而实际行为很可能与开发者直觉不符。
+
+**为什么编译器无法捕获这一点：**
+
+要检测 `processOrder` 实际上是工作流，编译器需要进行全程序分析以追踪：
+
+1. `withRetry` 返回的是 `useWorkflow` 的结果
+2. 因此 `processOrder = withRetry(...)` 是一个工作流
+3. 传给 `withRetry` 的函数将在沙箱上下文中执行
+
+这种跨函数的分析对构建工具来说不切实际——它需要分析代码库中及其所有依赖的每一个函数调用链。编译器只能可靠地检测到直接的 `useWorkflow` 调用，而不能检测隐藏在抽象背后的调用。
+
+## 指令如何解决这些问题
+
+指令解决了我们在前述方法中遇到的所有问题：
+
+**1. 编译时语义边界**
+
+`"use workflow"` 指令告诉编译器以不同方式处理这段代码：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow"; // Compiler knows: transform this for sandbox execution // [!code highlight]
+
+  const order = await fetchOrder(orderId); // Compiler knows: this is a step call // [!code highlight]
+  return { orderId, order };
+}
+```
+
+**2. 构建时校验**
+
+编译器可以在部署前强制执行限制：
+
+```typescript lineNumbers
+export async function badWorkflow() {
+  "use workflow";
+
+  const crypto = require("crypto"); // Build error: Node.js module in workflow // [!code highlight]
+  return crypto.randomBytes(16);
+}
+```
+
+实际上，Workflow DevKit 会抛出一个错误并链接到此错误页面：[Node.js module in workflow](/docs/errors/node-js-module-in-workflow)
+
+**3. 无闭包歧义**
+
+步骤被转换为与运行时通信的函数调用：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  let counter = 0;
+
+  // This essentially becomes: await enqueueStep("updateCounter", [counter])
+  // The step receives counter as a parameter, not a closure
+  await updateCounter(counter); // [!code highlight]
+
+  console.log(counter); // Always 0, consistently // [!code highlight]
+}
+```
+
+然而，回调会在工作流沙箱内部运行并如预期工作：
+
+```typescript lineNumbers
+export async function processOrders(orderIds: string[]) {
+  "use workflow";
+
+  let successCount = 0;
+
+  // Callbacks run in the workflow context, not skipped on replay
+  await Promise.all(orderIds.map(async (orderId) => {
+    const order = await fetchOrder(orderId); // Step call
+    if (order.status === "completed") {
+      successCount++; // Mutation works correctly // [!code highlight]
+    }
+  }));
+
+  console.log(successCount); // Consistent across replays
+  return { total: orderIds.length, successful: successCount };
+}
+```
+
+回调在工作流沙箱中运行，因此闭包读取和变更在重放期间表现一致。
+
+**4. 自然的语法**
+
+看起来并且感觉就像常规 JavaScript：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Standard async/await patterns work naturally // [!code highlight]
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // [!code highlight]
+    fetchUser(userId) // [!code highlight]
+  ]); // [!code highlight]
+
+  return { order, user };
+}
+```
+
+**5. 对步骤的一致语法**
+
+`"use step"` 指令保持了一致性。尽管步骤在完整的 Node.js 运行时中运行并且*可以*在没有指令的情况下工作，但它们需要某种方式向工作流运行时表明它们是步骤。
+
+我们本可以仅为步骤使用函数包装器：
+
+```typescript lineNumbers
+// Mixed approach (inconsistent)
+export async function processOrder(orderId: string) {
+  "use workflow"; // Directive for workflow // [!code highlight]
+
+  const order = await step(async () => fetchOrder(orderId));
+  return order;
+}
+
+const fetchOrder = useStep(() => { // Wrapper for step? // [!code highlight]
+  // ...
+})
+```
+
+混合语法感觉不一致。
+
+我们考虑过的另一种替代方案是将*所有*异步函数调用默认视为步骤：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // Every async call becomes a step automatically?
+  const [order, user] = await Promise.all([ // [!code highlight]
+    fetchOrder(orderId), // Step
+    fetchUser(userId)    // Step
+  ]);
+
+  return { order, user };
+}
+```
+
+这种方法行不通，因为许多在工作流内部有效的异步操作并不是步骤：
+
+```typescript lineNumbers
+export async function processOrder(orderId: string) {
+  "use workflow";
+
+  // These are valid async calls that SHOULD NOT be steps:
+  const results = await Promise.all([...]); // Language primitive // [!code highlight]
+  const winner = await Promise.race([...]); // Language primitive // [!code highlight]
+
+  // Helper function that formats data
+  const formatted = await formatOrderData(order); // Pure JavaScript helper // [!code highlight]
+}
+```
+
+通过要求显式的 `"use step"` 指令，开发者可以精细控制哪些成为持久化、可重试的步骤，哪些在工作流沙箱中内联执行。
+
+<Callout>
+要了解指令在编译时如何被转换，请参阅 [代码转换是如何工作的](/docs/how-it-works/code-transform)。
+</Callout>
+
+## 指令启用的功能
+
+因为 `"use workflow"` 定义了编译时语义边界，我们可以提供：
+
+<Cards>
+  <Card title="构建时校验">
+    编译器在部署前捕获无效模式：检测被禁止的导入、阻止直接副作用，并验证工作流结构。
+  </Card>
+  <Card title="静态分析">
+    在不执行代码的情况下分析工作流：自动生成 UML 或 DAG 图表，提供可观测性与可视化，并优化执行路径。
+  </Card>
+  <Card title="持久化执行">
+    工作流可以安全地挂起与恢复：在步骤之间持久化执行状态，在失败或部署后从检查点恢复，并在缩减到零实例时不丢失进度。
+  </Card>
+  <Card title="未来优化">
+    语义边界使得计划中的改进成为可能：更小的序列化状态以加快检查点、基于工作流结构的智能调度以及更高效的挂起与恢复。
+  </Card>
+</Cards>
+
+## 指令作为一种 JavaScript 模式
+
+JavaScript 中的指令一直是开发者与执行环境之间的契约。`"use strict"` 使这一模式变得熟悉——它是一个改变代码解释方式的字符串字面量。
+
+尽管 JavaScript 尚未对自定义指令（如 Rust 的 `#[attribute]` 或 C++ 的 `#pragma`）提供一流支持，字符串字面量指令是当下最务实的可用工具。
+
+作为 TC39 的成员，我们在 Vercel 正积极与该标准机构及更广泛的生态系统合作，探索用于表达执行语义的类似 pragma 语法或宏注释的正式规范。
+
+## 结语
+
+指令并非纯粹的语法偏好，而是表达语义边界的工具。`"use workflow"` 告诉编译器、开发者和运行时：这段代码是确定性、可恢复且受沙箱限制的。
+
+这种明确性使 Workflow DevKit 能够在熟悉的 JavaScript 模式下提供持久化执行，同时保持可靠的工作流编排所需的编译时保证。

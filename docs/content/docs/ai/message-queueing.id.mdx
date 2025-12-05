@@ -1,0 +1,102 @@
+---
+title: Mengantri Pesan Pengguna
+---
+
+Saat menggunakan [alur kerja multi-turn](/docs/ai/chat-session-modeling#multi-turn-workflows), pesan biasanya tiba di antara giliran agen. Alur kerja menunggu di sebuah hook, menerima pesan, lalu memulai giliran baru. Tetapi terkadang Anda perlu menyuntikkan pesan *selama* giliran agen, sebelum pemanggilan tool selesai atau saat model sedang melakukan penalaran.
+
+`DurableAgent`'s `prepareStep` callback memungkinkan hal ini dengan dijalankan sebelum setiap langkah dalam loop agen, memberi Anda kesempatan untuk menyuntikkan pesan yang diantri ke dalam percakapan. `prepareStep` juga memungkinkan Anda memodifikasi pilihan model dan pesan yang ada di tengah giliran, lihat [callback prepareStep] AI SDK untuk detail lebih lanjut.
+
+## Kapan Digunakan
+
+Pengantrean pesan berguna ketika:
+
+- Pengguna mengirim pesan lanjutan sementara agen masih mencari penerbangan atau memproses pemesanan
+- Sistem eksternal perlu menyuntikkan konteks di tengah giliran (mis. webhook status penerbangan dipicu saat pemrosesan)
+- Anda ingin pesan memengaruhi langkah agen berikutnya alih-alih menunggu giliran saat ini selesai
+
+<Callout type="info">
+Jika Anda hanya membutuhkan percakapan multi-turn dasar di mana pesan tiba di antara giliran, lihat [Pemodelan Sesi Obrolan](/docs/ai/chat-session-modeling). Panduan ini membahas kasus yang lebih lanjutan tentang menyuntikkan pesan *selama* giliran.
+</Callout>
+
+## Callback `prepareStep`
+
+Callback `prepareStep` dijalankan sebelum setiap langkah dalam loop agen. Callback ini menerima status saat ini dan dapat memodifikasi pesan yang dikirim ke model:
+
+```typescript lineNumbers
+interface PrepareStepInfo {
+  model: string | (() => Promise<LanguageModelV2>);  // Current model
+  stepNumber: number;                                // 0-indexed step count
+  steps: StepResult[];                               // Previous step results
+  messages: LanguageModelV2Prompt;                   // Messages to be sent
+}
+
+interface PrepareStepResult {
+  model?: string | (() => Promise<LanguageModelV2>); // Override model
+  messages?: LanguageModelV2Prompt;                  // Override messages
+}
+```
+
+## Menyuntikkan Pesan yang Diantri
+
+Setelah Anda memiliki [alur kerja multi-turn](/docs/ai/chat-session-modeling#multi-turn-workflows), Anda dapat menggabungkan antrean pesan dengan `prepareStep` untuk menyuntikkan pesan yang tiba selama pemrosesan:
+
+```typescript title="workflows/chat/workflow.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import type { UIMessageChunk } from "ai";
+import { getWritable } from "workflow";
+import { chatMessageHook } from "./hooks/chat-message";
+import { flightBookingTools, FLIGHT_ASSISTANT_PROMPT } from "./steps/tools";
+
+export async function chatWorkflow(threadId: string, initialMessage: string) {
+  "use workflow";
+
+  const writable = getWritable<UIMessageChunk>();
+  const messageQueue: Array<{ role: "user"; content: string }> = []; // [!code highlight]
+
+  const agent = new DurableAgent({
+    model: "bedrock/claude-4-5-haiku-20151001-v1",
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+
+  // Listen for messages in background (non-blocking) // [!code highlight]
+  const hook = chatMessageHook.create({ token: `thread:${threadId}` }); // [!code highlight]
+  hook.then(({ message }) => { // [!code highlight]
+    messageQueue.push({ role: "user", content: message }); // [!code highlight]
+  }); // [!code highlight]
+
+  await agent.stream({
+    messages: [{ role: "user", content: initialMessage }],
+    writable,
+    prepareStep: ({ messages: currentMessages }) => { // [!code highlight]
+      // Inject any queued messages before the next LLM call // [!code highlight]
+      if (messageQueue.length > 0) { // [!code highlight]
+        const newMessages = messageQueue.splice(0); // Drain queue // [!code highlight]
+        return { // [!code highlight]
+          messages: [ // [!code highlight]
+            ...currentMessages, // [!code highlight]
+            ...newMessages.map(m => ({ // [!code highlight]
+              role: m.role, // [!code highlight]
+              content: [{ type: "text" as const, text: m.content }], // [!code highlight]
+            })), // [!code highlight]
+          ], // [!code highlight]
+        }; // [!code highlight]
+      } // [!code highlight]
+      return {}; // [!code highlight]
+    }, // [!code highlight]
+  });
+}
+```
+
+Pesan yang dikirim melalui `chatMessageHook.resume()` menumpuk dalam antrean dan disuntikkan sebelum langkah berikutnya, baik itu pemanggilan tool atau permintaan LLM lainnya.
+
+<Callout type="info">
+Callback `prepareStep` menerima pesan dalam format `LanguageModelV2Prompt` (dengan array konten), yang merupakan format internal yang digunakan oleh AI SDK.
+</Callout>
+
+## Dokumentasi Terkait
+
+- [Pemodelan Sesi Obrolan](/docs/ai/chat-session-modeling) - Pola satu-giliran vs multi-giliran
+- [Membangun Agen AI Tahan Lama](/docs/ai) - Panduan lengkap untuk membuat agen tahan lama
+- [`DurableAgent` Referensi API](/docs/api-reference/workflow-ai/durable-agent) - Dokumentasi API lengkap
+- [`defineHook()` Referensi API](/docs/api-reference/workflow/define-hook) - Opsi konfigurasi hook

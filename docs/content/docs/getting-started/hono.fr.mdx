@@ -1,0 +1,242 @@
+---
+title: Hono
+description: Ce guide vous expliquera comment configurer votre premier workflow dans une application Hono. En chemin, vous en apprendrez davantage sur les concepts fondamentaux pour utiliser le kit de développement dans vos propres projets.
+---
+
+<Steps>
+
+<Step>
+## Créez votre projet Hono
+
+Commencez par créer un nouveau projet Hono. Cette commande créera un nouveau répertoire nommé `my-workflow-app` et configurera un projet Hono à l'intérieur.
+
+```bash
+npm create hono@latest my-workflow-app -- --template=nodejs
+```
+
+Entrez dans le répertoire nouvellement créé :
+
+```bash
+cd my-workflow-app
+```
+
+### Installer `workflow`, `nitro` et `rollup`
+
+```package-install
+npm i workflow nitro rollup
+```
+
+<Callout>
+Par défaut, Hono n'inclut pas de système de build. Nitro en ajoute un qui permet de compiler les workflows, d'exécuter les runs et de déployer en développement et en production. En savoir plus sur Nitro [ici](https://v3.nitro.build).
+</Callout>
+
+### Configurer Nitro
+
+Créez un nouveau fichier `nitro.config.ts` pour votre configuration Nitro avec le module `workflow/nitro`. Cela permet l'utilisation des directives `"use workflow"` et `"use step"`.
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  modules: ["workflow/nitro"],
+  routes: {
+    "/**": "./src/index.ts"
+  }
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Configurer IntelliSense pour TypeScript (Optionnel)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Pour activer des suggestions utiles dans votre IDE, configurez le plugin workflow dans `tsconfig.json` :
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+### Mettre à jour `package.json`
+
+Pour utiliser le builder Nitro, mettez à jour votre `package.json` pour inclure les scripts suivants :
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## Créez votre premier workflow
+
+Créez un nouveau fichier pour notre premier workflow :
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Nous remplirons ces fonctions ensuite, mais examinons d'abord ce code :
+
+- Nous définissons une fonction **flux de travail** avec la directive `"use workflow"`. Considérez la fonction de workflow comme l'_orchestrateur_ des **étapes** individuelles.
+- La fonction `sleep` du Workflow DevKit nous permet de suspendre l'exécution du workflow sans consommer de ressources. Une pause peut durer quelques secondes, des heures, des jours, voire des mois.
+
+## Créez les étapes de votre workflow
+
+Définissons maintenant ces fonctions manquantes.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+En examinant ce code :
+
+- La logique métier se trouve à l'intérieur des **étapes**. Lorsqu'une étape est invoquée à l'intérieur d'un **workflow**, elle est mise en file pour s'exécuter dans une requête distincte pendant que le workflow est suspendu, tout comme `sleep`.
+- Si une étape lance une erreur, comme dans `sendWelcomeEmail`, l'étape sera automatiquement réessayée jusqu'à ce qu'elle réussisse (ou atteigne le nombre maximum de tentatives de l'étape).
+- Les étapes peuvent lancer une `FatalError` si une erreur est volontaire et ne doit pas être réessayée.
+
+<Callout>
+  Nous approfondirons les workflows, les étapes et d'autres façons de suspendre ou de gérer les événements dans les [Fondations](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Créez votre gestionnaire de route
+
+Pour invoquer votre nouveau workflow, nous allons créer un nouveau gestionnaire de route API dans `src/index.ts` avec le code suivant :
+
+```typescript title="src/index.ts"
+import { Hono } from "hono";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = new Hono();
+
+app.post("/api/signup", async (c) => {
+  const { email } = await c.req.json();
+  await start(handleUserSignup, [email]);
+  return c.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+Ce gestionnaire de route crée un endpoint de requête `POST` à `/api/signup` qui déclenchera votre workflow.
+
+</Step>
+
+<Step>
+
+## Exécuter en développement
+
+Pour démarrer votre serveur de développement, exécutez la commande suivante dans votre terminal à la racine du projet Hono :
+
+```bash
+npm run dev
+```
+
+Une fois votre serveur de développement en cours d'exécution, vous pouvez déclencher votre workflow en exécutant cette commande dans le terminal :
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Consultez les logs du serveur de développement Hono pour voir l'exécution de votre workflow ainsi que les étapes en cours de traitement.
+
+De plus, vous pouvez utiliser la [CLI ou l'interface Web du Workflow DevKit](/docs/observability) pour inspecter en détail vos runs et les étapes du workflow.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Interface Web du Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+## Déploiement en production
+
+Les applications Workflow DevKit fonctionnent actuellement mieux lorsqu'elles sont déployées sur [Vercel](https://vercel.com/home) et ne nécessitent aucune configuration spéciale.
+
+Consultez la section [Déploiement](/docs/deploying) pour apprendre comment vos workflows peuvent être déployés ailleurs.
+
+## Étapes suivantes
+
+- En savoir plus sur les [Fondations](/docs/foundations).
+- Consultez les [Erreurs](/docs/errors) si vous rencontrez des problèmes.
+- Explorez la [Référence API](/docs/api-reference).

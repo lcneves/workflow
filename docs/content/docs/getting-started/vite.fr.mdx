@@ -1,0 +1,232 @@
+---
+title: Vite
+---
+
+Ce guide vous accompagnera dans la configuration de votre premier workflow dans une application Vite. En chemin, vous en apprendrez davantage sur les concepts fondamentaux pour utiliser le kit de développement dans vos propres projets.
+
+---
+
+<Steps>
+
+<Step>
+## Créez votre projet Vite
+
+Commencez par créer un nouveau projet Vite. Cette commande créera un nouveau répertoire nommé `my-workflow-app` avec une configuration minimale et y initialisera un projet Vite.
+
+```bash
+npm create vite@latest my-workflow-app -- --template react-ts
+```
+
+Placez-vous dans le répertoire nouvellement créé :
+
+```bash
+cd my-workflow-app
+```
+
+### Installez `workflow` et `nitro`
+
+```package-install
+npm i workflow nitro
+```
+
+<Callout>
+Alors que Vite fournit les outils de build et le serveur de développement, Nitro ajoute le framework serveur nécessaire pour les routes API et le déploiement. Ensemble, ils permettent de créer des applications full-stack avec le support de workflow. En savoir plus sur Nitro [ici](https://v3.nitro.build).
+</Callout>
+
+### Configurez Vite
+
+Ajoutez `workflow()` à votre configuration Vite. Cela permet l'utilisation des directives `"use workflow"` et `"use step"`.
+
+```typescript title="vite.config.ts" lineNumbers
+import { nitro } from "nitro/vite";
+import { defineConfig } from "vite";
+import { workflow } from "workflow/vite";
+
+export default defineConfig({
+  plugins: [nitro(), workflow()], // [!code highlight]
+  nitro: { // [!code highlight]
+    serverDir: "./", // [!code highlight]
+  }, // [!code highlight]
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Configurer IntelliSense pour TypeScript (Optionnel)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Pour activer des suggestions utiles dans votre IDE, configurez le plugin workflow dans `tsconfig.json` :
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Créez votre premier workflow
+
+Créez un nouveau fichier pour notre premier workflow :
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+Nous compléterons ces fonctions ensuite, mais examinons d'abord ce code :
+
+* Nous définissons une fonction **workflow** avec la directive `"use workflow"`. Considérez la fonction workflow comme l'_orchestrateur_ des **steps** individuelles.
+* La fonction `sleep` du Workflow DevKit permet de suspendre l'exécution du workflow sans consommer de ressources. Une pause peut durer quelques secondes, des heures, des jours, voire des mois.
+
+## Créez les étapes de votre workflow
+
+Définissons maintenant ces fonctions manquantes.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+En examinant ce code :
+
+* La logique métier réside dans les **steps**. Lorsqu'une step est invoquée à l'intérieur d'un **workflow**, elle est mise en file d'attente pour s'exécuter dans une requête séparée pendant que le workflow est suspendu, tout comme `sleep`.
+* Si une step lève une erreur, comme dans `sendWelcomeEmail`, la step sera automatiquement retentée jusqu'à ce qu'elle réussisse (ou atteigne le nombre max de tentatives de la step).
+* Les steps peuvent lancer un `FatalError` si une erreur est intentionnelle et ne doit pas être retentée.
+
+<Callout>
+Nous approfondirons les workflows, les steps et d'autres manières de suspendre ou de gérer des événements dans [Fondations](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Créez votre gestionnaire de route
+
+Pour invoquer votre nouveau workflow, il faut ajouter votre workflow à un gestionnaire de route API `POST`, `api/signup.post.ts`, avec le code suivant :
+
+```typescript title="api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+Ce gestionnaire de route crée un endpoint de requête `POST` à `/api/signup` qui déclenchera votre workflow.
+
+<Callout>
+Les workflows peuvent être déclenchés depuis des routes API ou depuis n'importe quel code côté serveur.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Exécuter en développement
+
+Pour démarrer votre serveur de développement, exécutez la commande suivante dans votre terminal depuis le répertoire racine de Vite :
+
+```bash
+npm run dev
+```
+
+Une fois votre serveur de développement en cours d'exécution, vous pouvez déclencher votre workflow en exécutant cette commande dans le terminal :
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+Consultez les logs du serveur de développement Vite pour voir l'exécution de votre workflow ainsi que les steps en cours de traitement.
+
+De plus, vous pouvez utiliser la [CLI ou l'interface Web du Workflow DevKit](/docs/observability) pour inspecter en détail les exécutions et les steps de vos workflows.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Interface Web du Workflow DevKit" />
+
+---
+
+## Déployer en production
+
+Les applications Workflow DevKit fonctionnent actuellement mieux lorsqu'elles sont déployées sur [Vercel](https://vercel.com/home) et ne nécessitent aucune configuration spéciale.
+
+Consultez la section [Déploiement](/docs/deploying) pour apprendre comment vos workflows peuvent être déployés ailleurs.
+
+## Étapes suivantes
+
+* En savoir plus sur les [Fondations](/docs/foundations).
+* Consultez [Erreurs](/docs/errors) si vous rencontrez des problèmes.
+* Explorez la [Référence API](/docs/api-reference).

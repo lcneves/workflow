@@ -1,0 +1,55 @@
+---
+title: "aliran kerja"
+---
+
+Primitif inti aliran kerja termasuk langkah, manajemen konteks, streaming, webhook, dan penanganan kesalahan.
+
+## Instalasi
+
+```package-install
+npm i workflow
+```
+
+## Fungsi
+
+Workflow DevKit berisi fungsi-fungsi berikut yang dapat Anda gunakan di dalam fungsi aliran kerja Anda:
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/get-workflow-metadata" title="getWorkflowMetadata()">
+        Fungsi yang mengembalikan konteks tentang eksekusi aliran kerja saat ini.
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-step-metadata" title="getStepMetadata()">
+        Fungsi yang mengembalikan konteks tentang eksekusi langkah saat ini.
+    </Card>
+    <Card href="/docs/api-reference/workflow/sleep" title="sleep()">
+        Menidurkan aliran kerja selama durasi yang ditentukan. Deterministik dan aman untuk pemutaran ulang.
+    </Card>
+    <Card href="/docs/api-reference/workflow/fetch" title="fetch()">
+        Melakukan permintaan HTTP dari dalam aliran kerja dengan semantik pengulangan otomatis.
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-hook" title="createHook()">
+        Membuat hook tingkat rendah untuk menerima payload arbitrer dari sistem eksternal.
+    </Card>
+    <Card href="/docs/api-reference/workflow/define-hook" title="defineHook()">
+        Pembantu hook yang aman tipe untuk konsistensi tipe payload.
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-webhook" title="createWebhook()">
+        Membuat webhook yang menangguhkan aliran kerja hingga permintaan HTTP diterima.
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-writable" title="getWritable()">
+        Mengakses stream default dari jalannya aliran kerja saat ini.
+    </Card>
+</Cards>
+
+## Kelas Kesalahan
+
+Workflow DevKit menyertakan kelas-kelas kesalahan yang dapat dilemparkan dalam sebuah aliran kerja atau langkah untuk mengubah strategi keluarnya saat terjadi kesalahan.
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/fatal-error" title="FatalError()">
+        Ketika dilempar, menandai langkah sebagai gagal dan langkah tersebut tidak dicoba ulang.
+    </Card>
+    <Card href="/docs/api-reference/workflow/retryable-error" title="RetryableError()">
+        Ketika dilempar, menandai langkah sebagai dapat dicoba ulang dengan parameter opsional.
+    </Card>
+</Cards>

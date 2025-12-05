@@ -1,0 +1,55 @@
+---
+title: "flujo de trabajo"
+---
+
+Primitivas centrales de flujo de trabajo que incluyen pasos, gestión de contexto, transmisión, webhooks y manejo de errores.
+
+## Instalación
+
+```package-install
+npm i workflow
+```
+
+## Funciones
+
+Workflow DevKit contiene las siguientes funciones que puedes usar dentro de tus funciones de flujo de trabajo:
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/get-workflow-metadata" title="getWorkflowMetadata()">
+        Una función que devuelve el contexto sobre la ejecución actual del flujo de trabajo.
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-step-metadata" title="getStepMetadata()">
+        Una función que devuelve el contexto sobre la ejecución actual del paso.
+    </Card>
+    <Card href="/docs/api-reference/workflow/sleep" title="sleep()">
+        Pone en espera los flujos de trabajo por una duración especificada. Determinista y seguro frente a reejecuciones.
+    </Card>
+    <Card href="/docs/api-reference/workflow/fetch" title="fetch()">
+        Realiza solicitudes HTTP desde dentro de un flujo de trabajo con semántica de reintentos automática.
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-hook" title="createHook()">
+        Crea un hook de bajo nivel para recibir cargas útiles arbitrarias de sistemas externos.
+    </Card>
+    <Card href="/docs/api-reference/workflow/define-hook" title="defineHook()">
+        Asistente de hook con tipado seguro para tipos de carga útil consistentes.
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-webhook" title="createWebhook()">
+        Crea un webhook que suspende el flujo de trabajo hasta que se reciba una solicitud HTTP.
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-writable" title="getWritable()">
+        Accede al flujo predeterminado de la ejecución actual del flujo de trabajo.
+    </Card>
+</Cards>
+
+## Clases de error
+
+Workflow DevKit incluye clases de error que pueden lanzarse en un flujo de trabajo o en un paso para cambiar la estrategia de salida por error de un flujo de trabajo.
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/fatal-error" title="FatalError()">
+        Cuando se lanza, marca un paso como fallido y el paso no se reintentará.
+    </Card>
+    <Card href="/docs/api-reference/workflow/retryable-error" title="RetryableError()">
+        Cuando se lanza, marca un paso como reintentable con un parámetro opcional.
+    </Card>
+</Cards>

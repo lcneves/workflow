@@ -1,0 +1,454 @@
+---
+title: Hooks y Webhooks
+---
+
+Los hooks proporcionan un mecanismo potente para pausar la ejecución de un flujo de trabajo y reanudarla más tarde con datos externos. Permiten que los flujos de trabajo esperen eventos externos, interacciones de usuario (*también conocido como "human in the loop"*) o solicitudes HTTP. Esta guía te enseñará los conceptos principales, comenzando con el primitivo de bajo nivel Hook y ascendiendo a la abstracción de más alto nivel Webhook.
+
+## Comprendiendo los Hooks
+
+En esencia, los **Hooks** son un primitivo de bajo nivel que te permite pausar un flujo de trabajo y reanudarlo más tarde con cualquier [datos serializables](/docs/foundations/serialization). Piénsalos como puntos de suspensión en tu flujo de trabajo donde estás esperando entrada externa.
+
+Cuando creas un hook, este genera un token único que los sistemas externos pueden usar para enviar datos de vuelta a tu flujo de trabajo. Esto hace que los hooks sean perfectos para escenarios como:
+
+- Esperar la aprobación de un usuario o administrador
+- Recibir datos de un sistema o servicio externo
+- Implementar flujos de trabajo orientados a eventos que reaccionan a múltiples sucesos a lo largo del tiempo
+
+### Creando tu primer Hook
+
+Empecemos con un ejemplo simple. Aquí tienes un flujo de trabajo que crea un hook y espera datos externos:
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function approvalWorkflow() {
+  "use workflow";
+
+  // Create a hook that expects an approval payload
+  const hook = createHook<{ approved: boolean; comment: string }>();
+
+  console.log("Waiting for approval...");
+  console.log("Send approval to token:", hook.token);
+
+  // Workflow pauses here until data is sent
+  const result = await hook;
+
+  if (result.approved) {
+    console.log("Approved with comment:", result.comment);
+    // Continue with approved workflow...
+  } else {
+    console.log("Rejected:", result.comment);
+    // Handle rejection...
+  }
+}
+```
+
+El flujo de trabajo se pausará en `await hook` hasta que código externo envíe datos para reanudarlo.
+
+<Callout type="info">
+Consulta la referencia completa de la API para [`createHook()`](/docs/api-reference/workflow/create-hook) para ver todas las opciones disponibles.
+</Callout>
+
+### Reanudar un Hook
+
+Para enviar datos a un flujo de trabajo en espera, usa [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) desde una ruta de API, una server action, o cualquier otro contexto externo:
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+// In an API route or external handler
+export async function POST(request: Request) {
+  const { token, approved, comment } = await request.json();
+
+  try {
+    // Resume the workflow with the approval data
+    const result = await resumeHook(token, { approved, comment });
+    return Response.json({ success: true, runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Invalid token" }, { status: 404 });
+  }
+}
+```
+
+Puntos clave:
+- Los hooks te permiten pasar **cualquier [datos serializables](/docs/foundations/serialization)** como payload
+- Necesitas el `token` del hook para reanudarlo
+- El flujo de trabajo reanudará la ejecución exactamente donde se quedó
+
+### Tokens personalizados para Hooks deterministas
+
+Por defecto, los hooks generan un token aleatorio. Sin embargo, a menudo querrás usar un **token personalizado** que los sistemas externos puedan reconstruir. Esto es especialmente útil para flujos de trabajo de larga duración donde la misma instancia del flujo debe manejar múltiples eventos.
+
+Por ejemplo, imagina un bot de Slack donde cada canal debería tener su propia instancia de flujo de trabajo:
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function slackChannelBot(channelId: string) {
+  "use workflow";
+
+  // Use channel ID in the token so Slack webhooks can find this workflow
+  const hook = createHook<SlackMessage>({
+    token: `slack_messages:${channelId}`
+  });
+
+  for await (const message of hook) {
+    console.log(`${message.user}: ${message.text}`);
+
+    if (message.text === "/stop") {
+      break;
+    }
+
+    await processMessage(message);
+  }
+}
+
+async function processMessage(message: SlackMessage) {
+  "use step";
+  // Process the Slack message
+}
+```
+
+Ahora tu manejador de webhooks de Slack puede reanudar determinísticamente el flujo de trabajo correcto:
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const slackEvent = await request.json();
+  const channelId = slackEvent.channel;
+
+  try {
+    // Reconstruct the token using the channel ID
+    await resumeHook(`slack_messages:${channelId}`, slackEvent);
+
+    return new Response("OK");
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+### Recibiendo múltiples eventos
+
+Los hooks son _reutilizables_: implementan `AsyncIterable`, lo que significa que puedes usar `for await...of` para recibir múltiples eventos a lo largo del tiempo:
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function dataCollectionWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ value: number; done?: boolean }>();
+
+  const values: number[] = [];
+
+  // Keep receiving data until we get a "done" signal
+  for await (const payload of hook) {
+    values.push(payload.value);
+
+    if (payload.done) {
+      break;
+    }
+  }
+
+  console.log("Collected values:", values);
+  return values;
+}
+```
+
+Cada vez que llames a `resumeHook()` con el mismo token, el bucle recibirá otro valor.
+
+## Comprendiendo los Webhooks
+
+Aunque los hooks son potentes, requieren que manejes manualmente las solicitudes HTTP y las encamines hacia los flujos de trabajo. Los **Webhooks** resuelven esto proporcionando una abstracción de más alto nivel construida sobre hooks que:
+
+1. Serializa automáticamente todo el objeto HTTP [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
+2. Proporciona una propiedad `url` direccionable automáticamente que apunta al endpoint generado del webhook
+3. Maneja el envío de objetos HTTP [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) de vuelta al llamador
+
+Cuando usas Workflow DevKit, los webhooks se configuran automáticamente en `/.well-known/workflow/v1/webhook/:token` sin configuración adicional.
+
+<Callout type="info">
+Consulta la referencia completa de la API para [`createWebhook()`](/docs/api-reference/workflow/create-webhook) para ver todas las opciones disponibles.
+</Callout>
+
+### Creando tu primer Webhook
+
+Aquí tienes un webhook simple que recibe solicitudes HTTP:
+
+```typescript lineNumbers
+import { createWebhook } from "workflow";
+
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+
+  // The webhook is automatically available at this URL
+  console.log("Send HTTP requests to:", webhook.url);
+  // Example: https://your-app.com/.well-known/workflow/v1/webhook/lJHkuMdQ2FxSFTbUMU84k
+
+  // Workflow pauses until an HTTP request is received
+  const request = await webhook;
+
+  console.log("Received request:", request.method, request.url);
+
+  // Access the request body
+  const data = await request.json();
+  console.log("Data:", data);
+}
+```
+
+El webhook responderá automáticamente con un estado `202 Accepted` por defecto. Los sistemas externos simplemente pueden hacer una solicitud HTTP a `webhook.url` para reanudar tu flujo de trabajo.
+
+### Enviando respuestas personalizadas
+
+Los webhooks ofrecen dos maneras de enviar respuestas HTTP personalizadas: **respuestas estáticas** y **respuestas dinámicas**.
+
+#### Respuestas estáticas
+
+Usa la opción `respondWith` para proporcionar una respuesta estática que se enviará automáticamente para cada solicitud:
+
+```typescript lineNumbers
+import { createWebhook } from "workflow";
+
+export async function webhookWithStaticResponse() {
+  "use workflow";
+
+  const webhook = createWebhook({
+    respondWith: Response.json({
+      success: true, message: "Webhook received"
+    }),
+  });
+
+  const request = await webhook;
+
+  // The response was already sent automatically
+  // Continue processing the request asynchronously
+  const data = await request.json();
+  await processData(data);
+}
+
+async function processData(data: any) {
+  "use step";
+  // Long-running processing here
+}
+```
+
+#### Respuestas dinámicas (modo manual)
+
+Para respuestas dinámicas basadas en el contenido de la solicitud, establece `respondWith: "manual"` y llama al método `respondWith()` en la request:
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow";
+
+async function sendCustomResponse(request: RequestWithResponse, message: string) {
+  "use step";
+
+  // Call respondWith() to send the response
+  await request.respondWith(
+    new Response(
+      JSON.stringify({ message }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      }
+    )
+  );
+}
+
+export async function webhookWithDynamicResponse() {
+  "use workflow";
+
+  // Set respondWith to "manual" to handle responses yourself
+  const webhook = createWebhook({ respondWith: "manual" });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  // Decide what response to send based on the data
+  if (data.type === "urgent") {
+    await sendCustomResponse(request, "Processing urgently");
+  } else {
+    await sendCustomResponse(request, "Processing normally");
+  }
+
+  // Continue workflow...
+}
+```
+
+<Callout type="warning">
+Cuando uses `respondWith: "manual"`, el método `respondWith()` **debe** ser llamado desde dentro de una función step debido a los requisitos de serialización. Este requisito podría eliminarse en el futuro.
+</Callout>
+
+### Manejo de múltiples peticiones al Webhook
+
+Al igual que los hooks, los webhooks soportan la iteración:
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow";
+
+async function respondToSlack(request: RequestWithResponse, text: string) {
+  "use step";
+
+  await request.respondWith(
+    new Response(
+      JSON.stringify({ response_type: "in_channel", text }),
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+}
+
+export async function slackCommandWorkflow(channelId: string) {
+  "use workflow";
+
+  const webhook = createWebhook({
+    token: `slack_command:${channelId}`,
+    respondWith: "manual"
+  });
+
+  console.log("Configure Slack command webhook:", webhook.url);
+
+  for await (const request of webhook) {
+    const formData = await request.formData();
+    const command = formData.get("command");
+    const text = formData.get("text");
+
+    if (command === "/status") {
+      await respondToSlack(request, "Checking status...");
+      const status = await checkSystemStatus();
+      await postToSlack(channelId, `Status: ${status}`);
+    }
+
+    if (text === "stop") {
+      await respondToSlack(request, "Stopping workflow...");
+      break;
+    }
+  }
+}
+
+async function checkSystemStatus() {
+  "use step";
+  return "All systems operational";
+}
+
+async function postToSlack(channelId: string, message: string) {
+  "use step";
+  // Post message to Slack
+}
+```
+
+## Hooks vs. Webhooks: Cuándo usar cada uno
+
+| Feature | Hooks | Webhooks |
+|---------|-------|----------|
+| **Formato de datos** | Datos serializables arbitrarios | Objetos HTTP `Request` |
+| **URL** | Sin URL automática | Propiedad `webhook.url` automática |
+| **Manejo de respuestas** | N/A | Puede enviar HTTP `Response` (estático o dinámico) |
+| **Caso de uso** | Integraciones personalizadas, cargas tipadas | Webhooks HTTP, APIs REST estándar |
+| **Reanudar** | [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) | Automático vía HTTP, o [`resumeWebhook()`](/docs/api-reference/workflow-api/resume-webhook) |
+
+**Usa Hooks cuando:**
+- Necesites control total sobre la estructura del payload
+- Estés integrando con fuentes de eventos personalizadas
+- Quieras tipado fuerte en TypeScript con [`defineHook()`](/docs/api-reference/workflow/define-hook)
+
+**Usa Webhooks cuando:**
+- Recibas solicitudes HTTP de servicios externos
+- Necesites enviar respuestas HTTP de vuelta al llamador
+- Quieras enrutamiento automático de URL sin escribir manejadores de API
+
+## Patrones avanzados
+
+### Hooks con tipado fuerte usando `defineHook()`
+
+El helper [`defineHook()`](/docs/api-reference/workflow/define-hook) ofrece seguridad de tipos y validación en tiempo de ejecución entre la creación y la reanudación de hooks usando [Standard Schema v1](https://standardschema.dev). Usa cualquier validador compatible como Zod o Valibot:
+
+```typescript lineNumbers
+import { defineHook } from "workflow";
+import { z } from "zod";
+
+// Define the hook with schema for type safety and runtime validation
+const approvalHook = defineHook({ // [!code highlight]
+  schema: z.object({ // [!code highlight]
+    requestId: z.string(), // [!code highlight]
+    approved: z.boolean(), // [!code highlight]
+    approvedBy: z.string(), // [!code highlight]
+    comment: z.string().transform((value) => value.trim()), // [!code highlight]
+  }), // [!code highlight]
+}); // [!code highlight]
+
+// In your workflow
+export async function documentApprovalWorkflow(documentId: string) {
+  "use workflow";
+
+  const hook = approvalHook.create({
+    token: `approval:${documentId}`
+  });
+
+  // Payload is type-safe and validated
+  const approval = await hook;
+
+  console.log(`Document ${approval.requestId} ${approval.approved ? "approved" : "rejected"}`);
+  console.log(`By: ${approval.approvedBy}, Comment: ${approval.comment}`);
+}
+
+// In your API route - both type-safe and runtime-validated!
+export async function POST(request: Request) {
+  const { documentId, ...approvalData } = await request.json();
+
+  try {
+    // The schema validates the payload before resuming the workflow
+    await approvalHook.resume(`approval:${documentId}`, approvalData);
+    return new Response("OK");
+  } catch (error) {
+    return Response.json({ error: "Invalid token or validation failed" }, { status: 400 });
+  }
+}
+```
+
+Este patrón es especialmente valioso en aplicaciones grandes donde el código del flujo de trabajo y el de la API están en archivos separados, proporcionando tanto seguridad de tipos en tiempo de compilación como validación en tiempo de ejecución.
+
+## Buenas prácticas
+
+### Diseño de tokens
+
+Al usar tokens personalizados:
+
+- **Hazlos deterministas**: Básalos en datos que el sistema externo pueda reconstruir (como IDs de canal, IDs de usuario, etc.)
+- **Usa namespacing**: Prefija los tokens para evitar conflictos (por ejemplo, `slack:${channelId}`, `github:${repoId}`)
+- **Incluye información de enrutamiento**: Asegúrate de que el token contenga suficiente información para identificar la instancia correcta del flujo de trabajo
+
+### Manejo de respuestas en Webhooks
+
+- Usa **respuestas estáticas** (`respondWith: Response`) para reconocimientos simples
+- Usa **modo manual** (`respondWith: "manual"`) cuando las respuestas dependan del procesamiento de la solicitud
+- Recuerda que `respondWith()` debe ser llamado desde dentro de una función step
+
+### Iterar sobre eventos
+
+Tanto hooks como webhooks soportan la iteración, lo que los hace ideales para bucles de eventos de larga duración:
+
+```typescript
+const hook = createHook<Event>();
+
+for await (const event of hook) {
+  await processEvent(event);
+
+  if (shouldStop(event)) {
+    break;
+  }
+}
+```
+
+Este patrón permite que una sola instancia de flujo de trabajo maneje múltiples eventos a lo largo del tiempo, manteniendo estado entre eventos.
+
+## Documentación relacionada
+
+- [Serialización](/docs/foundations/serialization) - Entender qué datos pueden pasarse a través de hooks
+- [`createHook()` API Reference](/docs/api-reference/workflow/create-hook)
+- [`createWebhook()` API Reference](/docs/api-reference/workflow/create-webhook)
+- [`defineHook()` API Reference](/docs/api-reference/workflow/define-hook)
+- [`resumeHook()` API Reference](/docs/api-reference/workflow-api/resume-hook)
+- [`resumeWebhook()` API Reference](/docs/api-reference/workflow-api/resume-webhook)

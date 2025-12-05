@@ -1,0 +1,261 @@
+---
+title: Next.js
+description: 本指南将引导你在 Next.js 应用中设置第一个工作流。在此过程中，你将更多地了解在自己的项目中使用开发工具包的基本概念。
+---
+
+<Steps>
+
+<Step>
+## 创建你的 Next.js 项目
+
+首先创建一个新的 Next.js 项目。此命令将创建一个名为 `my-workflow-app` 的新目录并在其中设置一个 Next.js 项目。
+
+```bash
+npm create next-app@latest my-workflow-app
+```
+
+进入新创建的目录：
+
+```bash
+cd my-workflow-app
+```
+
+### 安装 `workflow`
+
+```package-install
+npm i workflow
+```
+
+### 配置 Next.js
+
+用 `withWorkflow()` 包装你的 `next.config.ts`。这将启用对 `"use workflow"` 和 `"use step"` 指令的使用。
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next"; // [!code highlight]
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // … rest of your Next.js config
+};
+
+export default withWorkflow(nextConfig); // [!code highlight]
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### 为 TypeScript 设置 IntelliSense（可选）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+要在你的 IDE 中启用有用的提示，请在 `tsconfig.json` 中设置 workflow 插件：
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### 配置代理处理器（如适用）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+如果你的 Next.js 应用有一个 [proxy handler](https://nextjs.org/docs/app/api-reference/file-conventions/proxy)
+（以前称为 “middleware”），你需要更新 matcher 模式以排除 Workflow 的内部路径，以防代理处理器在这些路径上运行。
+
+在你的中间件的排除列表中添加 `.well-known/workflow/*`：
+
+```typescript title="proxy.ts" lineNumbers
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+export function proxy(request: NextRequest) {
+  // Your middleware logic
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    // ... your existing matchers
+    {
+      source: "/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/).*)", // [!code highlight]
+    },
+  ],
+};
+```
+
+这可以确保 Workflow 的内部路径不会被你的中间件拦截，这可能会干扰工作流的执行和恢复。
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 创建你的第一个工作流
+
+为我们的第一个工作流创建一个新文件：
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+ "use workflow"; // [!code highlight]
+
+ const user = await createUser(email);
+ await sendWelcomeEmail(user);
+
+ await sleep("5s"); // Pause for 5s - doesn't consume any resources
+ await sendOnboardingEmail(user);
+
+ console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+ return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+接下来我们将填写这些函数，但先来看一下这段代码：
+
+* 我们使用指令 `"use workflow"` 定义了一个 **workflow** 函数。可以把 workflow 函数看作是各个 **steps** 的协调者（orchestrator）。
+* Workflow DevKit 的 `sleep` 函数允许我们在不消耗任何资源的情况下暂停工作流的执行。sleep 可以是几秒、几小时、几天，甚至几个月。
+
+## 创建你的工作流步骤
+
+现在让我们定义那些缺失的函数。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+ "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+ console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+看看这段代码：
+
+* 业务逻辑位于 **steps** 内。当一个 step 在 **workflow** 中被调用时，它会被排入队列以在独立的请求上运行，而工作流则被挂起，就像 `sleep` 一样。
+* 如果 step 抛出错误，例如在 `sendWelcomeEmail` 中，step 将自动重试直到成功（或达到该 step 的最大重试次数）。
+* 如果错误是有意的并且不应重试，step 可以抛出 `FatalError`。
+
+<Callout>
+我们将在 [Foundations](/docs/foundations) 中更深入地探讨工作流、步骤以及挂起或处理事件的其他方式。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 创建你的路由处理程序
+
+要调用你的新工作流，我们需要将工作流添加到一个 `POST` API 路由处理程序 `app/api/signup/route.ts`，使用以下代码：
+
+```typescript title="app/api/signup/route.ts"
+import { start } from "workflow/api";
+import { handleUserSignup } from "@/workflows/user-signup";
+import { NextResponse } from "next/server";
+
+export async function POST(request: Request) {
+ const { email } = await request.json();
+
+ // Executes asynchronously and doesn't block your app
+ await start(handleUserSignup, [email]);
+
+ return NextResponse.json({
+  message: "User signup workflow started",
+ });
+}
+```
+
+此路由处理程序在 `/api/signup` 创建了一个 `POST` 请求端点，用以触发你的工作流。
+
+<Callout>
+工作流可以从 API 路由、Server Actions 或任何服务器端代码触发。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 在开发环境运行
+
+要启动开发服务器，请在 Next.js 根目录的终端中运行以下命令：
+
+```bash
+npm run dev
+```
+
+一旦开发服务器运行，你可以在终端中运行此命令来触发工作流：
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+检查 Next.js 开发服务器日志以查看工作流的执行情况以及正在处理的步骤。
+
+此外，你可以使用 [Workflow DevKit CLI 或 Web UI](/docs/observability) 来详细检查你的工作流运行和步骤。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit Web UI" />
+
+## 部署到生产环境
+
+Workflow DevKit 应用目前在部署到 [Vercel](https://vercel.com/home) 时效果最佳，且无需特殊配置。
+
+查看 [Deploying](/docs/deploying) 部分以了解如何将你的工作流部署到其他平台。
+
+## 下一步
+
+* 了解更多关于 [Foundations](/docs/foundations) 的内容。
+* 如果遇到问题，请查看 [Errors](/docs/errors)。
+* 浏览 [API Reference](/docs/api-reference)。

@@ -1,0 +1,261 @@
+---
+title: World Lokal
+---
+
+The **World Lokal** (`@workflow/world-local`) adalah backend workflow berbasis filesystem yang dirancang untuk pengembangan lokal dan pengujian. Ia menyimpan data workflow sebagai berkas JSON di disk dan menyediakan antrean in-memory.
+
+World lokal sangat cocok untuk pengembangan lokal karena:
+
+- **Tidak memerlukan layanan eksternal atau konfigurasi**
+- **Menyimpan data sebagai berkas JSON yang dapat dibaca untuk memudahkan debugging**
+- **Memberikan umpan balik instan selama pengembangan**
+- **Bekerja mulus dengan server pengembangan Next.js**
+
+## Bagaimana Cara Kerjanya
+
+### Penyimpanan
+
+World lokal menyimpan semua data workflow sebagai berkas JSON di direktori yang dapat dikonfigurasi:
+
+```
+.workflow-data/
+├── runs/
+│   └── <run-id>.json
+├── steps/
+│   └── <run-id>/
+│       └── <step-id>.json
+├── hooks/
+│   └── <hook-id>.json
+└── streams/
+    └── <run-id>/
+        └── <stream-id>.json
+```
+
+Setiap berkas berisi status penuh dari run, step, hook, atau stream, membuatnya mudah untuk memeriksa data workflow secara langsung.
+
+### Pengantrean
+
+World lokal menggunakan antrean in-memory dengan transport HTTP:
+
+1. Ketika sebuah step dimasukkan ke antrean, step tersebut ditambahkan ke antrean in-memory  
+2. Antrian memproses step dengan mengirimkan permintaan HTTP ke server pengembangan Anda  
+3. Step dijalankan di endpoint `.well-known/workflow/v1/step`
+
+Antrian secara otomatis mendeteksi port server pengembangan Anda dan menyesuaikan URL antrean.
+
+### Autentikasi
+
+World lokal menyediakan implementasi autentikasi sederhana karena tidak ada autentikasi yang diperlukan atau diterapkan dalam pengembangan lokal.
+
+```typescript
+getAuthHeaders(): Promise<Record<string, string>> {
+  return Promise.resolve({});
+}
+```
+
+## Konfigurasi
+
+### Direktori Data
+
+Secara default, data workflow disimpan di `.workflow-data/` di root proyek Anda. Ini dapat disesuaikan melalui variabel lingkungan atau secara programatis.
+
+**Variabel lingkungan:**
+
+```bash
+export WORKFLOW_LOCAL_DATA_DIR=./custom-workflow-data
+```
+
+**Secara programatis:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ dataDir: "./custom-workflow-data" });
+```
+
+### Port
+
+Secara default, world lokal **secara otomatis mendeteksi** port yang digunakan aplikasi Anda dengan menggunakan inspeksi proses. Ini bekerja mulus dengan framework seperti SvelteKit, Vite, dan lain-lain yang menggunakan port non-standar.
+
+**Contoh deteksi otomatis** (direkomendasikan):
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Port is automatically detected - no configuration needed!
+const world = createLocalWorld();
+```
+
+Jika deteksi otomatis gagal, world akan fallback ke variabel lingkungan `PORT`, kemudian ke port `3000`.
+
+**Menimpa port secara manual** (jika diperlukan):
+
+Anda dapat menimpa port yang terdeteksi otomatis dengan menyatakannya secara eksplisit:
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ port: 3000 });
+```
+
+### URL Dasar
+
+Untuk kasus penggunaan lanjutan seperti HTTPS atau hostname kustom, Anda dapat menimpa seluruh base URL. Ketika diatur, ini memiliki prioritas atas semua deteksi port dan konfigurasi.
+
+**Kasus penggunaan:**
+
+- HTTPS dev servers (misalnya, `next dev --experimental-https`)
+- Hostname kustom (misalnya, `local.example.com`)
+- Pengembangan non-localhost
+
+**Variabel lingkungan:**
+
+```bash
+export WORKFLOW_LOCAL_BASE_URL=https://local.example.com:3000
+```
+
+**Secara programatis:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// HTTPS
+const world = createLocalWorld({
+  baseUrl: "https://localhost:3000"
+});
+
+// Custom hostname
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+```
+
+## Penggunaan
+
+### Otomatis (Direkomendasikan)
+
+World lokal digunakan secara otomatis selama pengembangan lokal:
+
+```bash
+# Start your Next.js dev server
+npm run dev
+
+# Workflows automatically use local world
+```
+
+### Manual
+
+Anda dapat secara eksplisit mengatur world lokal melalui variabel lingkungan:
+
+```bash
+export WORKFLOW_TARGET_WORLD=local
+
+npm run dev
+```
+
+## Alur Kerja Pengembangan
+
+Alur kerja pengembangan tipikal dengan world lokal:
+
+1. **Mulai server pengembangan Anda:**
+
+   ```bash
+   npm run dev
+   ```
+
+2. **Memicu alur kerja:**
+
+   ```bash
+   curl -X POST --json '{"email":"test@example.com"}' http://localhost:3000/api/signup
+   ```
+
+3. **Periksa hasilnya:**
+   - Gunakan [CLI atau UI Web](/docs/observability)
+   - Periksa file JSON di `.workflow-data/`
+   - Lihat log server pengembangan
+
+## Memeriksa Data
+
+### Menggunakan Alat Observabilitas
+
+World lokal terintegrasi dengan alat observabilitas Workflow DevKit:
+
+```bash
+# View runs with CLI
+npx workflow inspect runs
+
+# View runs with Web UI
+npx workflow inspect runs --web
+```
+
+Pelajari lebih lanjut di bagian [Observabilitas](/docs/observability).
+
+## Keterbatasan
+
+World lokal dirancang untuk pengembangan, bukan produksi:
+
+- **Tidak skalabel** - Menggunakan antrean in-memory  
+- **Tidak persisten** - Data disimpan di berkas lokal  
+- **Satu instans** - Tidak dapat menangani penyebaran terdistribusi  
+- **Tanpa autentikasi** - Hanya cocok untuk pengembangan lokal
+
+Untuk penyebaran produksi, gunakan [Vercel World](/docs/deploying/world/vercel-world).
+
+## Referensi API
+
+### `createLocalWorld`
+
+Membuat instance world lokal:
+
+```typescript
+function createLocalWorld(
+  args?: Partial<{
+    dataDir: string;
+    port: number;
+    baseUrl: string;
+  }>
+): World
+```
+
+**Parameter:**
+
+- `args` - Objek konfigurasi opsional:
+  - `dataDir` - Direktori untuk menyimpan data workflow (default: `.workflow-data/` atau variabel lingkungan `WORKFLOW_LOCAL_DATA_DIR`)
+  - `port` - Menimpa port untuk transport antrean (default: terdeteksi otomatis → variabel lingkungan `PORT` → `3000`)
+  - `baseUrl` - Menimpa seluruh base URL untuk transport antrean (default: `http://localhost:{port}` atau variabel lingkungan `WORKFLOW_LOCAL_BASE_URL`)
+
+**Mengembalikan:**
+
+- `World` - Sebuah instance world yang mengimplementasikan interface World
+
+**Contoh:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Use all defaults (recommended - auto-detects port)
+const world = createLocalWorld();
+
+// Custom data directory
+const world = createLocalWorld({ dataDir: "./my-data" });
+
+// Override port
+const world = createLocalWorld({ port: 3000 });
+
+// HTTPS with custom hostname
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+
+// Multiple options
+const world = createLocalWorld({
+  dataDir: "./my-data",
+  baseUrl: "https://localhost:3000"
+});
+```
+
+## Pelajari Lebih Lanjut
+
+- [Antarmuka World](/docs/deploying/world) - Memahami interface World  
+- [Vercel World](/docs/deploying/world/vercel-world) - Untuk penyebaran produksi  
+- [Observabilitas](/docs/observability) - Alat pemantauan dan debugging

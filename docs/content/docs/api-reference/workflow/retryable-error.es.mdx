@@ -1,0 +1,106 @@
+---
+title: RetryableError
+---
+
+Cuando se lanza un `RetryableError` en un paso, indica que el flujo de trabajo debe reintentar un paso. Además, contiene un parámetro `retryAfter` que indica cuándo debe reintentarse el paso.
+
+Debe usar esto cuando quiera reintentar un paso o reintentar después de una duración determinada.
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!") // [!code highlight]
+}
+```
+
+<Callout>
+La diferencia entre `Error` y `RetryableError` puede no ser totalmente obvia, ya que cuando se lanzan ambos, ambos provocan reintentos. La diferencia es que `RetryableError` tiene un parámetro adicional configurable `retryAfter`.
+</Callout>
+
+## Firma de la API
+
+### Parámetros
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+interface RetryableError {
+    options?: RetryableErrorOptions;
+    message: string;
+}
+
+export default RetryableError;`}
+/>
+
+#### RetryableErrorOptions
+
+<TSDoc
+definition={`
+import { type RetryableErrorOptions } from "workflow";
+export default RetryableErrorOptions;`}
+/>
+
+## Ejemplos
+
+### Reintentar después de una duración
+
+`RetryableError` se puede configurar con un parámetro `retryAfter` para especificar cuándo debe reintentarse el paso.
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: "5m" // - supports "5m", "30s", "1h", etc. // [!code highlight]
+    })
+}
+```
+
+También puede especificar el retraso de reintento en milisegundos:
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: 5000 // - 5000 milliseconds = 5 seconds // [!code highlight]
+    })
+}
+```
+
+O reintentar en una fecha y hora específicas:
+
+```typescript lineNumbers
+import { RetryableError } from "workflow"
+
+async function retryableWorkflow() {
+    "use workflow"
+    await retryStep();
+}
+
+async function retryStep() {
+    "use step"
+    throw new RetryableError("Retryable!", {
+        retryAfter: new Date(Date.now() + 60000) // - retry after 1 minute // [!code highlight]
+    })
+}
+```

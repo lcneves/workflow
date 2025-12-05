@@ -1,0 +1,55 @@
+---
+title: Idempotência
+---
+
+Idempotência é uma propriedade de uma operação que garante que ela pode ser reenviada com segurança sem produzir efeitos colaterais duplicados.
+
+Em sistemas distribuídos (chamando APIs externas), nem sempre é possível assegurar que uma operação foi executada apenas uma vez apenas verificando se ela teve sucesso.
+Considere uma API de pagamentos que cobra o usuário $10, mas devido a falhas de rede a resposta de confirmação é perdida. Quando a etapa é reenviada (porque a tentativa anterior foi considerada uma falha), ela cobrará o usuário novamente.
+
+Para prevenir isso, muitas APIs externas suportam chaves de idempotência. Uma chave de idempotência é um identificador único para uma operação que pode ser usado para desduplicar requisições.
+
+## O padrão central: use o ID do step como sua chave de idempotência
+
+Cada invocação de step tem um `stepId` estável que permanece o mesmo entre retentativas.
+Use-o como chave de idempotência ao chamar APIs de terceiros.
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+
+  const { stepId } = getStepMetadata();
+
+  // Example: Stripe-style idempotency key
+  // This guarantees only one charge is created even if the step retries
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: stepId, // [!code highlight]
+    }
+  );
+}
+```
+
+Por que isso funciona:
+
+- **Estável entre retentativas**: `stepId` não muda entre tentativas.
+- **Globalmente único por step**: Cumpre o requisito de unicidade para uma chave de idempotência.
+
+## Melhores práticas
+
+- **Sempre forneça chaves de idempotência para efeitos colaterais externos que não são idempotentes** dentro de steps (pagamentos, e-mails, SMS, filas).
+- **Prefira `stepId` como sua chave**; ele é estável entre retentativas e único por step.
+- **Mantenha as chaves determinísticas**; evite incluir timestamps ou contadores de tentativa.
+- **Trate respostas 409/conflict com cuidado**; considere-as como sucesso se a tentativa anterior tiver sido concluída.
+
+## Documentação relacionada
+
+- Saiba sobre retentativas em [Erros e Retentativas](/docs/foundations/errors-and-retries)
+- Referência da API: [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata)

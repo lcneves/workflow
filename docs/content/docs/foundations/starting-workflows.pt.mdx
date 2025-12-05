@@ -1,0 +1,211 @@
+---
+title: Iniciando Fluxos de Trabalho
+---
+
+Uma vez que você tenha definido suas funções de fluxo de trabalho, é necessário acioná-las para iniciar a execução. Isso é feito usando a função `start()` de `workflow/api`, que enfileira uma nova execução de fluxo de trabalho e retorna um objeto `Run` que você pode usar para acompanhar seu progresso.
+
+## A função `start()`
+
+A [`start()`](/docs/api-reference/workflow-api/start) é usada para acionar programaticamente execuções de fluxo de trabalho a partir de contextos de runtime como rotas de API, Server Actions ou qualquer código do lado do servidor.
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { handleUserSignup } from "./workflows/user-signup";
+
+export async function POST(request: Request) {
+  const { email } = await request.json();
+
+  // Start the workflow
+  const run = await start(handleUserSignup, [email]); // [!code highlight]
+
+  return Response.json({
+    message: "Workflow started",
+    runId: run.runId
+  });
+}
+```
+
+**Pontos principais:**
+
+- `start()` retorna imediatamente após enfileirar o fluxo de trabalho - ele não espera pela conclusão
+- O primeiro argumento é a sua função de fluxo de trabalho
+- O segundo argumento é um array de argumentos a serem passados para o fluxo de trabalho (opcional se o fluxo de trabalho não aceitar argumentos)
+- Todos os argumentos devem ser [serializáveis](/docs/foundations/serialization)
+
+**Saiba mais**: [`start()` Referência de API](/docs/api-reference/workflow-api/start)
+
+## O objeto `Run`
+
+Quando você chama `start()`, ele retorna um objeto [`Run`](/docs/api-reference/workflow-api/start#returns) que fornece acesso ao status e aos resultados do fluxo de trabalho.
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { processOrder } from "./workflows/process-order";
+
+const run = await start(processOrder, [orderId]);
+
+// The run object has properties you can await
+console.log("Run ID:", run.runId);
+
+// Check the workflow status
+const status = await run.status; // "running" | "completed" | "failed"
+
+// Get the workflow's return value (blocks until completion)
+const result = await run.returnValue;
+```
+
+**Principais propriedades:**
+
+- `runId` - Identificador único para esta execução do fluxo de trabalho
+- `status` - Status atual do fluxo de trabalho (async)
+- `returnValue` - O valor retornado pela função do fluxo de trabalho (async, bloqueia até a conclusão)
+- `readable` - ReadableStream para transmitir atualizações do fluxo de trabalho
+
+<Callout type="info">
+A maioria das propriedades de `Run` são getters assíncronos que retornam promises. Você precisa dar `await` nelas para obter seus valores. Para uma lista completa de propriedades e métodos, veja a referência da API abaixo.
+</Callout>
+
+**Saiba mais**: [`Run` Referência de API](/docs/api-reference/workflow-api/start#returns)
+
+## Padrões comuns
+
+### Disparar e esquecer
+
+O padrão mais comum é iniciar um fluxo de trabalho e retornar imediatamente, deixando-o executar em segundo plano:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { sendNotifications } from "./workflows/notifications";
+
+export async function POST(request: Request) {
+  // Start workflow and don't wait for it
+  const run = await start(sendNotifications, [userId]);
+
+  // Return immediately
+  return Response.json({
+    message: "Notifications queued",
+    runId: run.runId
+  });
+}
+```
+
+### Aguardar a conclusão
+
+Se você precisar aguardar a conclusão do fluxo de trabalho antes de responder:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateReport } from "./workflows/reports";
+
+export async function POST(request: Request) {
+  const run = await start(generateReport, [reportId]);
+
+  // Wait for the workflow to complete
+  const report = await run.returnValue; // [!code highlight]
+
+  return Response.json({ report });
+}
+```
+
+<Callout type="warn">
+Tenha cautela ao aguardar por `returnValue` - se seu fluxo de trabalho demorar muito, sua rota de API pode expirar.
+</Callout>
+
+### Transmitir atualizações para o cliente
+
+Transmita atualizações em tempo real do seu fluxo de trabalho enquanto ele é executado, sem aguardar a conclusão:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateAIContent } from "./workflows/ai-generation";
+
+export async function POST(request: Request) {
+  const { prompt } = await request.json();
+
+  // Start the workflow
+  const run = await start(generateAIContent, [prompt]);
+
+  // Get the readable stream (can also use run.readable as shorthand)
+  const stream = run.getReadable(); // [!code highlight]
+
+  // Return the stream immediately
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+    },
+  });
+}
+```
+
+Seu fluxo de trabalho pode escrever no stream usando [`getWritable()`](/docs/api-reference/workflow/get-writable):
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function generateAIContent(prompt: string) {
+  "use workflow";
+
+  const writable = getWritable(); // [!code highlight]
+
+  await streamContentToClient(writable, prompt);
+
+  return { status: "complete" };
+}
+
+async function streamContentToClient(
+  writable: WritableStream,
+  prompt: string
+) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Stream updates as they become available
+  for (let i = 0; i < 10; i++) {
+    const chunk = new TextEncoder().encode(`Update ${i}\n`);
+    await writer.write(chunk);
+  }
+
+  writer.releaseLock();
+}
+```
+
+<Callout type="info">
+Streams são particularmente úteis para fluxos de trabalho de IA nos quais você quer mostrar progresso aos usuários em tempo real, ou para processos de longa duração que produzem resultados intermediários.
+</Callout>
+
+**Saiba mais**: [Streaming em Fluxos de Trabalho](/docs/foundations/serialization#streaming)
+
+### Verificar o status mais tarde
+
+Você pode recuperar uma execução de fluxo de trabalho mais tarde usando seu `runId` com [`getRun()`](/docs/api-reference/workflow-api/get-run):
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const runId = url.searchParams.get("runId");
+
+  // Retrieve the existing run
+  const run = getRun(runId); // [!code highlight]
+
+  // Check its status
+  const status = await run.status;
+
+  if (status === "completed") {
+    const result = await run.returnValue;
+    return Response.json({ result });
+  }
+
+  return Response.json({ status });
+}
+```
+
+## Próximos passos
+
+Agora que você entendeu como iniciar fluxos de trabalho e acompanhar sua execução:
+
+- Saiba mais sobre [Padrões de Controle de Fluxo](/docs/foundations/control-flow-patterns) para organizar fluxos de trabalho complexos
+- Explore [Erros & Retentativas](/docs/foundations/errors-and-retries) para tratar falhas de forma elegante
+- Consulte a [`start()` Referência de API](/docs/api-reference/workflow-api/start) para obter detalhes completos

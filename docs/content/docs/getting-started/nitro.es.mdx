@@ -1,0 +1,225 @@
+---
+title: Nitro
+description: Esta guía te llevará paso a paso por la configuración de tu primer flujo de trabajo en un proyecto Nitro v3. A lo largo del proceso, aprenderás más sobre los conceptos fundamentales para usar el kit de desarrollo en tus propios proyectos.
+---
+
+<Steps>
+
+<Step>
+## Crea tu proyecto Nitro
+
+Comienza creando un nuevo proyecto [Nitro v3](https://v3.nitro.build/). Este comando creará un nuevo directorio llamado `nitro-app` y configurará un proyecto Nitro en su interior.
+
+```bash
+npx create-nitro-app
+```
+
+Entra en el directorio recién creado:
+
+```bash
+cd nitro-app
+```
+
+### Instala `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Configura Nitro
+
+Añade el módulo `workflow/nitro` a tu `nitro.config.ts`. Esto habilita el uso de las directivas `"use workflow"` y `"use step"`.
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  serverDir: "./server",
+  modules: ["workflow/nitro"],
+});
+
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Configurar IntelliSense para TypeScript (Opcional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Para habilitar sugerencias útiles en tu IDE, configura el plugin workflow en `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Crea tu primer flujo de trabajo
+
+Crea un nuevo archivo para nuestro primer flujo de trabajo:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Completaremos esas funciones a continuación, pero echemos un vistazo a este código:
+
+- Definimos una función **flujo de trabajo** con la directiva `"use workflow"`. Piensa en la función de flujo de trabajo como el _orquestador_ de los **pasos** individuales.
+- La función `sleep` del Workflow DevKit nos permite suspender la ejecución del flujo de trabajo sin consumir recursos. Un sleep puede durar desde unos segundos hasta horas, días o incluso meses.
+
+## Crea los pasos de tu flujo de trabajo
+
+Ahora definamos esas funciones faltantes.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Al revisar este código:
+
+- La lógica de negocio vive dentro de los **pasos**. Cuando se invoca un paso dentro de un **flujo de trabajo**, se encola para ejecutarse en una solicitud separada mientras el flujo de trabajo está suspendido, al igual que `sleep`.
+- Si un paso lanza un error, como en `sendWelcomeEmail`, el paso se volverá a intentar automáticamente hasta que tenga éxito (o alcance el recuento máximo de reintentos del paso).
+- Los pasos pueden lanzar un `FatalError` si el error es intencional y no debe reintentarse.
+
+<Callout>
+  Profundizaremos en los flujos de trabajo, los pasos y otras formas de suspender o manejar eventos en [Fundamentos](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Crea tu manejador de ruta
+
+Para invocar tu nuevo flujo de trabajo, crearemos un nuevo manejador de ruta API en `server/api/signup.post.ts` con el siguiente código:
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+Este manejador de ruta crea un endpoint de petición `POST` en `/api/signup` que activará tu flujo de trabajo.
+
+<Callout>
+  Los flujos de trabajo pueden activarse desde rutas API o desde cualquier código del lado del servidor.
+</Callout>
+
+</Step>
+
+<Step>
+
+## Ejecutar en modo de desarrollo
+
+Para iniciar tu servidor de desarrollo, ejecuta el siguiente comando en tu terminal desde el directorio raíz de Nitro:
+
+```bash
+npm run dev
+```
+
+Una vez que el servidor de desarrollo esté en funcionamiento, puedes activar tu flujo de trabajo ejecutando este comando en la terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Revisa los registros del servidor de desarrollo de Nitro para ver la ejecución de tu flujo de trabajo, así como los pasos que se están procesando.
+
+Además, puedes usar la [CLI o la interfaz web del Workflow DevKit](/docs/observability) para inspeccionar en detalle las ejecuciones de tus flujos de trabajo y los pasos.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Interfaz web del Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+## Despliegue a producción
+
+Las aplicaciones Workflow DevKit actualmente funcionan mejor cuando se despliegan en [Vercel](https://vercel.com/home) y no requieren configuración especial.
+
+Consulta la sección [Despliegue](/docs/deploying) para aprender cómo se pueden desplegar tus flujos de trabajo en otros entornos.
+
+## Siguientes pasos
+
+- Aprende más sobre los [Fundamentos](/docs/foundations).
+- Consulta [Errores](/docs/errors) si encuentras problemas.
+- Explora la [Referencia de la API](/docs/api-reference).

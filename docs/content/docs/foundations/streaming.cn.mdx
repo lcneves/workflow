@@ -1,0 +1,568 @@
+---
+title: 流式传输
+---
+
+工作流可以在不等待整个工作流完成的情况下将数据实时流式传输到客户端。这使得在工作流执行期间可以传递进度更新、AI 生成的内容、日志消息以及其他增量数据。
+
+## 使用 `getWritable()` 入门
+
+每次工作流运行都有一个默认的可写流，步骤可以使用 [`getWritable()`](/docs/api-reference/workflow/get-writable) 写入该流。写入此流的数据会立即对消费该工作流输出的客户端可用。
+
+```typescript title="workflows/simple-streaming.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeProgress(message: string) {
+  "use step";
+
+  // Steps can write to the run's default stream
+  const writable = getWritable<string>(); // [!code highlight]
+  const writer = writable.getWriter();
+  await writer.write(message);
+  writer.releaseLock();
+}
+
+export async function simpleStreamingWorkflow() {
+  "use workflow";
+
+  await writeProgress("Starting task...");
+  await writeProgress("Processing data...");
+  await writeProgress("Task complete!");
+}
+```
+
+### 消费流
+
+在你的 API 路由中使用 `Run` 对象的 `readable` 属性来消费流：
+
+```typescript title="app/api/stream/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { simpleStreamingWorkflow } from "./workflows/simple";
+
+export async function POST() {
+  const run = await start(simpleStreamingWorkflow);
+
+  // Return the readable stream to the client
+  return new Response(run.readable, {
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+```
+
+当客户端请求此端点时，他们会在每条消息写入时立即收到，而无需等待工作流完成。
+
+### 从特定位置恢复流
+
+使用 `run.getReadable({ startIndex })` 可以从特定位置恢复流。这在超时或网络中断后重新连接时非常有用：
+
+```typescript title="app/api/resume-stream/[runId]/route.ts" lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ runId: string }> }
+) {
+  const { runId } = await params;
+  const { searchParams } = new URL(request.url);
+
+  // Client provides the last chunk index they received
+  const startIndexParam = searchParams.get("startIndex"); // [!code highlight]
+  const startIndex = startIndexParam ? parseInt(startIndexParam, 10) : undefined; // [!code highlight]
+
+  const run = getRun(runId);
+  const stream = run.getReadable({ startIndex }); // [!code highlight]
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+```
+
+这允许客户端重新连接并从上次中断的位置继续接收数据，而不是从头重新开始。
+
+## 将流作为数据类型
+
+[`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream) 和 [`WritableStream`](https://developer.mozilla.org/en-US/docs/Web/API/WritableStream) 是标准的 Web Streams API 类型，Workflow DevKit 使它们可序列化。它们不是自定义类型——它们遵循 Web 标准——但 Workflow DevKit 增强了在函数之间传递它们同时保持流式能力的能力。
+
+与完全序列化到事件日志的常规值不同，流在在函数之间传递时会保留其流式能力。
+
+**关键属性：**
+- 流引用可以在工作流函数和步骤函数之间传递
+- 流数据直接流动，不会存储在事件日志中
+- 流在工作流挂起点之间保留其状态
+
+<Callout type="info">
+**流在工作流挂起期间如何持久化**
+
+Workflow DevKit 中的流由“world”实现提供的持久化、可恢复存储支持。这使得流即使在工作流挂起和恢复期间也能保持其状态：
+
+- **Vercel 部署**：流由基于 Redis 的高性能流支持
+- **本地开发**：流块存储在文件系统中
+</Callout>
+
+### 将流作为参数传递
+
+由于流是可序列化的数据类型，你不需要使用特殊的 [`getWritable()`](/docs/api-reference/workflow/get-writable)。你甚至可以将你自己的流从外部传入步骤，通过工作流进行连接。
+
+下面是一个将请求体流通过工作流传递到处理该流的步骤的示例：
+
+```typescript title="app/api/upload/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { streamProcessingWorkflow } from "./workflows/streaming";
+
+export async function POST(request: Request) {
+  // Streams can be passed as workflow arguments
+  const run = await start(streamProcessingWorkflow, [request.body]); // [!code highlight]
+  await run.result();
+
+  return Response.json({ status: "complete" });
+}
+```
+
+```typescript title="workflows/streaming.ts" lineNumbers
+export async function streamProcessingWorkflow(
+  inputStream: ReadableStream<Uint8Array> // [!code highlight]
+) {
+  "use workflow";
+
+  // Workflow passes stream to step for processing
+  const result = await processInputStream(inputStream); // [!code highlight]
+  return { length: result.length };
+}
+
+async function processInputStream(input: ReadableStream<Uint8Array>) {
+  "use step";
+
+  // Step reads from the stream
+  const chunks: Uint8Array[] = [];
+
+  for await (const chunk of input) {
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+```
+
+## 重要限制
+
+<Callout type="info">
+**不能在工作流上下文中直接使用流**
+
+你不能在工作流函数中直接从流读取或向流写入。所有流操作必须在步骤函数中执行。
+</Callout>
+
+工作流函数必须是确定性的以支持重放。由于流为性能考虑绕过了事件日志，在工作流中读取流数据会破坏确定性——每次重放可能会看到不同的数据。通过要求所有流操作都在步骤中进行，框架确保了行为的一致性。
+
+有关确定性和重放的更多信息，请参见 [工作流与步骤](/docs/foundations/workflows-and-steps)。
+
+```typescript title="workflows/bad-example.ts" lineNumbers
+export async function badWorkflow() {
+  "use workflow";
+
+  const writable = getWritable<string>();
+
+  // Cannot read/write streams in workflow context
+  const writer = writable.getWriter(); // [!code highlight]
+  await writer.write("data"); // [!code highlight]
+}
+```
+
+```typescript title="workflows/good-example.ts" lineNumbers
+export async function goodWorkflow() {
+  "use workflow";
+
+  // Delegate stream operations to steps
+  await writeToStream("data");
+}
+
+async function writeToStream(data: string) {
+  "use step";
+
+  // Stream operations must happen in steps
+  const writable = getWritable<string>();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## 带命名空间的流
+
+使用 `getWritable({ namespace: 'name' })` 为不同类型的数据创建多个独立的流。当你想将日志、指标、数据输出或其他不同通道分离时，这非常有用。
+
+```typescript title="workflows/multi-stream.ts" lineNumbers
+import { getWritable } from "workflow";
+
+type LogEntry = { level: string; message: string };
+type MetricEntry = { cpu: number; memory: number };
+
+async function writeLogs() {
+  "use step";
+
+  const logs = getWritable<LogEntry>({ namespace: "logs" }); // [!code highlight]
+  const writer = logs.getWriter();
+
+  await writer.write({ level: "info", message: "Task started" });
+  await writer.write({ level: "info", message: "Processing..." });
+
+  writer.releaseLock();
+}
+
+async function writeMetrics() {
+  "use step";
+
+  const metrics = getWritable<MetricEntry>({ namespace: "metrics" }); // [!code highlight]
+  const writer = metrics.getWriter();
+
+  await writer.write({ cpu: 45, memory: 512 });
+  await writer.write({ cpu: 52, memory: 520 });
+
+  writer.releaseLock();
+}
+
+async function closeStreams() {
+  "use step";
+
+  await getWritable({ namespace: "logs" }).close();
+  await getWritable({ namespace: "metrics" }).close();
+}
+
+export async function multiStreamWorkflow() {
+  "use workflow";
+
+  await writeLogs();
+  await writeMetrics();
+  await closeStreams();
+}
+```
+
+### 消费命名空间流
+
+使用 `run.getReadable({ namespace: 'name' })` 访问特定流：
+
+```typescript title="app/api/multi-stream/route.ts" lineNumbers
+import { start } from "workflow/api";
+import { multiStreamWorkflow } from "./workflows/multi";
+
+type LogEntry = { level: string; message: string };
+type MetricEntry = { cpu: number; memory: number };
+
+export async function POST(request: Request) {
+  const run = await start(multiStreamWorkflow);
+
+  // Access specific named streams // [!code highlight]
+  const logs = run.getReadable<LogEntry>({ namespace: "logs" }); // [!code highlight]
+  const metrics = run.getReadable<MetricEntry>({ namespace: "metrics" }); // [!code highlight]
+
+  // Return the logs stream to the client
+  return new Response(logs, {
+    headers: { "Content-Type": "application/json" }
+  });
+}
+```
+
+## 常见模式
+
+### 长时间运行任务的进度更新
+
+发送增量进度更新以在冗长的工作流期间让用户保持知情：
+
+```typescript title="workflows/batch-processing.ts" lineNumbers
+import { getWritable, sleep } from "workflow";
+
+type ProgressUpdate = {
+  item: string;
+  progress: number;
+  status: string;
+};
+
+async function processItem(
+  item: string,
+  current: number,
+  total: number
+) {
+  "use step";
+
+  const writable = getWritable<ProgressUpdate>(); // [!code highlight]
+  const writer = writable.getWriter();
+
+  // Simulate processing
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  // Send progress update // [!code highlight]
+  await writer.write({ // [!code highlight]
+    item, // [!code highlight]
+    progress: Math.round((current / total) * 100), // [!code highlight]
+    status: "processing" // [!code highlight]
+  }); // [!code highlight]
+
+  writer.releaseLock();
+}
+
+async function finalizeProgress() {
+  "use step";
+
+  await getWritable().close();
+}
+
+export async function batchProcessingWorkflow(items: string[]) {
+  "use workflow";
+
+  for (let i = 0; i < items.length; i++) {
+    await processItem(items[i], i + 1, items.length);
+    await sleep("1s");
+  }
+
+  await finalizeProgress();
+}
+```
+
+### 使用 `DurableAgent` 流式传输 AI 响应
+
+使用来自 `@workflow/ai` 的 [`DurableAgent`](/docs/api-reference/workflow-ai/durable-agent) 流式传输 AI 生成的内容。工具也可以使用 AI SDK 的 [`UIMessageChunk`](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) 类型通过 [数据块](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#streaming-custom-data) 向相同的流发送进度更新：
+
+```typescript title="workflows/ai-assistant.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import { z } from "zod";
+import type { UIMessageChunk } from "ai";
+
+async function searchFlights({ query }: { query: string }) {
+  "use step";
+
+  // Tools can emit progress updates to the stream
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+  await writer.write({ // [!code highlight]
+    type: "data-progress", // [!code highlight]
+    data: { message: `Searching flights for ${query}...` }, // [!code highlight]
+    transient: true, // [!code highlight]
+  }); // [!code highlight]
+  writer.releaseLock(); // [!code highlight]
+
+  // ... search logic ...
+  return { flights: [/* results */] };
+}
+
+export async function aiAssistantWorkflow(userMessage: string) {
+  "use workflow";
+
+  const agent = new DurableAgent({
+    model: "anthropic/claude-haiku-4.5",
+    system: "You are a helpful flight assistant.",
+    tools: {
+      searchFlights: {
+        description: "Search for flights",
+        inputSchema: z.object({ query: z.string() }),
+        execute: searchFlights,
+      },
+    },
+  });
+
+  // LLM response will be streamed to the run's writable
+  await agent.stream({
+    messages: [{ role: "user", content: userMessage }],
+    writable: getWritable<UIMessageChunk>(), // [!code highlight]
+  });
+}
+```
+
+```typescript title="app/api/ai-assistant/route.ts" lineNumbers
+import { createUIMessageStreamResponse } from "ai";
+import { start } from "workflow/api";
+import { aiAssistantWorkflow } from "./workflows/ai";
+
+export async function POST(request: Request) {
+  const { message } = await request.json();
+
+  const run = await start(aiAssistantWorkflow, [message]);
+
+  return createUIMessageStreamResponse({
+    stream: run.readable,
+  });
+}
+```
+
+<Callout type="info">
+完整实现请参见演示如何使用工具进度更新流式传输 AI 响应的 [flight booking example](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app)。
+</Callout>
+
+### 步骤之间的流式传输
+
+一个步骤生成流，另一个步骤消费它：
+
+```typescript title="workflows/stream-pipeline.ts" lineNumbers
+export async function streamPipelineWorkflow() {
+  "use workflow";
+
+  // Streams can be passed between steps
+  const stream = await generateData(); // [!code highlight]
+  const results = await consumeData(stream); // [!code highlight]
+
+  return { count: results.length };
+}
+
+async function generateData(): Promise<ReadableStream<number>> {
+  "use step";
+
+  // Producer step creates a stream
+  return new ReadableStream<number>({
+    start(controller) {
+      for (let i = 0; i < 10; i++) {
+        controller.enqueue(i);
+      }
+      controller.close();
+    }
+  });
+}
+
+async function consumeData(readable: ReadableStream<number>) {
+  "use step";
+
+  // Consumer step reads from the stream
+  const values: number[] = [];
+  for await (const value of readable) {
+    values.push(value);
+  }
+  return values;
+}
+```
+
+### 无内存开销处理大文件
+
+通过将块流式传输通过转换步骤来处理大文件：
+
+```typescript title="workflows/file-processing.ts" lineNumbers
+export async function fileProcessingWorkflow(fileUrl: string) {
+  "use workflow";
+
+  // Chain streams through multiple processing steps
+  const rawStream = await downloadFile(fileUrl); // [!code highlight]
+  const processedStream = await transformData(rawStream); // [!code highlight]
+  await uploadResult(processedStream); // [!code highlight]
+}
+
+async function downloadFile(url: string): Promise<ReadableStream<Uint8Array>> {
+  "use step";
+  const response = await fetch(url);
+  return response.body!;
+}
+
+async function transformData(input: ReadableStream<Uint8Array>): Promise<ReadableStream<Uint8Array>> {
+  "use step";
+
+  // Transform stream chunks without loading entire file into memory
+  return input.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      // Process each chunk individually
+      controller.enqueue(chunk);
+    }
+  }));
+}
+
+async function uploadResult(stream: ReadableStream<Uint8Array>) {
+  "use step";
+  await fetch("https://storage.example.com/upload", {
+    method: "POST",
+    body: stream,
+  });
+}
+```
+
+## 最佳实践
+
+**正确释放锁：**
+
+```typescript lineNumbers
+const writer = writable.getWriter();
+try {
+  await writer.write(data);
+} finally {
+  writer.releaseLock(); // Always release
+}
+```
+
+<Callout type="info">
+在步骤中获取的流锁仅在该步骤内生效，而不会跨步骤生效。这使得多个写入者可以并发写入同一流。
+</Callout>
+
+<Callout type="info">
+如果未释放锁，步骤进程将无法终止。即使步骤返回且工作流继续，底层进程仍将保持活动状态直到超时。
+</Callout>
+
+**完成后关闭流：**
+
+```typescript lineNumbers
+async function finalizeStream() {
+  "use step";
+
+  await getWritable().close(); // Signal completion
+}
+```
+
+当工作流运行完成时流会自动关闭，但显式关闭它们可以更早向消费者发出完成信号。
+
+**使用类型化流以确保类型安全：**
+
+```typescript lineNumbers
+const writable = getWritable<MyDataType>();
+const writer = writable.getWriter();
+await writer.write({ /* typed data */ });
+```
+
+## 流失败
+
+当步骤返回一个流时，一旦步骤返回，该步骤就被视为成功，即便该流随后遇到错误。工作流不会自动重试该步骤。流的消费者必须优雅地处理错误。有关重试行为的更多信息，请参见 [错误与重试](/docs/foundations/errors-and-retries)。
+
+```typescript title="workflows/stream-error-handling.ts" lineNumbers
+import { FatalError } from "workflow";
+
+async function produceStream(): Promise<ReadableStream<number>> {
+  "use step";
+
+  // Step succeeds once it returns the stream
+  return new ReadableStream<number>({
+    start(controller) {
+      controller.enqueue(1);
+      controller.enqueue(2);
+      // Error occurs after step has completed // [!code highlight]
+      controller.error(new Error("Stream failed")); // [!code highlight]
+    }
+  });
+}
+
+async function consumeStream(stream: ReadableStream<number>) {
+  "use step";
+
+  try { // [!code highlight]
+    for await (const value of stream) {
+      console.log(value);
+    }
+  } catch (error) { // [!code highlight]
+    // Retrying won't help since the stream is already errored // [!code highlight]
+    throw new FatalError("Stream failed"); // [!code highlight]
+  } // [!code highlight]
+}
+
+export async function streamErrorWorkflow() {
+  "use workflow";
+
+  const stream = await produceStream(); // Step succeeds // [!code highlight]
+  await consumeStream(stream); // Consumer handles errors // [!code highlight]
+}
+```
+
+<Callout type="info">
+流错误不会触发对生产者步骤的自动重试。请设计你的流消费者以适当处理错误。由于流已经处于错误状态，重试消费者也无济于事——请使用 `FatalError` 立即使工作流失败。
+</Callout>
+
+## 相关文档
+
+- [`getWritable()` API Reference](/docs/api-reference/workflow/get-writable) - 获取工作流的可写流
+- [`sleep()` API Reference](/docs/api-reference/workflow/sleep) - 暂停工作流执行一段时间
+- [`start()` API Reference](/docs/api-reference/workflow-api/start) - 启动工作流并访问 `Run` 对象
+- [`getRun()` API Reference](/docs/api-reference/workflow-api/get-run) - 稍后检索运行及其流
+- [DurableAgent](/docs/api-reference/workflow-ai/durable-agent) - 内置流式传输支持的 AI 代理
+- [错误与重试](/docs/foundations/errors-and-retries) - 了解错误处理和重试行为
+- [序列化](/docs/foundations/serialization) - 了解可以在工作流中传递的数据类型
+- [工作流与步骤](/docs/foundations/workflows-and-steps) - 工作流执行的核心概念

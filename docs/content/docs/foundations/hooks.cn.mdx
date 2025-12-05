@@ -1,0 +1,454 @@
+---
+title: Hooks 与 Webhooks
+---
+
+Hooks 提供了一种强大的机制，用于暂停工作流执行并随后使用外部数据恢复它们。它们使工作流能够等待外部事件、用户交互（也称为 “人类在回路中”）或 HTTP 请求。本指南将介绍核心概念，从低级的 Hook 原语开始，逐步构建到更高级的 Webhook 抽象。
+
+## 理解 Hooks
+
+在核心层面，**Hooks** 是一个低级原语，允许您暂停工作流并随后使用任意 [可序列化的数据](/docs/foundations/serialization) 恢复它。可以将它们视为工作流中的挂起点，在这些点上您正在等待外部输入。
+
+当您创建一个 hook 时，它会生成一个唯一的令牌，外部系统可以使用该令牌向您的工作流发送数据。这使得 hooks 非常适合以下场景：
+
+- 等待用户或管理员的批准
+- 从外部系统或服务接收数据
+- 实现随时间对多个事件作出反应的事件驱动工作流
+
+### 创建您的第一个 Hook
+
+让我们从一个简单的示例开始。下面是一个创建 hook 并等待外部数据的工作流：
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function approvalWorkflow() {
+  "use workflow";
+
+  // Create a hook that expects an approval payload
+  const hook = createHook<{ approved: boolean; comment: string }>();
+
+  console.log("Waiting for approval...");
+  console.log("Send approval to token:", hook.token);
+
+  // Workflow pauses here until data is sent
+  const result = await hook;
+
+  if (result.approved) {
+    console.log("Approved with comment:", result.comment);
+    // Continue with approved workflow...
+  } else {
+    console.log("Rejected:", result.comment);
+    // Handle rejection...
+  }
+}
+```
+
+工作流将在 `await hook` 处暂停，直到外部代码发送数据以恢复它。
+
+<Callout type="info">
+参见 [`createHook()`](/docs/api-reference/workflow/create-hook) 的完整 API 参考，了解所有可用选项。
+</Callout>
+
+### 恢复 Hook
+
+要向正在等待的工作流发送数据，请在 API 路由、服务器操作或任何其他外部上下文中使用 [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook)：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+// In an API route or external handler
+export async function POST(request: Request) {
+  const { token, approved, comment } = await request.json();
+
+  try {
+    // Resume the workflow with the approval data
+    const result = await resumeHook(token, { approved, comment });
+    return Response.json({ success: true, runId: result.runId });
+  } catch (error) {
+    return Response.json({ error: "Invalid token" }, { status: 404 });
+  }
+}
+```
+
+关键要点：
+- Hooks 允许您传递 **任意 [可序列化的数据](/docs/foundations/serialization)** 作为有效负载
+- 恢复 hook 需要该 hook 的 `token`
+- 工作流将从它离开的地方继续执行
+
+### 用于确定性 Hooks 的自定义令牌
+
+默认情况下，hooks 会生成一个随机令牌。然而，您通常希望使用一个 **自定义令牌**，使外部系统能够重建该令牌。这在长期运行的工作流中尤其有用，在这种情况下同一个工作流实例应处理多个事件。
+
+例如，假设有一个 Slack 机器人，每个频道都应有自己的工作流实例：
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function slackChannelBot(channelId: string) {
+  "use workflow";
+
+  // Use channel ID in the token so Slack webhooks can find this workflow
+  const hook = createHook<SlackMessage>({
+    token: `slack_messages:${channelId}`
+  });
+
+  for await (const message of hook) {
+    console.log(`${message.user}: ${message.text}`);
+
+    if (message.text === "/stop") {
+      break;
+    }
+
+    await processMessage(message);
+  }
+}
+
+async function processMessage(message: SlackMessage) {
+  "use step";
+  // Process the Slack message
+}
+```
+
+现在您的 Slack webhook 处理程序可以确定性地恢复正确的工作流：
+
+```typescript lineNumbers
+import { resumeHook } from "workflow/api";
+
+export async function POST(request: Request) {
+  const slackEvent = await request.json();
+  const channelId = slackEvent.channel;
+
+  try {
+    // Reconstruct the token using the channel ID
+    await resumeHook(`slack_messages:${channelId}`, slackEvent);
+
+    return new Response("OK");
+  } catch (error) {
+    return new Response("Hook not found", { status: 404 });
+  }
+}
+```
+
+### 接收多个事件
+
+Hooks 是可重用的 —— 它们实现了 `AsyncIterable`，这意味着您可以使用 `for await...of` 随时间接收多个事件：
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function dataCollectionWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ value: number; done?: boolean }>();
+
+  const values: number[] = [];
+
+  // Keep receiving data until we get a "done" signal
+  for await (const payload of hook) {
+    values.push(payload.value);
+
+    if (payload.done) {
+      break;
+    }
+  }
+
+  console.log("Collected values:", values);
+  return values;
+}
+```
+
+每次使用相同令牌调用 `resumeHook()` 时，循环都会接收到另一个值。
+
+## 理解 Webhooks
+
+虽然 hooks 很强大，但它们要求您手动处理 HTTP 请求并将其路由到工作流。**Webhooks** 通过在 hooks 之上提供一个更高级的抽象来解决这个问题，该抽象：
+
+1. 自动序列化整个 HTTP [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) 对象
+2. 提供一个自动可寻址的 `url` 属性，指向生成的 webhook 端点
+3. 处理将 HTTP [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) 对象发送回调用方
+
+使用 Workflow DevKit 时，webhooks 会在 `/.well-known/workflow/v1/webhook/:token` 自动连接，无需任何额外设置。
+
+<Callout type="info">
+参见 [`createWebhook()`](/docs/api-reference/workflow/create-webhook) 的完整 API 参考，了解所有可用选项。
+</Callout>
+
+### 创建您的第一个 Webhook
+
+下面是一个接收 HTTP 请求的简单 webhook：
+
+```typescript lineNumbers
+import { createWebhook } from "workflow";
+
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+
+  // The webhook is automatically available at this URL
+  console.log("Send HTTP requests to:", webhook.url);
+  // Example: https://your-app.com/.well-known/workflow/v1/webhook/lJHkuMdQ2FxSFTbUMU84k
+
+  // Workflow pauses until an HTTP request is received
+  const request = await webhook;
+
+  console.log("Received request:", request.method, request.url);
+
+  // Access the request body
+  const data = await request.json();
+  console.log("Data:", data);
+}
+```
+
+webhook 将默认自动以 `202 Accepted` 状态响应。外部系统只需向 `webhook.url` 发送 HTTP 请求即可恢复您的工作流。
+
+### 发送自定义响应
+
+Webhooks 提供两种发送自定义 HTTP 响应的方式：**静态响应** 和 **动态响应**。
+
+#### 静态响应
+
+使用 `respondWith` 选项提供一个静态响应，该响应将自动为每个请求发送：
+
+```typescript lineNumbers
+import { createWebhook } from "workflow";
+
+export async function webhookWithStaticResponse() {
+  "use workflow";
+
+  const webhook = createWebhook({
+    respondWith: Response.json({
+      success: true, message: "Webhook received"
+    }),
+  });
+
+  const request = await webhook;
+
+  // The response was already sent automatically
+  // Continue processing the request asynchronously
+  const data = await request.json();
+  await processData(data);
+}
+
+async function processData(data: any) {
+  "use step";
+  // Long-running processing here
+}
+```
+
+#### 动态响应（手动模式）
+
+对于基于请求内容的动态响应，将 `respondWith` 设置为 `"manual"`，并在请求对象上调用 `respondWith()` 方法：
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow";
+
+async function sendCustomResponse(request: RequestWithResponse, message: string) {
+  "use step";
+
+  // Call respondWith() to send the response
+  await request.respondWith(
+    new Response(
+      JSON.stringify({ message }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      }
+    )
+  );
+}
+
+export async function webhookWithDynamicResponse() {
+  "use workflow";
+
+  // Set respondWith to "manual" to handle responses yourself
+  const webhook = createWebhook({ respondWith: "manual" });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  // Decide what response to send based on the data
+  if (data.type === "urgent") {
+    await sendCustomResponse(request, "Processing urgently");
+  } else {
+    await sendCustomResponse(request, "Processing normally");
+  }
+
+  // Continue workflow...
+}
+```
+
+<Callout type="warning">
+当使用 `respondWith: "manual"` 时，由于序列化要求，必须从 step 函数内部调用 `respondWith()` 方法。此要求未来可能会被移除。
+</Callout>
+
+### 处理多个 Webhook 请求
+
+与 hooks 类似，webhooks 支持迭代：
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow";
+
+async function respondToSlack(request: RequestWithResponse, text: string) {
+  "use step";
+
+  await request.respondWith(
+    new Response(
+      JSON.stringify({ response_type: "in_channel", text }),
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+}
+
+export async function slackCommandWorkflow(channelId: string) {
+  "use workflow";
+
+  const webhook = createWebhook({
+    token: `slack_command:${channelId}`,
+    respondWith: "manual"
+  });
+
+  console.log("Configure Slack command webhook:", webhook.url);
+
+  for await (const request of webhook) {
+    const formData = await request.formData();
+    const command = formData.get("command");
+    const text = formData.get("text");
+
+    if (command === "/status") {
+      await respondToSlack(request, "Checking status...");
+      const status = await checkSystemStatus();
+      await postToSlack(channelId, `Status: ${status}`);
+    }
+
+    if (text === "stop") {
+      await respondToSlack(request, "Stopping workflow...");
+      break;
+    }
+  }
+}
+
+async function checkSystemStatus() {
+  "use step";
+  return "All systems operational";
+}
+
+async function postToSlack(channelId: string, message: string) {
+  "use step";
+  // Post message to Slack
+}
+```
+
+## Hooks 与 Webhooks：何时使用哪一个
+
+| Feature | Hooks | Webhooks |
+|---------|-------|----------|
+| **数据格式** | 任意可序列化的数据 | HTTP `Request` 对象 |
+| **URL** | 无自动 URL | 自动的 `webhook.url` 属性 |
+| **响应处理** | 不适用 | 可以发送 HTTP `Response`（静态或动态） |
+| **使用场景** | 自定义集成、类型安全的负载 | HTTP webhooks、标准 REST API |
+| **恢复方式** | [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) | 通过 HTTP 自动恢复，或 [`resumeWebhook()`](/docs/api-reference/workflow-api/resume-webhook) |
+
+**在以下情况下使用 Hooks：**
+- 需要对负载结构拥有完全控制
+- 正在与自定义事件源集成
+- 希望使用 [`defineHook()`](/docs/api-reference/workflow/define-hook) 获得强类型的 TypeScript 支持
+
+**在以下情况下使用 Webhooks：**
+- 您从外部服务接收 HTTP 请求
+- 您需要向调用方发送 HTTP 响应
+- 您希望无需编写 API 处理程序即可获得自动 URL 路由
+
+## 进阶模式
+
+### 使用 `defineHook()` 实现类型安全的 Hooks
+
+[`defineHook()`](/docs/api-reference/workflow/define-hook) 辅助函数在创建和恢复 hooks 之间提供类型安全和运行时验证，使用的是 [Standard Schema v1](https://standardschema.dev)。可以使用任何兼容的验证器，如 Zod 或 Valibot：
+
+```typescript lineNumbers
+import { defineHook } from "workflow";
+import { z } from "zod";
+
+// Define the hook with schema for type safety and runtime validation
+const approvalHook = defineHook({ // [!code highlight]
+  schema: z.object({ // [!code highlight]
+    requestId: z.string(), // [!code highlight]
+    approved: z.boolean(), // [!code highlight]
+    approvedBy: z.string(), // [!code highlight]
+    comment: z.string().transform((value) => value.trim()), // [!code highlight]
+  }), // [!code highlight]
+}); // [!code highlight]
+
+// In your workflow
+export async function documentApprovalWorkflow(documentId: string) {
+  "use workflow";
+
+  const hook = approvalHook.create({
+    token: `approval:${documentId}`
+  });
+
+  // Payload is type-safe and validated
+  const approval = await hook;
+
+  console.log(`Document ${approval.requestId} ${approval.approved ? "approved" : "rejected"}`);
+  console.log(`By: ${approval.approvedBy}, Comment: ${approval.comment}`);
+}
+
+// In your API route - both type-safe and runtime-validated!
+export async function POST(request: Request) {
+  const { documentId, ...approvalData } = await request.json();
+
+  try {
+    // The schema validates the payload before resuming the workflow
+    await approvalHook.resume(`approval:${documentId}`, approvalData);
+    return new Response("OK");
+  } catch (error) {
+    return Response.json({ error: "Invalid token or validation failed" }, { status: 400 });
+  }
+}
+```
+
+在较大的应用中，当工作流和 API 代码分散在不同文件时，这种模式尤其有价值，因为它在编译时提供类型安全，并在运行时提供验证。
+
+## 最佳实践
+
+### 令牌设计
+
+使用自定义令牌时：
+
+- **使其具有确定性**：基于外部系统能够重建的数据（例如频道 ID、用户 ID 等）
+- **使用命名空间**：为令牌添加前缀以避免冲突（例如 `slack:${channelId}`、`github:${repoId}`）
+- **包含路由信息**：确保令牌包含足够的信息以识别正确的工作流实例
+
+### Webhooks 的响应处理
+
+- 对于简单的确认，使用 **静态响应**（`respondWith: Response`）
+- 当响应依赖于请求处理时，使用 **手动模式**（`respondWith: "manual"`）
+- 请记住 `respondWith()` 必须从 step 函数内部调用
+
+### 事件迭代
+
+Hooks 和 Webhooks 都支持迭代，使它们非常适合长期运行的事件循环：
+
+```typescript
+const hook = createHook<Event>();
+
+for await (const event of hook) {
+  await processEvent(event);
+
+  if (shouldStop(event)) {
+    break;
+  }
+}
+```
+
+此模式允许单个工作流实例随时间处理多个事件，并在事件之间保持状态。
+
+## 相关文档
+
+- [Serialization](/docs/foundations/serialization) - 理解可以通过 hooks 传递的数据
+- [`createHook()` API Reference](/docs/api-reference/workflow/create-hook)
+- [`createWebhook()` API Reference](/docs/api-reference/workflow/create-webhook)
+- [`defineHook()` API Reference](/docs/api-reference/workflow/define-hook)
+- [`resumeHook()` API Reference](/docs/api-reference/workflow-api/resume-hook)
+- [`resumeWebhook()` API Reference](/docs/api-reference/workflow-api/resume-webhook)

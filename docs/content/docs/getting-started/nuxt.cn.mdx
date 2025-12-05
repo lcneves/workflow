@@ -1,0 +1,225 @@
+---
+title: Nuxt
+description: 本指南将引导您在 Nuxt 应用中设置第一个工作流。在此过程中，您将了解更多对在自己项目中使用开发工具包至关重要的概念。
+---
+
+<Steps>
+
+<Step>
+## 创建您的 Nuxt 项目
+
+首先创建一个新的 Nuxt 项目。此命令会创建一个名为 `nuxt-app` 的新目录并在其中设置一个 Nuxt 项目。
+
+```bash
+npm create nuxt@latest nuxt-app
+```
+
+进入新创建的目录：
+
+```bash
+cd nuxt-app
+```
+
+### 安装 `workflow`
+
+```package-install
+npm i workflow
+```
+
+### 配置 Nuxt
+
+将 `workflow` 添加到您的 `nuxt.config.ts`。这会自动配置 Nitro 集成并启用对 `"use workflow"` 和 `"use step"` 指令的使用。
+
+```typescript title="nuxt.config.ts" lineNumbers
+import { defineNuxtConfig } from "nuxt/config";
+
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"], // [!code highlight]
+  compatibilityDate: "latest",
+});
+```
+
+这还会自动启用 TypeScript 插件，为您的 IDE 中的工作流和步骤函数提供有用的 IntelliSense 提示。
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      禁用 TypeScript 插件（可选）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+TypeScript 插件默认启用。如果您需要禁用它，可以在您的 `nuxt.config.ts` 中进行配置：
+
+```typescript title="nuxt.config.ts" lineNumbers
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"],
+  workflow: {
+    typescriptPlugin: false, // [!code highlight]
+  },
+  compatibilityDate: "latest",
+});
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 创建您的第一个工作流
+
+为我们的第一个工作流创建一个新文件：
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+我们接下来会补充那些函数，但先看看这段代码：
+
+- 我们使用指令 `"use workflow"` 定义了一个 **工作流** 函数。可以把工作流函数看作各个 **步骤** 的 _协调者_。
+- Workflow DevKit 的 `sleep` 函数允许我们在不消耗任何资源的情况下暂停工作流的执行。暂停可以是几秒、几小时、几天，甚至几个月。
+
+## 创建您的工作流步骤
+
+现在来定义那些缺失的函数。
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+查看这段代码：
+
+- 业务逻辑位于 **步骤** 中。当在 **工作流** 内调用一个步骤时，它会被排队为一个单独的请求运行，而工作流则处于挂起状态，就像 `sleep` 一样。
+- 如果步骤抛出错误，例如在 `sendWelcomeEmail` 中，步骤会自动重试直到成功（或达到该步骤的最大重试次数）。
+- 如果错误是有意为之且不应重试，步骤可以抛出 `FatalError`。
+
+<Callout>
+  我们将在 [基础](/docs/foundations) 中更深入地探讨工作流、步骤以及挂起或处理事件的其他方式。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 创建您的 API 路由
+
+要调用您新建的工作流，我们将在 `server/api/signup.post.ts` 创建一个新的 API 路由处理器，代码如下：
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler, readBody } from "h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async (event) => {
+  const { email } = await readBody(event);
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+
+  return {
+    message: "User signup workflow started",
+  };
+});
+```
+
+此 API 路由在 `/api/signup` 创建了一个 `POST` 请求端点，用以触发您的工作流。
+
+<Callout>
+  工作流可以从 API 路由或任何服务器端代码触发。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 在开发环境中运行
+
+要启动开发服务器，请在 Nuxt 根目录的终端中运行以下命令：
+
+```bash
+npm run dev
+```
+
+一旦开发服务器运行起来，您可以在终端运行以下命令来触发工作流：
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+检查 Nuxt 开发服务器日志以查看工作流的执行情况以及正在处理的步骤。
+
+此外，您可以使用 [Workflow DevKit 命令行或 Web 界面](/docs/observability) 来详细检查工作流运行和步骤。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit Web 界面" />
+
+</Step>
+
+</Steps>
+
+## 部署到生产环境
+
+Workflow DevKit 应用目前在部署到 Vercel 时表现最佳，并且无需特殊配置。
+
+查看 [部署](/docs/deploying) 部分以了解如何将工作流部署到其他地方。
+
+## 后续步骤
+
+- 进一步了解 [基础](/docs/foundations)。
+- 遇到问题时查看 [错误](/docs/errors)。
+- 浏览 [API 参考](/docs/api-reference)。

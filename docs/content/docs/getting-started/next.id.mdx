@@ -1,0 +1,261 @@
+---
+title: Next.js
+description: Panduan ini akan memandu Anda melalui penyiapan workflow pertama di aplikasi Next.js. Sepanjang proses, Anda akan mempelajari lebih lanjut tentang konsep-konsep yang mendasar untuk menggunakan development kit dalam proyek Anda sendiri.
+---
+
+<Steps>
+
+<Step>
+## Buat Proyek Next.js Anda
+
+Mulai dengan membuat proyek Next.js baru. Perintah ini akan membuat direktori baru bernama `my-workflow-app` dan menyiapkan proyek Next.js di dalamnya.
+
+```bash
+npm create next-app@latest my-workflow-app
+```
+
+Masuk ke direktori yang baru dibuat:
+
+```bash
+cd my-workflow-app
+```
+
+### Instal `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Konfigurasikan Next.js
+
+Bungkus `next.config.ts` Anda dengan `withWorkflow()`. Ini memungkinkan penggunaan direktif `"use workflow"` dan `"use step"`.
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next"; // [!code highlight]
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // … rest of your Next.js config
+};
+
+export default withWorkflow(nextConfig); // [!code highlight]
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Siapkan IntelliSense untuk TypeScript (Opsional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Untuk mengaktifkan petunjuk yang berguna di IDE Anda, konfigurasikan plugin workflow di `tsconfig.json`:
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Konfigurasikan Proxy Handler (jika berlaku)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Jika aplikasi Next.js Anda memiliki sebuah [proxy handler](https://nextjs.org/docs/app/api-reference/file-conventions/proxy)
+(sebelumnya dikenal sebagai "middleware"), Anda perlu memperbarui pola matcher untuk mengecualikan jalur internal Workflow agar proxy handler tidak dijalankan pada jalur tersebut.
+
+Tambahkan `.well-known/workflow/*` ke daftar pengecualian middleware Anda:
+
+```typescript title="proxy.ts" lineNumbers
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+export function proxy(request: NextRequest) {
+  // Your middleware logic
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    // ... your existing matchers
+    {
+      source: "/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/).*)", // [!code highlight]
+    },
+  ],
+};
+```
+
+Ini memastikan bahwa jalur internal Workflow tidak disergap oleh middleware Anda, yang dapat mengganggu eksekusi dan kelanjutan workflow.
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Buat Workflow Pertama Anda
+
+Buat file baru untuk workflow pertama kami:
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+ "use workflow"; // [!code highlight]
+
+ const user = await createUser(email);
+ await sendWelcomeEmail(user);
+
+ await sleep("5s"); // Pause for 5s - doesn't consume any resources
+ await sendOnboardingEmail(user);
+
+ console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+ return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+Kita akan mengisi fungsi-fungsi tersebut nanti, tapi mari lihat kode ini:
+
+* Kita mendefinisikan sebuah fungsi **workflow** dengan direktif `"use workflow"`. Anggap fungsi workflow sebagai _pengatur_ dari **steps** individual.
+* Fungsi `sleep` dari Workflow DevKit memungkinkan kita menangguhkan eksekusi workflow tanpa menggunakan sumber daya. Durasi sleep bisa beberapa detik, jam, hari, atau bahkan bulan.
+
+## Buat Langkah-langkah Workflow Anda
+
+Sekarang mari kita definisikan fungsi-fungsi yang hilang tersebut.
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+ "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+ console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Melihat kode ini:
+
+* Logika bisnis berada di dalam **steps**. Saat sebuah step dipanggil dalam sebuah **workflow**, step tersebut akan antre untuk dijalankan pada permintaan terpisah sementara workflow ditangguhkan, sama seperti `sleep`.
+* Jika sebuah step melemparkan error, seperti pada `sendWelcomeEmail`, step akan otomatis dicoba ulang sampai berhasil (atau mencapai batas retry maksimal step tersebut).
+* Step dapat melempar `FatalError` jika error tersebut disengaja dan tidak boleh dicoba ulang.
+
+<Callout>
+Kami akan membahas lebih dalam tentang workflows, steps, dan cara lain untuk menangguhkan atau menangani event di [Dasar-dasar](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Buat Route Handler Anda
+
+Untuk memanggil workflow baru Anda, kita perlu menambahkan workflow Anda ke Route Handler API `POST`, `app/api/signup/route.ts`, dengan kode berikut:
+
+```typescript title="app/api/signup/route.ts"
+import { start } from "workflow/api";
+import { handleUserSignup } from "@/workflows/user-signup";
+import { NextResponse } from "next/server";
+
+export async function POST(request: Request) {
+ const { email } = await request.json();
+
+ // Executes asynchronously and doesn't block your app
+ await start(handleUserSignup, [email]);
+
+ return NextResponse.json({
+  message: "User signup workflow started",
+ });
+}
+```
+
+Route Handler ini membuat endpoint permintaan `POST` di `/api/signup` yang akan memicu workflow Anda.
+
+<Callout>
+Workflow dapat dipicu dari route API, Server Actions, atau kode sisi-server mana pun.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Jalankan dalam pengembangan
+
+Untuk memulai server pengembangan Anda, jalankan perintah berikut di terminal dari direktori root Next.js Anda:
+
+```bash
+npm run dev
+```
+
+Setelah server pengembangan berjalan, Anda dapat memicu workflow dengan menjalankan perintah ini di terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Periksa log server pengembangan Next.js untuk melihat workflow Anda berjalan, serta langkah-langkah yang sedang diproses.
+
+Selain itu, Anda dapat menggunakan [Workflow DevKit CLI atau UI Web](/docs/observability) untuk memeriksa run workflow dan langkah-langkah secara rinci.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+## Menerapkan ke produksi
+
+Aplikasi Workflow DevKit saat ini bekerja paling baik ketika dideploy ke [Vercel](https://vercel.com/home) dan tidak memerlukan konfigurasi khusus.
+
+Periksa bagian [Menerapkan](/docs/deploying) untuk mempelajari bagaimana workflow Anda dapat dideploy ke tempat lain.
+
+## Langkah Selanjutnya
+
+* Pelajari lebih lanjut tentang [Dasar-dasar](/docs/foundations).
+* Periksa [Kesalahan](/docs/errors) jika Anda mengalami masalah.
+* Jelajahi [Referensi API](/docs/api-reference).

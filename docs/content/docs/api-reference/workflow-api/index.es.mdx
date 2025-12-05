@@ -1,0 +1,24 @@
+---
+title: "flujo-de-trabajo/api"
+---
+
+Referencia de API para funciones en tiempo de ejecución del paquete `workflow/api`.
+
+## Funciones
+
+Workflow DevKit proporciona funciones en tiempo de ejecución que se usan fuera de las funciones de flujo de trabajo y de paso. Estas se acceden desde el punto de entrada en tiempo de ejecución (p. ej., donde se llama a `start(workflowFn)`):
+
+<Cards>
+    <Card href="/docs/api-reference/workflow-api/start" title="start()">
+        Iniciar/encolar una nueva ejecución del flujo de trabajo.
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-hook" title="resumeHook()">
+        Reanudar un flujo de trabajo enviando una carga útil (payload) a un hook.
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-webhook" title="resumeWebhook()">
+        Reanudar un flujo de trabajo enviando una `Request` a un webhook.
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/get-run" title="getRun()">
+        Obtener el estado y los metadatos de la ejecución del flujo de trabajo sin esperar a su finalización.
+    </Card>
+</Cards>

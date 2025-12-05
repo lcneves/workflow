@@ -1,0 +1,100 @@
+---
+title: start-funcao-de-workflow-invalida
+---
+
+Este erro ocorre quando você tenta chamar `start()` com uma função que não é uma função de workflow válida ou quando o Workflow DevKit não está configurado corretamente.
+
+## Mensagem de Erro
+
+```
+'start' received an invalid workflow function. Ensure the Workflow DevKit
+is configured correctly and the function includes a 'use workflow' directive.
+```
+
+## Por que Isso Acontece
+
+A função `start()` espera uma função de workflow que tenha sido devidamente processada pelo sistema de build do Workflow DevKit. Durante o processo de build, as funções de workflow são transformadas e marcadas com metadados especiais que `start()` usa para identificá-las e executá-las.
+
+Este erro geralmente ocorre quando:
+
+* A função está sem a diretiva `"use workflow"`
+* O workflow não está sendo construído/transformado corretamente
+* A função não está sendo exportada do arquivo de workflow
+* A função errada está sendo importada
+
+## Causas Comuns
+
+### Diretiva `"use workflow"` ausente
+
+```typescript lineNumbers title="workflows/order.ts"
+// Error - missing directive
+export async function processOrder(orderId: string) { // [!code highlight]
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+**Solução:** Adicione a diretiva `"use workflow"`.
+
+```typescript lineNumbers title="workflows/order.ts"
+// Fixed - includes directive
+export async function processOrder(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+### Importação Incorreta
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Error - importing step function instead of workflow
+import { processStep } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processStep, ["order-123"]); // Error! // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+**Solução:** Importe a função de workflow correta.
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Fixed - import workflow function
+import { processOrder } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processOrder, ["order-123"]); // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+### Configuração do Next.js Ausente
+
+```typescript lineNumbers title="next.config.ts"
+// Error - missing withWorkflow wrapper
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default nextConfig;
+```
+
+**Solução:** Envolva com `withWorkflow()`.
+
+```typescript lineNumbers title="next.config.ts"
+// Fixed - includes withWorkflow
+import { withWorkflow } from "workflow/next"; // [!code highlight}
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default withWorkflow(nextConfig); // [!code highlight]
+```

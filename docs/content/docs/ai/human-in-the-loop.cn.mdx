@@ -1,0 +1,351 @@
+---
+title: 人类在环
+---
+
+运行 AI 代理于生产环境的常见先决条件之一是能够在继续执行之前等待人工输入或外部事件。
+
+Workflow DevKit 的 [webhook](/docs/api-reference/workflow/create-webhook) 和 [hook](/docs/api-reference/workflow/define-hook) 原语支持“人类在环”模式，在该模式中工作流会在人工采取动作前暂停，允许工作流即使在长时间不活动后也能顺利恢复，并在代码部署期间提供稳定性。
+
+如果你需要以编程方式对外部事件作出反应，请参阅 [hooks](/docs/foundations/hooks) 文档以获取更多信息。本指南的这一部分将专注于人类在环模式，它是更通用 hook 模式的一个子集。
+
+## 工作原理
+
+<Steps>
+
+<Step>
+`defineHook()` 会创建一个可以在工作流中被 await 的类型化 hook。当工具被调用时，它会使用工具调用 ID 作为 token 创建一个 hook 实例。
+</Step>
+
+<Step>
+工作流在 `await hook` 处暂停 —— 在等待人工操作期间不消耗计算资源。
+</Step>
+
+<Step>
+UI 会显示带有其输入数据（航班详情、价格等）的待处理工具调用，并渲染审批控制项。
+</Step>
+
+<Step>
+用户通过 API 端点提交其决策，从而用审批数据恢复该 hook。
+</Step>
+
+<Step>
+工作流接收审批数据并继续执行。
+</Step>
+
+</Steps>
+
+尽管此演示将使用客户端按钮进行人工审批，但你同样可以创建一个 webhook 并通过电子邮件或 Slack 发送审批链接以恢复代理。
+
+## 创建预订审批工具
+
+添加一个工具，使代理能够在人工批准或拒绝航班预订之前有意暂停执行：
+
+<Steps>
+
+<Step>
+
+### 定义 Hook
+
+使用 Zod 模式进行验证，创建一个类型化的 hook：
+
+```typescript title="workflow/steps/tools.ts" lineNumbers
+import { defineHook } from "workflow";
+import { z } from "zod";
+// ... existing imports ...
+
+export const bookingApprovalHook = defineHook({
+  schema: z.object({
+    approved: z.boolean(),
+    comment: z.string().optional(),
+  }),
+});
+
+// ... tool definitions ...
+```
+
+</Step>
+
+<Step>
+
+### 实现该工具
+
+创建一个工具，使用工具调用 ID 作为 token 来创建 hook 实例。UI 将使用此 ID 提交审批。
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { z } from "zod";
+
+// ...
+
+async function executeBookingApproval( // [!code highlight]
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number }, // [!code highlight]
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - hooks are workflow-level primitives // [!code highlight]
+
+  // Use the toolCallId as the hook token so the UI can reference it // [!code highlight]
+  const hook = bookingApprovalHook.create({ token: toolCallId }); // [!code highlight]
+
+  // Workflow pauses here until the hook is resolved // [!code highlight]
+  const { approved, comment } = await hook; // [!code highlight]
+
+  if (!approved) {
+    return `Booking rejected: ${comment || "No reason provided"}`;
+  }
+
+  return `Booking approved for ${passengerName} on flight ${flightNumber}${comment ? ` - Note: ${comment}` : ""}`;
+}
+
+// Adding the tool to the existing tool definitions
+export const flightBookingTools = {
+  // ... existing tool definitions ...
+  bookingApproval: {
+    description: "Request human approval before booking a flight",
+    inputSchema: z.object({
+      flightNumber: z.string().describe("Flight number to book"),
+      passengerName: z.string().describe("Name of the passenger"),
+      price: z.number().describe("Total price of the booking"),
+    }),
+    execute: executeBookingApproval,
+  },
+};
+```
+
+<Callout type="info">
+请注意，`defineHook().create()` 函数必须在工作流上下文中调用，而不能在 step 内调用。这就是为什么 `executeBookingApproval` 没有 `"use step"` —— 它在可用 hooks 的工作流上下文中运行。
+</Callout>
+
+</Step>
+
+<Step>
+
+### 创建 API 路由
+
+创建一个新的 API 端点，UI 将调用该端点以提交审批决策：
+
+```typescript title="app/api/approve-booking/route.ts" lineNumbers
+import { bookingApprovalHook } from "@/workflow/steps/tools";
+
+export async function POST(request: Request) {
+  const { toolCallId, approved, comment } = await request.json();
+
+  // Schema validation happens automatically // [!code highlight]
+  // Can throw a zod schema validation error, or a
+  await bookingApprovalHook.resume(toolCallId, { // [!code highlight]
+    approved,
+    comment,
+  });
+
+  return Response.json({ success: true });
+}
+```
+
+</Step>
+
+<Step>
+
+### 创建审批组件
+
+构建一个响应工具调用数据并允许用户批准或拒绝预订的新组件：
+
+```typescript title="components/booking-approval.tsx" lineNumbers
+"use client";
+
+import { useState } from "react";
+
+interface BookingApprovalProps {
+  toolCallId: string;
+  input: {
+    flightNumber: string;
+    passengerName: string;
+    price: number;
+  };
+  output?: string;
+}
+
+export function BookingApproval({ toolCallId, input, output }: BookingApprovalProps) {
+  const [comment, setComment] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // If we have output, the approval has been processed
+  if (output) {
+    return (
+      <div className="border rounded-lg p-4">
+        <p className="text-sm text-muted-foreground">{output}</p>
+      </div>
+    );
+  }
+
+  const handleSubmit = async (approved: boolean) => {
+    setIsSubmitting(true);
+    try {
+      await fetch("/api/approve-booking", { // [!code highlight]
+        method: "POST", // [!code highlight]
+        headers: { "Content-Type": "application/json" }, // [!code highlight]
+        body: JSON.stringify({ toolCallId, approved, comment }), // [!code highlight]
+      }); // [!code highlight]
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="border rounded-lg p-4 space-y-4">
+      <div className="space-y-2">
+        <p className="font-medium">Approve this booking?</p>
+        <div className="text-sm text-muted-foreground">
+          <div>Flight: {input.flightNumber}</div>
+          <div>Passenger: {input.passengerName}</div>
+          <div>Price: ${input.price}</div>
+        </div>
+      </div>
+
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Add a comment (optional)..."
+        className="w-full border rounded p-2 text-sm"
+        rows={2}
+      />
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => handleSubmit(true)}
+          disabled={isSubmitting}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+        >
+          {isSubmitting ? "Submitting..." : "Approve"}
+        </button>
+        <button
+          onClick={() => handleSubmit(false)}
+          disabled={isSubmitting}
+          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+        >
+          {isSubmitting ? "Submitting..." : "Reject"}
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+</Step>
+
+<Step>
+
+### 在 UI 中显示工具状态
+
+使用我们刚创建的组件在聊天界面中渲染工具调用和审批控制项：
+
+```typescript title="app/page.tsx" lineNumbers
+// ... existing imports ...
+import { BookingApproval } from "@/components/booking-approval";
+
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                      ) {
+                        // ... render other tools
+                      }
+                      if (part.type === "tool-bookingApproval") { // [!code highlight]
+                        return ( // [!code highlight]
+                          <BookingApproval // [!code highlight]
+                            key={partIndex} // [!code highlight]
+                            toolCallId={part.toolCallId} // [!code highlight]
+                            input={part.input} // [!code highlight]
+                            output={part.output} // [!code highlight]
+                          /> // [!code highlight]
+                        ); // [!code highlight]
+                      } // [!code highlight]
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+```
+
+</Step>
+
+</Steps>
+
+## 直接使用 Webhooks
+
+对于不需要类型安全验证或编程恢复的更简单场景，你可以直接使用 [`createWebhook()`](/docs/api-reference/workflow/create-webhook)。该方法会生成一个可用于恢复工作流的唯一 URL：
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { createWebhook } from "workflow";
+import { z } from "zod";
+
+async function executeBookingApproval(
+  { flightNumber, passengerName, price }: { flightNumber: string; passengerName: string; price: number },
+  { toolCallId }: { toolCallId: string }
+) {
+  const webhook = createWebhook(); // [!code highlight]
+
+  // The webhook URL could be logged, sent via email, or stored for later use
+  console.log("Approval URL:", webhook.url);
+
+  // Workflow pauses here until the webhook is called // [!code highlight]
+  const request = await webhook; // [!code highlight]
+  const { approved, comment } = await request.json(); // [!code highlight]
+
+  if (!approved) {
+    return `Booking rejected: ${comment || "No reason provided"}`;
+  }
+
+  return `Booking approved for ${passengerName} on flight ${flightNumber}`;
+}
+```
+
+该 webhook URL 可以通过包含审批数据的 POST 请求直接调用。这在以下情况下非常有用：
+
+- 需要回调到你的工作流的外部系统
+- 支付提供商的回调
+- 基于电子邮件的审批链接
+
+## 相关文档
+
+- [Hooks & Webhooks](/docs/foundations/hooks) - 关于 hooks 和 webhooks 的完整指南
+- [`createWebhook()` API Reference](/docs/api-reference/workflow/create-webhook) - Webhook 配置选项
+- [`defineHook()` API Reference](/docs/api-reference/workflow/define-hook) - 类型安全的 hook 定义

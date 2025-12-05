@@ -1,0 +1,261 @@
+---
+title: ローカルワールド
+---
+
+The **ローカルワールド** (`@workflow/world-local`) はローカル開発とテスト向けに設計されたファイルシステムベースのワークフローバックエンドです。ワークフローのデータをディスク上のJSONファイルとして保存し、メモリ内キューイングを提供します。
+
+ローカルワールドはローカル開発に最適です。理由は次のとおりです：
+
+- **外部サービスや設定を必要としない**
+- **データを読みやすいJSONファイルとして保存し、デバッグが容易**
+- **開発中に即時フィードバックを提供**
+- **Next.jsの開発サーバーとシームレスに動作**
+
+## 仕組み
+
+### ストレージ
+
+ローカルワールドはすべてのワークフローデータを設定可能なディレクトリ内のJSONファイルとして保存します：
+
+```
+.workflow-data/
+├── runs/
+│   └── <run-id>.json
+├── steps/
+│   └── <run-id>/
+│       └── <step-id>.json
+├── hooks/
+│   └── <hook-id>.json
+└── streams/
+    └── <run-id>/
+        └── <stream-id>.json
+```
+
+各ファイルには run、step、hook、または stream の完全な状態が含まれているため、ワークフローデータを直接検査するのが容易です。
+
+### キュー
+
+ローカルワールドはHTTPトランスポートを使用するメモリ内キューを使用します：
+
+1. ステップがキューに入れられると、メモリ内キューに追加されます
+2. キューは開発サーバーにHTTPリクエストを送信してステップを処理します
+3. ステップは`.well-known/workflow/v1/step`のエンドポイントで実行されます
+
+キューは開発サーバーのポートを自動的に検出し、それに応じてキューのURLを調整します。
+
+### 認証
+
+ローカルワールドはローカル開発では認証が不要または強制されないため、シンプルな認証実装を提供します。
+
+```typescript
+getAuthHeaders(): Promise<Record<string, string>> {
+  return Promise.resolve({});
+}
+```
+
+## 設定
+
+### データディレクトリ
+
+デフォルトでは、ワークフローデータはプロジェクトルートの `.workflow-data/` に保存されます。これは環境変数またはプログラム的にカスタマイズできます。
+
+**環境変数:**
+
+```bash
+export WORKFLOW_LOCAL_DATA_DIR=./custom-workflow-data
+```
+
+**プログラム的に:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ dataDir: "./custom-workflow-data" });
+```
+
+### ポート
+
+デフォルトでは、ローカルワールドはプロセスのイントロスペクションを使用してアプリケーションがリッスンしているポートを**自動的に検出**します。これは SvelteKit、Vite、非標準ポートを使用するその他のフレームワークとシームレスに動作します。
+
+**自動検出の例**（推奨）:
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Port is automatically detected - no configuration needed!
+const world = createLocalWorld();
+```
+
+自動検出に失敗した場合、ワールドは `PORT` 環境変数にフォールバックし、それでもなければポート `3000` にフォールバックします。
+
+**手動でのポート上書き**（必要な場合）:
+
+自動検出されたポートを明示的に指定して上書きできます：
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+const world = createLocalWorld({ port: 3000 });
+```
+
+### ベースURL
+
+HTTPSやカスタムホスト名のような高度なユースケースでは、ベースURL全体を上書きできます。設定すると、これはすべてのポート検出と設定より優先されます。
+
+**ユースケース:**
+
+- HTTPS開発サーバー（例: `next dev --experimental-https`）
+- カスタムホスト名（例: `local.example.com`）
+- localhost以外の開発
+
+**環境変数:**
+
+```bash
+export WORKFLOW_LOCAL_BASE_URL=https://local.example.com:3000
+```
+
+**プログラム的に:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// HTTPS
+const world = createLocalWorld({
+  baseUrl: "https://localhost:3000"
+});
+
+// Custom hostname
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+```
+
+## 使用
+
+### 自動（推奨）
+
+ローカルワールドはローカル開発中に自動的に使用されます：
+
+```bash
+# Start your Next.js dev server
+npm run dev
+
+# Workflows automatically use local world
+```
+
+### 手動
+
+環境変数を介してローカルワールドを明示的に設定できます：
+
+```bash
+export WORKFLOW_TARGET_WORLD=local
+
+npm run dev
+```
+
+## 開発ワークフロー
+
+ローカルワールドを使った典型的な開発ワークフロー：
+
+1. **開発サーバーを起動する:**
+
+   ```bash
+   npm run dev
+   ```
+
+2. **ワークフローをトリガーする:**
+
+   ```bash
+   curl -X POST --json '{"email":"test@example.com"}' http://localhost:3000/api/signup
+   ```
+
+3. **結果を検査する:**
+   - [CLIまたはWeb UI](/docs/observability) を使用
+   - `.workflow-data/` 内のJSONファイルを確認
+   - 開発サーバーのログを表示
+
+## データの確認
+
+### 可観測性ツールの使用
+
+ローカルワールドは Workflow DevKit の可観測性ツールと統合されます：
+
+```bash
+# View runs with CLI
+npx workflow inspect runs
+
+# View runs with Web UI
+npx workflow inspect runs --web
+```
+
+詳細は [可観測性](/docs/observability) セクションを参照してください。
+
+## 制限事項
+
+ローカルワールドは開発向けに設計されており、本番向けではありません：
+
+- **拡張性がない** - メモリ内キューを使用する
+- **永続性がない** - データはローカルファイルに保存される
+- **単一インスタンス** - 分散デプロイメントを処理できない
+- **認証なし** - ローカル開発のみに適している
+
+本番環境のデプロイには [Vercel World](/docs/deploying/world/vercel-world) を使用してください。
+
+## API リファレンス
+
+### `createLocalWorld`
+
+ローカルワールドインスタンスを作成します：
+
+```typescript
+function createLocalWorld(
+  args?: Partial<{
+    dataDir: string;
+    port: number;
+    baseUrl: string;
+  }>
+): World
+```
+
+**パラメータ:**
+
+- `args` - オプションの設定オブジェクト:
+  - `dataDir` - ワークフローデータを保存するディレクトリ（デフォルト: `.workflow-data/` または `WORKFLOW_LOCAL_DATA_DIR` 環境変数）
+  - `port` - キュートランスポート用のポート上書き（デフォルト: 自動検出 → `PORT` 環境変数 → `3000`）
+  - `baseUrl` - キュートランスポート用の完全なベースURL上書き（デフォルト: `http://localhost:{port}` または `WORKFLOW_LOCAL_BASE_URL` 環境変数）
+
+**戻り値:**
+
+- `World` - Worldインターフェースを実装するワールドインスタンス
+
+**例:**
+
+```typescript
+import { createLocalWorld } from "@workflow/world-local";
+
+// Use all defaults (recommended - auto-detects port)
+const world = createLocalWorld();
+
+// Custom data directory
+const world = createLocalWorld({ dataDir: "./my-data" });
+
+// Override port
+const world = createLocalWorld({ port: 3000 });
+
+// HTTPS with custom hostname
+const world = createLocalWorld({
+  baseUrl: "https://local.example.com:3000"
+});
+
+// Multiple options
+const world = createLocalWorld({
+  dataDir: "./my-data",
+  baseUrl: "https://localhost:3000"
+});
+```
+
+## 詳細
+
+- [World Interface](/docs/deploying/world) - Worldインターフェースの理解
+- [Vercel World](/docs/deploying/world/vercel-world) - 本番デプロイ向け
+- [可観測性](/docs/observability) - 監視およびデバッグツール

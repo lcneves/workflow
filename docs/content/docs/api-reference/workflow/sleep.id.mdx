@@ -1,0 +1,59 @@
+---
+title: sleep
+---
+
+Menangguhkan sebuah alur kerja selama durasi tertentu atau hingga tanggal akhir tanpa menggunakan sumber daya. Setelah durasi atau tanggal akhir berlalu, alur kerja akan melanjutkan eksekusi.
+
+Ini berguna ketika Anda ingin melanjutkan alur kerja setelah suatu durasi atau tanggal.
+
+<Callout>
+`sleep` adalah jenis *khusus* dari fungsi langkah dan harus dipanggil langsung di dalam fungsi alur kerja.
+</Callout>
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("10s") // [!code highlight]
+}
+```
+
+## Tanda Tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { sleep } from "workflow";
+export default sleep;`}
+showSections={['parameters']}
+/>
+
+## Contoh
+
+### Menunggu Dengan Durasi
+
+Anda dapat menentukan durasi untuk `sleep` agar menangguhkan alur kerja untuk periode waktu tetap.
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("1d") // [!code highlight]
+}
+```
+
+### Menunggu Hingga Tanggal Akhir
+
+Anda dapat menentukan objek `Date` di masa depan untuk `sleep` agar menangguhkan alur kerja sampai tanggal tertentu.
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep(new Date(Date.now() + 10_000)) // [!code highlight]
+}
+```

@@ -1,0 +1,120 @@
+---
+title: 序列化失败
+---
+
+此错误发生在您尝试在工作流的执行边界之间传递不可序列化的数据时。所有在工作流函数、步骤函数和工作流运行时之间传递的数据都必须可序列化，以便在事件日志中持久化。
+
+## 错误消息
+
+```
+Failed to serialize workflow arguments. Ensure you're passing serializable types
+(plain objects, arrays, primitives, Date, RegExp, Map, Set).
+```
+
+此错误可能在以下情况下出现：
+
+- 在调用 `start()` 时序列化工作流参数
+- 序列化工作流返回值
+- 序列化步骤参数
+- 序列化步骤返回值
+
+## 发生原因
+
+工作流使用事件日志来持久化其状态。每个越过执行边界的值必须：
+
+1. **序列化** 以便存储在事件日志中
+2. **反序列化** 当工作流恢复时
+
+函数、类实例、符号和其他不可序列化的类型在序列化后无法被正确重构，这会破坏工作流重放。
+
+## 常见原因
+
+### 传递函数
+
+```typescript lineNumbers
+// Error - functions cannot be serialized
+export async function processWorkflow() {
+  "use workflow";
+
+  const callback = () => console.log("done"); // [!code highlight]
+  await processStep(callback); // Error! // [!code highlight]
+}
+```
+
+**解决方案：** 传递数据代替函数，然后在步骤中定义函数逻辑。
+
+```typescript lineNumbers
+// Fixed - pass configuration data instead
+export async function processWorkflow() {
+  "use workflow";
+
+  await processStep({ shouldLog: true }); // [!code highlight]
+}
+
+async function processStep(config: { shouldLog: boolean }) {
+  "use step";
+
+  if (config.shouldLog) { // [!code highlight]
+    console.log("done"); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+### 类实例
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Error - class instances lose methods after serialization
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep(new User("Alice")); // Error! // [!code highlight]
+}
+```
+
+**解决方案：** 传递普通对象，并在步骤中重构类。
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Fixed - pass plain object, reconstruct in step
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep({ name: "Alice" }); // [!code highlight]
+}
+
+async function greetStep(userData: { name: string }) {
+  "use step";
+
+  const user = new User(userData.name); // [!code highlight]
+  console.log(user.greet());
+}
+```
+
+## 支持的可序列化类型
+
+Workflow DevKit 在执行边界之间支持以下类型：
+
+### 标准 JSON 类型
+
+- `string`, `number`, `boolean`, `null`
+- 可序列化值的数组
+- 具有可序列化值的普通对象
+
+要了解受支持类型的更多信息，请参见 [序列化](/docs/foundations/serialization) 部分。
+
+## 调试序列化问题
+
+要找出导致序列化失败的原因：
+
+1. **检查错误堆栈跟踪** - 它通常会指示哪个属性失败
+2. **简化您的数据** - 暂时传递更小的对象以隔离问题
+3. **确保您使用的是受支持的数据类型** - 有关详细信息，请参见 [序列化](/docs/foundations/serialization) 部分

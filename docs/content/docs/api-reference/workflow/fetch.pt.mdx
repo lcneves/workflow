@@ -1,0 +1,139 @@
+---
+title: fetch
+---
+
+Faz requisições HTTP de dentro de um workflow. Esta é uma função de passo especial que encapsula a API `fetch` padrão, lidando automaticamente com a serialização e fornecendo semântica de retry.
+
+Isso é útil quando você precisa chamar APIs ou serviços externos de dentro do seu workflow.
+
+<Callout>
+`fetch` é um tipo *especial* de função de passo fornecida e deve ser chamado diretamente dentro de funções de workflow.
+</Callout>
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    return await response.json()
+}
+```
+
+## Assinatura da API
+
+### Parâmetros
+
+Aceita os mesmos argumentos que o [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) da web
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['parameters']}
+/>
+
+### Retorna
+
+Retorna a mesma resposta que o [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) da web
+
+<TSDoc
+definition={`
+import { fetch } from "workflow";
+export default fetch;`}
+showSections={['returns']}
+/>
+
+## Exemplos
+
+### Uso básico
+
+Aqui está um exemplo simples de como você pode usar `fetch` dentro do seu workflow.
+
+```typescript lineNumbers
+import { fetch } from "workflow"
+
+async function apiWorkflow() {
+    "use workflow"
+
+    // Fetch data from an API
+    const response = await fetch("https://api.example.com/data") // [!code highlight]
+    const data = await response.json()
+
+    // Make a POST request
+    const postResponse = await fetch("https://api.example.com/create", { // [!code highlight]
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: "test" })
+    })
+
+    return data
+}
+```
+
+Chamamos `fetch()` com uma URL e opções de requisição opcionais, exatamente como a API fetch padrão. O runtime do workflow lida automaticamente com a serialização da resposta.
+
+Esta API é fornecida como uma conveniência para usar facilmente `fetch` em workflows, mas frequentemente você pode querer estender e implementar seu próprio fetch para um tratamento de erros e lógica de novas tentativas mais poderosa.
+
+### Personalizando o comportamento do fetch
+
+Aqui está um exemplo de um wrapper customizado para fetch que fornece um tratamento de erros mais sofisticado com lógica de novas tentativas personalizada:
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow"
+
+export async function customFetch(
+    url: string,
+    init?: RequestInit
+) {
+    "use step"
+
+    const response = await fetch(url, init)
+
+    // Handle client errors (4xx) - don't retry
+    if (response.status >= 400 && response.status < 500) {
+        if (response.status === 429) {
+            // Rate limited - retry with backoff from Retry-After header
+            const retryAfter = response.headers.get("Retry-After")
+
+            if (retryAfter) {
+                // The Retry-After header is either a number (seconds) or an RFC 7231 date string
+                const retryAfterValue = /^\d+$/.test(retryAfter)
+                    ? parseInt(retryAfter) * 1000  // Convert seconds to milliseconds
+                    : new Date(retryAfter);        // Parse RFC 7231 date format
+
+                // Use `RetryableError` to customize the retry
+                throw new RetryableError( // [!code highlight]
+                    `Rate limited by ${url}`, // [!code highlight]
+                    { retryAfter: retryAfterValue } // [!code highlight]
+                ) // [!code highlight]
+            }
+        }
+
+        // Other client errors are fatal (400, 401, 403, 404, etc.)
+        throw new FatalError( // [!code highlight]
+            `Client error ${response.status}: ${response.statusText}` // [!code highlight]
+        ) // [!code highlight]
+    }
+
+    // Handle server errors (5xx) - will retry automatically
+    if (!response.ok) {
+        throw new Error(
+            `Server error ${response.status}: ${response.statusText}`
+        )
+    }
+
+    return response
+}
+```
+
+Este exemplo demonstra:
+
+- **Definir** `maxRetries` personalizado para 5 tentativas.
+- **Lançar** [`FatalError`](/docs/api-reference/workflow/fatal-error) para erros de cliente (400-499) para evitar novas tentativas.
+- **Tratar** o limite de taxa 429 lendo o cabeçalho `Retry-After` e usando [`RetryableError`](/docs/api-reference/workflow/retryable-error).
+- **Permitir** tentativas automáticas para erros do servidor (5xx).

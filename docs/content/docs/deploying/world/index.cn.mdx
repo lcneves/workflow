@@ -1,0 +1,43 @@
+---
+title: 世界
+---
+
+<Callout type="wip">
+
+此页面尚在完善中。
+
+</Callout>
+
+工作流 `World` 是一个接口，抽象了工作流和步骤与外部世界通信的方式，允许您构建自定义适配器并在不同环境、基础设施和托管提供商之间重复使用它们。
+
+## 选择 World 实现
+
+* 默认情况下，Workflow 使用 [Local world](/docs/deploying/world/local-world) 以便于本地开发。
+* 当部署到 Vercel 时，Workflow 会切换到 [Vercel world](/docs/deploying/world/vercel-world)。
+
+如果您想使用不同的 World 实现，请将 `WORKFLOW_TARGET_WORLD` 环境变量设置为所需 World 包的 NPM 名称：
+
+```bash
+export WORKFLOW_TARGET_WORLD=@my-namespace/my-npm-package
+export MY_WORLD_CONFIG=... # implementation-specific configuration
+```
+
+## 内置 World
+
+Workflow DevKit 提供了两个内置的 World 实现：
+
+- [Local World](/docs/deploying/world/local-world) - 基于文件系统，适用于本地开发
+- [Vercel World](/docs/deploying/world/vercel-world) - 面向 Vercel 部署的生产就绪实现
+
+## 社区 World
+
+> 这些 World 由社区维护并在 CI 中进行测试。有关配置详情，请参见 [worlds-manifest.json](https://github.com/vercel/workflow/blob/main/worlds-manifest.json)。
+
+- [Turso](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/turso) (`@workflow-worlds/turso`) - 适用于嵌入式或远程 SQLite 数据库的 Turso/libSQL World
+- [MongoDB](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/mongodb) (`@workflow-worlds/mongodb`) - 使用原生驱动的 MongoDB World
+- [Redis](https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/redis) (`@workflow-worlds/redis`) - 使用 BullMQ 处理队列、使用 Redis Streams 作为输出的 Redis World
+
+### 其他社区 World
+
+- [Postgres World](/docs/deploying/world/postgres-world) - 多主机 PostgreSQL 后端 World 的参考实现。
+- [Jazz World](https://github.com/garden-co/workflow-world-jazz) - 基于 [Jazz](https://jazz.tools) 的完整 World 实现

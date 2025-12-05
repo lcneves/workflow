@@ -1,0 +1,73 @@
+---
+title: mulai
+---
+
+Mulai/mengantri eksekusi workflow baru.
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow); // [!code highlight]
+```
+
+## Tanda tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { start } from "workflow/api";
+export default start;`}
+showSections={["parameters"]}
+/>
+
+#### StartOptions
+
+<TSDoc
+definition={`
+import type { StartOptions } from "workflow/api";
+export default StartOptions;`}
+/>
+
+### Mengembalikan
+
+Mengembalikan objek `Run`:
+
+<TSDoc
+definition={`
+import { Run } from "workflow/api";
+export default Run;`}
+showSections={["returns"]}
+/>
+
+Pelajari selengkapnya tentang [`WorkflowReadableStreamOptions`](/docs/api-reference/workflow-api/get-run#workflowreadablestreamoptions).
+
+## Perlu Diketahui
+
+* Fungsi `start()` digunakan dalam konteks runtime/non-workflow untuk memicu eksekusi workflow secara programatis.
+* Ini berbeda dari memanggil fungsi workflow secara langsung, yang merupakan pola tipikal dalam aplikasi Next.js.
+* Fungsi ini kembali segera setelah mengantri workflow - tidak menunggu workflow selesai.
+* Semua argumen harus [dapat diserialisasi](/docs/foundations/serialization).
+
+## Contoh
+
+### Dengan Argumen
+
+```typescript
+import { start } from "workflow/api";
+import { userSignupWorkflow } from "./workflows/user-signup";
+
+const run = await start(userSignupWorkflow, ["user@example.com"]); // [!code highlight]
+```
+
+### Dengan `StartOptions`
+
+```typescript
+import { start } from "workflow/api";
+import { myWorkflow } from "./workflows/my-workflow";
+
+const run = await start(myWorkflow, ["arg1", "arg2"], { // [!code highlight]
+  deploymentId: "custom-deployment-id" // [!code highlight]
+}); // [!code highlight]
+```

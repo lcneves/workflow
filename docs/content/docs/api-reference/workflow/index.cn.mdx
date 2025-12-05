@@ -1,0 +1,55 @@
+---
+title: "工作流"
+---
+
+核心工作流原语，包括步骤、上下文管理、流式处理、Webhook 和错误处理。
+
+## 安装
+
+```package-install
+npm i workflow
+```
+
+## 函数
+
+Workflow DevKit 包含以下可在工作流函数中使用的函数：
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/get-workflow-metadata" title="getWorkflowMetadata()">
+        返回有关当前工作流执行上下文的函数。
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-step-metadata" title="getStepMetadata()">
+        返回有关当前步骤执行上下文的函数。
+    </Card>
+    <Card href="/docs/api-reference/workflow/sleep" title="sleep()">
+        使工作流在指定持续时间内休眠。确定性且可重放安全。
+    </Card>
+    <Card href="/docs/api-reference/workflow/fetch" title="fetch()">
+        在工作流内发起 HTTP 请求，具有自动重试语义。
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-hook" title="createHook()">
+        创建一个低级钩子以接收来自外部系统的任意负载。
+    </Card>
+    <Card href="/docs/api-reference/workflow/define-hook" title="defineHook()">
+        类型安全的钩子辅助工具，用于确保载荷类型一致性。
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-webhook" title="createWebhook()">
+        创建一个 webhook，会将工作流挂起直到收到 HTTP 请求。
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-writable" title="getWritable()">
+        访问当前工作流运行的默认流（可写）。
+    </Card>
+</Cards>
+
+## 错误类
+
+Workflow DevKit 包含可在工作流或步骤中抛出的错误类，用于更改工作流的错误退出策略。
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/fatal-error" title="FatalError()">
+        抛出时，将把步骤标记为失败，且该步骤不会被重试。
+    </Card>
+    <Card href="/docs/api-reference/workflow/retryable-error" title="RetryableError()">
+        抛出时，将把步骤标记为可重试，并可带可选参数。
+    </Card>
+</Cards>

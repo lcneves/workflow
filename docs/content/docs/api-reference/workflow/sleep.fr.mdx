@@ -1,0 +1,59 @@
+---
+title: sleep
+---
+
+Suspend un workflow pendant une durée spécifiée ou jusqu'à une date de fin sans consommer de ressources. Une fois la durée écoulée ou la date de fin atteinte, le workflow reprendra son exécution.
+
+Ceci est utile lorsque vous souhaitez reprendre un workflow après une certaine durée ou à partir d'une date donnée.
+
+<Callout>
+`sleep` est un type de fonction d'étape *spécial* et doit être appelé directement à l'intérieur des fonctions de workflow.
+</Callout>
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("10s") // [!code highlight]
+}
+```
+
+## Signature de l'API
+
+### Paramètres
+
+<TSDoc
+definition={`
+import { sleep } from "workflow";
+export default sleep;`}
+showSections={['parameters']}
+/>
+
+## Exemples
+
+### Mise en pause pendant une durée
+
+Vous pouvez spécifier une durée pour `sleep` afin de suspendre le workflow pendant un temps fixe.
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep("1d") // [!code highlight]
+}
+```
+
+### Mise en pause jusqu'à une date de fin
+
+Vous pouvez spécifier un objet `Date` futur pour `sleep` afin de suspendre le workflow jusqu'à une date précise.
+
+```typescript lineNumbers
+import { sleep } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+    await sleep(new Date(Date.now() + 10_000)) // [!code highlight]
+}
+```

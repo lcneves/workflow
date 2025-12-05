@@ -1,0 +1,100 @@
+---
+title: start-无效的工作流函数
+---
+
+当您尝试使用不是有效工作流函数的函数调用 `start()`，或 Workflow DevKit 未正确配置时，会发生此错误。
+
+## 错误信息
+
+```
+'start' received an invalid workflow function. Ensure the Workflow DevKit
+is configured correctly and the function includes a 'use workflow' directive.
+```
+
+## 导致原因
+
+`start()` 函数期望一个已由 Workflow DevKit 的构建系统正确处理的工作流函数。在构建过程中，工作流函数会被转换并标记特殊元数据，`start()` 使用这些元数据来识别并执行它们。
+
+此错误通常发生在：
+
+* 该函数缺少 "use workflow" 指令
+* 工作流未被正确构建/转换
+* 函数未从工作流文件导出
+* 导入了错误的函数
+
+## 常见原因
+
+### 缺少 `\"use workflow\"` 指令
+
+```typescript lineNumbers title="workflows/order.ts"
+// Error - missing directive
+export async function processOrder(orderId: string) { // [!code highlight]
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+**解决方案:** 添加 "use workflow" 指令。
+
+```typescript lineNumbers title="workflows/order.ts"
+// Fixed - includes directive
+export async function processOrder(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+### 导入错误
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Error - importing step function instead of workflow
+import { processStep } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processStep, ["order-123"]); // Error! // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+**解决方案:** 导入正确的工作流函数。
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Fixed - import workflow function
+import { processOrder } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processOrder, ["order-123"]); // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+### 缺少 Next.js 配置
+
+```typescript lineNumbers title="next.config.ts"
+// Error - missing withWorkflow wrapper
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default nextConfig;
+```
+
+**解决方案:** 使用 `withWorkflow()` 包裹。
+
+```typescript lineNumbers title="next.config.ts"
+// Fixed - includes withWorkflow
+import { withWorkflow } from "workflow/next"; // [!code highlight}
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default withWorkflow(nextConfig); // [!code highlight]
+```

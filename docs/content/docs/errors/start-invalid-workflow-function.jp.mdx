@@ -1,0 +1,100 @@
+---
+title: start-無効なワークフロー関数
+---
+
+このエラーは、`start()` を有効なワークフロー関数でない関数で呼び出した場合、または Workflow DevKit が正しく構成されていない場合に発生します。
+
+## エラーメッセージ
+
+```
+'start' received an invalid workflow function. Ensure the Workflow DevKit
+is configured correctly and the function includes a 'use workflow' directive.
+```
+
+## 発生原因
+
+`start()` 関数は、Workflow DevKit のビルドシステムによって適切に処理されたワークフロー関数を期待します。ビルドプロセス中、ワークフロー関数は変換され、`start()` がそれらを識別して実行するための特殊なメタデータが付与されます。
+
+このエラーは通常、次の場合に発生します:
+
+* 関数に `"use workflow"` ディレクティブが欠けている
+* ワークフローが正しくビルド/変換されていない
+* 関数がワークフローファイルからエクスポートされていない
+* 間違った関数がインポートされている
+
+## よくある原因
+
+### `"use workflow"` ディレクティブの欠如
+
+```typescript lineNumbers title="workflows/order.ts"
+// Error - missing directive
+export async function processOrder(orderId: string) { // [!code highlight]
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+**解決策:** `"use workflow"` ディレクティブを追加します。
+
+```typescript lineNumbers title="workflows/order.ts"
+// Fixed - includes directive
+export async function processOrder(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // workflow logic
+  return { status: "completed" };
+}
+```
+
+### 誤ったインポート
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Error - importing step function instead of workflow
+import { processStep } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processStep, ["order-123"]); // Error! // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+**解決策:** 正しいワークフロー関数をインポートします。
+
+```typescript lineNumbers title="app/api/route.ts"
+import { start } from "workflow/api";
+// Fixed - import workflow function
+import { processOrder } from "@/workflows/order"; // [!code highlight]
+
+export async function POST(request: Request) {
+  await start(processOrder, ["order-123"]); // [!code highlight]
+  return Response.json({ started: true });
+}
+```
+
+### Next.js の設定が不足している
+
+```typescript lineNumbers title="next.config.ts"
+// Error - missing withWorkflow wrapper
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default nextConfig;
+```
+
+**解決策:** `withWorkflow()` でラップします。
+
+```typescript lineNumbers title="next.config.ts"
+// Fixed - includes withWorkflow
+import { withWorkflow } from "workflow/next"; // [!code highlight}
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // your config
+};
+
+export default withWorkflow(nextConfig); // [!code highlight]
+```

@@ -1,0 +1,133 @@
+---
+title: createHook
+---
+
+Crée un primitif de hook bas niveau pouvant être utilisé pour reprendre l'exécution d'un workflow avec des charges utiles arbitraires.
+
+Les hooks permettent aux systèmes externes d'envoyer des données à un workflow en pause sans les contraintes HTTP spécifiques aux webhooks. Ils sont identifiés par un token et peuvent recevoir n'importe quelle charge utile sérialisable.
+
+```ts lineNumbers
+import { createHook } from "workflow"
+
+export async function hookWorkflow() {
+  "use workflow";
+  const hook = createHook();  // [!code highlight]
+  const result = await hook; // Suspends the workflow until the hook is resumed
+}
+```
+
+## Signature de l'API
+
+### Paramètres
+
+<TSDoc
+definition={`
+import { createHook } from "workflow";
+export default createHook;`
+}
+showSections={['parameters']}
+/>
+
+#### HookOptions
+
+<TSDoc
+definition={`
+import type { HookOptions } from "workflow";
+export default HookOptions;`
+}
+/>
+
+### Renvoie
+
+<TSDoc
+definition={`
+import { createHook } from "workflow";
+export default createHook;`}
+showSections={['returns']}
+/>
+
+#### Hook
+
+<TSDoc
+definition={`
+import type { Hook } from "workflow";
+export default Hook;`}
+/>
+
+L'objet retourné `Hook` implémente également `AsyncIterable<T>`, ce qui vous permet d'itérer sur les charges utiles entrantes en utilisant la syntaxe `for await...of`.
+
+## Exemples
+
+### Utilisation de base
+
+Lors de la création d'un hook, vous pouvez spécifier un type de charge utile pour bénéficier d'une sécurité de typage automatique.
+
+```typescript lineNumbers
+import { createHook } from "workflow"
+
+export async function approvalWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ approved: boolean; comment: string }>(); // [!code highlight]
+  console.log("Send approval to token:", hook.token);
+
+  const result = await hook;
+
+  if (result.approved) {
+    console.log("Approved with comment:", result.comment);
+  }
+}
+```
+
+### Personnalisation des tokens
+
+Les tokens servent à identifier un hook spécifique. Vous pouvez personnaliser le token pour le rendre plus adapté à un cas d'utilisation.
+
+```typescript lineNumbers
+import { createHook } from "workflow";
+
+export async function slackBotWorkflow(channelId: string) {
+  "use workflow";
+
+  // Token constructed from channel ID
+  const hook = createHook<SlackMessage>({ // [!code highlight]
+    token: `slack_webhook:${channelId}`, // [!code highlight]
+  }); // [!code highlight]
+
+  for await (const message of hook) {
+    if (message.text === "/stop") {
+      break;
+    }
+    await processMessage(message);
+  }
+}
+```
+
+### Attendre plusieurs charges utiles
+
+Vous pouvez aussi attendre plusieurs charges utiles en utilisant la syntaxe `for await...of`.
+
+```typescript lineNumbers
+import { createHook } from "workflow"
+
+export async function collectHookWorkflow() {
+  "use workflow";
+
+  const hook = createHook<{ message: string; done?: boolean }>();
+
+  const payloads = [];
+  for await (const payload of hook) { // [!code highlight]
+    payloads.push(payload);
+
+    if (payload.done) break;
+  }
+
+  return payloads;
+}
+```
+
+## Fonctions associées
+
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - Assistant typé pour hook
+- [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) - Reprend un hook avec une charge utile
+- [`createWebhook()`](/docs/api-reference/workflow/create-webhook) - Abstraction de webhook HTTP de plus haut niveau

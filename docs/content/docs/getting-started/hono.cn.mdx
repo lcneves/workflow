@@ -1,0 +1,242 @@
+---
+title: Hono
+description: 本指南将演示如何在 Hono 应用中设置你的第一个工作流。过程中，你将了解在自己的项目中使用开发工具包所需的基础概念。
+---
+
+<Steps>
+
+<Step>
+## 创建你的 Hono 项目
+
+首先创建一个新的 Hono 项目。此命令会创建一个名为 `my-workflow-app` 的新目录并在其中设置一个 Hono 项目。
+
+```bash
+npm create hono@latest my-workflow-app -- --template=nodejs
+```
+
+进入新创建的目录：
+
+```bash
+cd my-workflow-app
+```
+
+### 安装 `workflow`, `nitro`, 和 `rollup`
+
+```package-install
+npm i workflow nitro rollup
+```
+
+<Callout>
+默认情况下，Hono 不包含构建系统。Nitro 提供了一个构建系统，使得在开发和生产环境中能够编译工作流、运行和部署。了解更多关于 Nitro 的信息请见 [这里](https://v3.nitro.build)。
+</Callout>
+
+### 配置 Nitro
+
+为你的 Nitro 配置创建一个新的文件 `nitro.config.ts`，并使用模块 `workflow/nitro`。这将启用 `"use workflow"` 和 `"use step"` 指令的使用。
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineConfig } from "nitro";
+
+export default defineConfig({
+  modules: ["workflow/nitro"],
+  routes: {
+    "/**": "./src/index.ts"
+  }
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      为 TypeScript 设置 IntelliSense（可选）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+要在你的 IDE 中启用有用的提示，请在 `tsconfig.json` 中设置 workflow 插件：
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+### 更新 `package.json`
+
+为了使用 Nitro 构建器，请更新你的 `package.json`，包含以下脚本：
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## 创建你的第一个工作流
+
+为我们的第一个工作流创建一个新文件：
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+接下来我们将完善这些函数，但先来看看这段代码：
+
+- 我们使用指令 `"use workflow"` 定义了一个 **workflow** 函数。把 workflow 函数想象成各个 **step** 的协调者（_orchestrator_）。
+- Workflow DevKit 的 `sleep` 函数允许我们在不消耗任何资源的情况下挂起工作流执行。sleep 可以是几秒、几小时、几天，甚至几个月。
+
+## 创建你的工作流步骤
+
+现在我们来定义那些缺失的函数。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+来看一下这段代码：
+
+- 业务逻辑位于 **steps** 内。当在 **workflow** 中调用一个 step 时，该 step 会被排队在单独的请求上运行，而 workflow 则被挂起，就像 `sleep` 一样。
+- 如果 step 抛出错误（如 `sendWelcomeEmail` 中的情况），该 step 会自动重试直到成功（或达到 step 的最大重试次数）。
+- 如果错误是有意的且不应重试，步骤可以抛出 `FatalError`。
+
+<Callout>
+  我们将在 [基础](/docs/foundations) 中更深入地探讨工作流、步骤以及其他挂起或处理事件的方式。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 创建路由处理程序
+
+为了调用你的新工作流，我们将在 `src/index.ts` 创建一个新的 API 路由处理程序，内容如下：
+
+```typescript title="src/index.ts"
+import { Hono } from "hono";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = new Hono();
+
+app.post("/api/signup", async (c) => {
+  const { email } = await c.req.json();
+  await start(handleUserSignup, [email]);
+  return c.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+该路由处理程序创建了一个位于 `/api/signup` 的 `POST` 请求端点，用于触发你的工作流。
+
+</Step>
+
+<Step>
+
+## 在开发环境中运行
+
+要启动开发服务器，请在 Hono 根目录的终端中运行以下命令：
+
+```bash
+npm run dev
+```
+
+在开发服务器运行后，你可以通过在终端中运行以下命令来触发你的工作流：
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+检查 Hono 开发服务器日志以查看工作流的执行情况以及正在处理的步骤。
+
+此外，你还可以使用 [Workflow DevKit CLI 或 Web UI](/docs/observability) 来详细检查你的工作流运行和步骤。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit Web UI" />
+
+</Step>
+
+</Steps>
+
+## 部署到生产环境
+
+Workflow DevKit 应用目前在部署到 [Vercel](https://vercel.com/home) 时表现最佳，且通常无需特殊配置。
+
+查看 [部署](/docs/deploying) 部分，了解如何将你的工作流部署到其他平台。
+
+## 下一步
+
+- 了解更多关于 [基础](/docs/foundations) 的内容。
+- 如果遇到问题，请查看 [错误](/docs/errors)。
+- 探索 [API 参考](/docs/api-reference)。

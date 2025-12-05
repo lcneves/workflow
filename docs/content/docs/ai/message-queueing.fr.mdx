@@ -1,0 +1,102 @@
+---
+title: Mise en file des messages utilisateur
+---
+
+Lors de l'utilisation de [flux de conversation à plusieurs tours](/docs/ai/chat-session-modeling#multi-turn-workflows), les messages arrivent généralement entre les tours de l'agent. Le workflow attend à un hook, reçoit un message, puis démarre un nouveau tour. Mais parfois, vous devez injecter des messages *pendant* le tour d'un agent, avant que les appels aux outils ne soient terminés ou pendant que le modèle raisonne.
+
+Le callback `prepareStep` de `DurableAgent` permet cela en s'exécutant avant chaque étape de la boucle de l'agent, ce qui vous donne la possibilité d'injecter des messages mis en file dans la conversation. `prepareStep` vous permet également de modifier le choix du modèle et les messages existants en cours de tour ; consultez le SDK AI's [prepareStep callback](https://ai-sdk.dev/docs/agents/loop-control#prepare-step) pour plus de détails.
+
+## Quand l'utiliser
+
+La mise en file des messages est utile lorsque :
+
+- Les utilisateurs envoient des messages de suivi pendant que l'agent recherche encore des vols ou traite des réservations
+- Des systèmes externes doivent injecter du contexte en cours de tour (par ex., un webhook de statut de vol se déclenche pendant le traitement)
+- Vous souhaitez que les messages influencent l'étape suivante de l'agent plutôt que d'attendre la fin du tour en cours
+
+<Callout type="info">
+Si vous avez seulement besoin de conversations à plusieurs tours de base où les messages arrivent entre les tours, consultez [Modélisation des sessions de chat](/docs/ai/chat-session-modeling). Ce guide couvre le cas plus avancé d'injection de messages *pendant* les tours.
+</Callout>
+
+## Le callback `prepareStep`
+
+Le callback `prepareStep` s'exécute avant chaque étape de la boucle de l'agent. Il reçoit l'état actuel et peut modifier les messages envoyés au modèle :
+
+```typescript lineNumbers
+interface PrepareStepInfo {
+  model: string | (() => Promise<LanguageModelV2>);  // Current model
+  stepNumber: number;                                // 0-indexed step count
+  steps: StepResult[];                               // Previous step results
+  messages: LanguageModelV2Prompt;                   // Messages to be sent
+}
+
+interface PrepareStepResult {
+  model?: string | (() => Promise<LanguageModelV2>); // Override model
+  messages?: LanguageModelV2Prompt;                  // Override messages
+}
+```
+
+## Injection de messages en file d'attente
+
+Une fois que vous avez un [flux de conversation à plusieurs tours](/docs/ai/chat-session-modeling#multi-turn-workflows), vous pouvez combiner une file de messages avec `prepareStep` pour injecter les messages qui arrivent pendant le traitement :
+
+```typescript title="workflows/chat/workflow.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent";
+import type { UIMessageChunk } from "ai";
+import { getWritable } from "workflow";
+import { chatMessageHook } from "./hooks/chat-message";
+import { flightBookingTools, FLIGHT_ASSISTANT_PROMPT } from "./steps/tools";
+
+export async function chatWorkflow(threadId: string, initialMessage: string) {
+  "use workflow";
+
+  const writable = getWritable<UIMessageChunk>();
+  const messageQueue: Array<{ role: "user"; content: string }> = []; // [!code highlight]
+
+  const agent = new DurableAgent({
+    model: "bedrock/claude-4-5-haiku-20251001-v1",
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+
+  // Listen for messages in background (non-blocking) // [!code highlight]
+  const hook = chatMessageHook.create({ token: `thread:${threadId}` }); // [!code highlight]
+  hook.then(({ message }) => { // [!code highlight]
+    messageQueue.push({ role: "user", content: message }); // [!code highlight]
+  }); // [!code highlight]
+
+  await agent.stream({
+    messages: [{ role: "user", content: initialMessage }],
+    writable,
+    prepareStep: ({ messages: currentMessages }) => { // [!code highlight]
+      // Inject any queued messages before the next LLM call // [!code highlight]
+      if (messageQueue.length > 0) { // [!code highlight]
+        const newMessages = messageQueue.splice(0); // Drain queue // [!code highlight]
+        return { // [!code highlight]
+          messages: [ // [!code highlight]
+            ...currentMessages, // [!code highlight]
+            ...newMessages.map(m => ({ // [!code highlight]
+              role: m.role, // [!code highlight]
+              content: [{ type: "text" as const, text: m.content }], // [!code highlight]
+            })), // [!code highlight]
+          ], // [!code highlight]
+        }; // [!code highlight]
+      } // [!code highlight]
+      return {}; // [!code highlight]
+    }, // [!code highlight]
+  });
+}
+```
+
+Les messages envoyés via `chatMessageHook.resume()` s'accumulent dans la file et sont injectés avant l'étape suivante, qu'il s'agisse d'un appel à un outil ou d'une autre requête LLM.
+
+<Callout type="info">
+Le callback `prepareStep` reçoit les messages au format `LanguageModelV2Prompt` (avec des tableaux de contenu), qui est le format interne utilisé par le SDK AI.
+</Callout>
+
+## Documentation associée
+
+- [Modélisation des sessions de chat](/docs/ai/chat-session-modeling) - Modèles mono-tour vs multi-tour
+- [Créer des agents IA durables](/docs/ai) - Guide complet pour créer des agents durables
+- [`DurableAgent` Référence de l'API](/docs/api-reference/workflow-ai/durable-agent) - Documentation complète de l'API
+- [`defineHook()` Référence de l'API](/docs/api-reference/workflow/define-hook) - Options de configuration du hook

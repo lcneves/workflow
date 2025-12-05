@@ -1,0 +1,232 @@
+---
+title: Vite
+---
+
+本指南将引导你在 Vite 应用中设置第一个工作流。沿途你将了解在自己的项目中使用该开发工具包（development kit）的一些基本概念。
+
+---
+
+<Steps>
+
+<Step>
+## 创建你的 Vite 项目
+
+首先创建一个新的 Vite 项目。该命令会创建一个名为 `my-workflow-app` 的新目录，并在其中搭建一个最小化的 Vite 项目。
+
+```bash
+npm create vite@latest my-workflow-app -- --template react-ts
+```
+
+进入新创建的目录：
+
+```bash
+cd my-workflow-app
+```
+
+### 安装 `workflow` 和 `nitro`
+
+```package-install
+npm i workflow nitro
+```
+
+<Callout>
+虽然 Vite 提供构建工具和开发服务器，Nitro 则补充了用于 API 路由和部署的服务器框架。二者结合可以构建具有工作流支持的全栈应用。更多关于 Nitro 的信息请查看 [这里](https://v3.nitro.build)。
+</Callout>
+
+### 配置 Vite
+
+在你的 Vite 配置中添加 `workflow()`。这将启用对 `"use workflow"` 和 `"use step"` 指令的使用。
+
+```typescript title="vite.config.ts" lineNumbers
+import { nitro } from "nitro/vite";
+import { defineConfig } from "vite";
+import { workflow } from "workflow/vite";
+
+export default defineConfig({
+  plugins: [nitro(), workflow()], // [!code highlight]
+  nitro: { // [!code highlight]
+    serverDir: "./", // [!code highlight]
+  }, // [!code highlight]
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### 设置 TypeScript 的 IntelliSense（可选）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+要在你的 IDE 中启用有用的提示，请在 `tsconfig.json` 中设置 workflow 插件：
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## 创建你的第一个工作流
+
+为我们的第一个工作流创建一个新文件：
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+我们接下来会填充那些函数，但先来看看这段代码：
+
+* 我们定义了一个 **工作流** 函数，并使用了指令 `"use workflow"`。可以将工作流函数视为各个 **步骤** 的协调者（_orchestrator_）。
+* Workflow 开发工具包的 `sleep` 函数允许我们在不消耗任何资源的情况下暂停工作流的执行。sleep 可以是几秒、几小时、几天，甚至几个月。
+
+## 创建你的工作流步骤
+
+现在来定义那些缺失的函数。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+看一下这段代码：
+
+* 业务逻辑存在于 **步骤** 中。当在 **工作流** 内调用步骤时，该步骤会被排队为在独立请求上运行，而工作流本身会被挂起，就像 `sleep` 一样。
+* 如果步骤抛出错误（例如在 `sendWelcomeEmail` 中），该步骤会自动重试直至成功（或达到步骤的最大重试次数）。
+* 如果错误是有意的且不应重试，步骤可以抛出 `FatalError`。
+
+<Callout>
+我们将在 [基础](/docs/foundations) 中更深入地讲解工作流、步骤以及其他挂起或处理事件的方式。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 创建你的路由处理器
+
+要调用你的新工作流，我们需要将工作流添加到一个 `POST` API 路由处理器，即 `api/signup.post.ts`，其代码如下：
+
+```typescript title="api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler } from "nitro/h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async ({ req }) => {
+  const { email } = await req.json() as { email: string };
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return {
+    message: "User signup workflow started",
+  }
+});
+```
+
+该路由处理器会在 `/api/signup` 创建一个 `POST` 请求端点，用于触发你的工作流。
+
+<Callout>
+工作流可以从 API 路由或任何服务端代码中触发。
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 在开发环境运行
+
+要启动开发服务器，在 Vite 项目根目录的终端运行以下命令：
+
+```bash
+npm run dev
+```
+
+一旦开发服务器运行，你可以在终端运行以下命令来触发你的工作流：
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+检查 Vite 开发服务器日志，以查看工作流的执行情况以及正在处理的步骤。
+
+此外，你可以使用 [Workflow 开发工具包 CLI 或 Web 界面](/docs/observability) 来详细检查工作流运行和步骤。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow 开发工具包 Web 界面" />
+
+---
+
+## 部署到生产环境
+
+Workflow 开发工具包应用目前在部署到 [Vercel](https://vercel.com/home) 时表现最佳，且无需特殊配置。
+
+查看 [部署](/docs/deploying) 部分，了解如何将你的工作流部署到其他地方。
+
+## 后续步骤
+
+* 了解更多关于 [基础](/docs/foundations) 的内容。
+* 如果遇到问题，请查看 [错误](/docs/errors)。
+* 浏览 [API 参考](/docs/api-reference)。

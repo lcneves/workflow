@@ -1,0 +1,120 @@
+---
+title: シリアル化に失敗しました
+---
+
+このエラーは、ワークフロー内で実行境界間にシリアル化できないデータを渡そうとしたときに発生します。ワークフロー関数、ステップ関数、ワークフローランタイム間で渡されるすべてのデータは、イベントログに永続化するためにシリアル化可能である必要があります。
+
+## エラーメッセージ
+
+```
+Failed to serialize workflow arguments. Ensure you're passing serializable types
+(plain objects, arrays, primitives, Date, RegExp, Map, Set).
+```
+
+このエラーは次の場合に発生することがあります:
+
+- `start()` を呼び出す際のワークフロー引数のシリアル化
+- ワークフローの戻り値のシリアル化
+- ステップ引数のシリアル化
+- ステップの戻り値のシリアル化
+
+## なぜこれが起こるのか
+
+ワークフローはイベントログを使って状態を永続化します。実行境界を越えるすべての値は次を満たす必要があります:
+
+1. **シリアル化**されてイベントログに保存されること
+2. **デシリアライズ**されてワークフローが再開したときに復元されること
+
+関数、クラスインスタンス、シンボル、その他のシリアル化できない型は、シリアル化後に正しく再構築できないため、ワークフローのリプレイが失敗します。
+
+## よくある原因
+
+### 関数を渡すこと
+
+```typescript lineNumbers
+// Error - functions cannot be serialized
+export async function processWorkflow() {
+  "use workflow";
+
+  const callback = () => console.log("done"); // [!code highlight]
+  await processStep(callback); // Error! // [!code highlight]
+}
+```
+
+**解決策:** 代わりにデータを渡し、そのロジックをステップ内で定義します。
+
+```typescript lineNumbers
+// Fixed - pass configuration data instead
+export async function processWorkflow() {
+  "use workflow";
+
+  await processStep({ shouldLog: true }); // [!code highlight]
+}
+
+async function processStep(config: { shouldLog: boolean }) {
+  "use step";
+
+  if (config.shouldLog) { // [!code highlight]
+    console.log("done"); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+### クラスのインスタンス
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Error - class instances lose methods after serialization
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep(new User("Alice")); // Error! // [!code highlight]
+}
+```
+
+**解決策:** プレーンオブジェクトを渡し、ステップ内でクラスを再構築します。
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Fixed - pass plain object, reconstruct in step
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep({ name: "Alice" }); // [!code highlight]
+}
+
+async function greetStep(userData: { name: string }) {
+  "use step";
+
+  const user = new User(userData.name); // [!code highlight]
+  console.log(user.greet());
+}
+```
+
+## サポートされているシリアル化可能な型
+
+Workflow DevKit は実行境界を越えて次の型をサポートします:
+
+### 標準的な JSON 型
+
+- `string`, `number`, `boolean`, `null`
+- シリアル化可能な値の配列
+- シリアル化可能な値を持つプレーンオブジェクト
+
+サポートされている型の詳細については、[シリアル化](/docs/foundations/serialization) セクションを参照してください。
+
+## シリアル化問題のデバッグ
+
+シリアル化に失敗している原因を特定するには:
+
+1. **エラースタックトレースを確認する** - どのプロパティが失敗したかが示されていることが多いです
+2. **データを簡素化する** - 問題を切り分けるために一時的に小さなオブジェクトを渡してみてください
+3. **サポートされているデータ型を使用していることを確認する** - 詳細は [シリアル化](/docs/foundations/serialization) セクションを参照してください

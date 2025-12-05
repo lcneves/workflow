@@ -1,0 +1,233 @@
+---
+title: Astro
+---
+
+Ce guide vous expliquera comment configurer votre premier flux de travail dans une application Astro. En cours de route, vous en apprendrez davantage sur les concepts fondamentaux pour utiliser le kit de développement dans vos propres projets.
+
+---
+
+<Steps>
+
+<Step>
+## Créer votre projet Astro
+
+Commencez par créer un nouveau projet Astro. Cette commande créera un nouveau répertoire nommé `my-workflow-app` et configurera un projet Astro minimal à l'intérieur.
+
+```bash
+npm create astro@latest my-workflow-app -- --template minimal --install --yes
+```
+
+Entrez dans le répertoire nouvellement créé :
+
+```bash
+cd my-workflow-app
+```
+
+### Installer `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Configurer Astro
+
+Ajoutez `workflow()` à votre configuration Astro. Cela permet l'utilisation des directives `"use workflow"` et `"use step"`.
+
+```typescript title="astro.config.mjs" lineNumbers
+// @ts-check
+import { defineConfig } from "astro/config";
+import { workflow } from "workflow/astro";
+
+// https://astro.build/config
+export default defineConfig({
+  integrations: [workflow()],
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="text-sm">
+      ### Configurer IntelliSense pour TypeScript (optionnel)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+
+Pour activer des aides contextuelles dans votre IDE, configurez le plugin workflow dans `tsconfig.json` :
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Créer votre premier flux de travail
+
+Créez un nouveau fichier pour notre premier flux de travail :
+
+```typescript title="src/workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+
+```
+
+Nous remplirons ces fonctions ensuite, mais examinons d'abord ce code :
+
+* Nous définissons une fonction **flux de travail** avec la directive `"use workflow"`. Considérez la fonction de flux de travail comme l'_orchestrateur_ des **étapes** individuelles.
+* La fonction `sleep` du Workflow DevKit nous permet de suspendre l'exécution du flux de travail sans consommer de ressources. Une pause peut durer quelques secondes, des heures, des jours, voire des mois.
+
+## Créer les étapes de votre flux de travail
+
+Définissons maintenant ces fonctions manquantes.
+
+```typescript title="src/workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow"
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string; }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+  // By default, steps will be retried for unhandled errors
+   throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string}) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+En regardant ce code :
+
+* La logique métier réside dans les **étapes**. Lorsqu'une étape est invoquée à l'intérieur d'un **flux de travail**, elle est mise en file d'attente pour s'exécuter dans une requête séparée pendant que le flux de travail est suspendu, tout comme `sleep`.
+* Si une étape lance une erreur, comme dans `sendWelcomeEmail`, l'étape sera automatiquement réessayée jusqu'à ce qu'elle réussisse (ou atteigne le nombre maximal de tentatives de l'étape).
+* Les étapes peuvent lever un `FatalError` si une erreur est intentionnelle et ne doit pas être réessayée.
+
+<Callout>
+Nous approfondirons les flux de travail, les étapes et d'autres façons de suspendre ou de gérer des événements dans [Fondations](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Créer votre gestionnaire de route
+
+Pour déclencher votre nouveau flux de travail, nous devons ajouter votre flux de travail à un gestionnaire de route API `POST`, `src/pages/api/signup.ts`, avec le code suivant :
+
+```typescript title="src/pages/api/signup.ts"
+import type { APIRoute } from "astro";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../../workflows/user-signup";
+
+export const POST: APIRoute = async ({ request }: { request: Request }) => {
+  const { email } = await request.json();
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+  return Response.json({
+    message: "User signup workflow started",
+  });
+};
+
+export const prerender = false; // Don't prerender this page since it's an API route
+```
+
+Ce gestionnaire de route crée un point de terminaison pour les requêtes `POST` à `/api/signup` qui déclenchera votre flux de travail.
+
+<Callout>
+Les flux de travail peuvent être déclenchés depuis des routes API ou tout code côté serveur.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Exécution en développement
+
+Pour démarrer votre serveur de développement, exécutez la commande suivante dans votre terminal depuis le répertoire racine Vite :
+
+```bash
+npm run dev
+```
+
+Une fois votre serveur de développement en cours d'exécution, vous pouvez déclencher votre flux de travail en exécutant cette commande dans le terminal :
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:5173/api/signup
+```
+
+Consultez les journaux du serveur de développement Astro pour voir l'exécution de votre flux de travail ainsi que les étapes en cours de traitement.
+
+De plus, vous pouvez utiliser la [CLI ou l'interface Web du Workflow DevKit](/docs/observability) pour inspecter en détail les exécutions de vos flux de travail et les étapes.
+
+```bash
+npx workflow inspect runs
+# or add '--web' for an interactive Web based UI
+```
+
+<img src="/o11y-ui.png" alt="Interface Web du Workflow DevKit" />
+
+---
+
+## Déploiement en production
+
+Les applications Workflow DevKit fonctionnent actuellement mieux lorsqu'elles sont déployées sur [Vercel](https://vercel.com/home) et ne nécessitent aucune configuration particulière.
+
+Pour déployer votre projet Astro sur Vercel, assurez-vous que l'[adaptateur Astro pour Vercel](https://docs.astro.build/en/guides/integrations-guide/vercel) est configuré :
+
+```bash
+npx astro add vercel
+```
+
+Consultez également la section [Déploiement](/docs/deploying) pour savoir comment vos flux de travail peuvent être déployés ailleurs.
+
+## Prochaines étapes
+
+* En savoir plus sur les [Fondations](/docs/foundations).
+* Consultez les [Erreurs](/docs/errors) si vous rencontrez des problèmes.
+* Explorez la [Référence API](/docs/api-reference).

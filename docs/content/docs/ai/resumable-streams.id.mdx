@@ -1,0 +1,155 @@
+---
+title: Aliran yang Dapat Dilanjutkan
+---
+
+Saat membangun antarmuka obrolan, sering kali terjadi gangguan jaringan, penyegaran halaman, atau batas waktu fungsi serverless, yang dapat memutus koneksi ke agen yang sedang berjalan.
+
+Di mana implementasi obrolan standar akan mengharuskan pengguna mengirim ulang pesannya dan menunggu seluruh respons lagi, workflow berjalan secara tahan lama, demikian juga aliran yang terhubung ke dalamnya. Ini berarti aliran dapat dilanjutkan di titik mana pun, opsional hanya menyinkronkan data yang terlewat sejak koneksi terakhir.
+
+Aliran yang dapat dilanjutkan disediakan secara bawaan oleh Workflow DevKit, namun, klien perlu mengenali bahwa sebuah aliran ada, perlu mengetahui aliran mana yang harus dihubungkan kembali, dan perlu mengetahui dari mana harus memulai. Untuk ini, Workflow DevKit menyediakan helper [`WorkflowChatTransport`](/docs/api-reference/workflow-ai/workflow-chat-transport), sebuah transport drop-in untuk AI SDK yang menangani logika pemulihan sisi-klien untuk Anda.
+
+## Mengimplementasikan pemulihan aliran
+
+Mari tambahkan pemulihan aliran ke Agen Pemesanan Penerbangan yang kita bangun dalam panduan [Membangun Agen AI yang Tahan Lama](/docs/ai).
+
+<Steps>
+
+<Step>
+
+### Kembalikan Run ID dari API Anda
+
+Ubah endpoint obrolan Anda untuk menyertakan ID run workflow dalam header respons. Run ID mengidentifikasi unik aliran run, sehingga memungkinkan klien mengetahui aliran mana yang harus dihubungkan kembali.
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+// ... imports ...
+
+export async function POST(req: Request) {
+
+  // ... existing logic to create the workflow ...
+
+  const run = await start(chatWorkflow, [modelMessages]);
+
+  return createUIMessageStreamResponse({
+    stream: run.readable,
+    headers: { // [!code highlight
+      "x-workflow-run-id": run.runId, // [!code highlight]
+    }, // [!code highlight]
+  });
+}
+```
+
+</Step>
+
+<Step>
+
+### Tambahkan Endpoint Penyambungan Ulang Aliran
+
+Saat ini kita hanya memiliki satu endpoint API yang selalu membuat run baru, jadi kita perlu membuat rute API baru yang mengembalikan aliran untuk run yang sudah ada:
+
+```typescript title="app/api/chat/[id]/stream/route.ts" lineNumbers
+import { createUIMessageStreamResponse } from "ai";
+import { getRun } from "workflow/api"; // [!code highlight]
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+
+  // Client provides the last chunk index they received
+  const startIndexParam = searchParams.get("startIndex"); // [!code highlight]
+  const startIndex = startIndexParam
+    ? parseInt(startIndexParam, 10)
+    : undefined;
+
+  // Instead of starting a new run, we fetch an existing run.
+  const run = getRun(id); // [!code highlight]
+  const stream = run.getReadable({ startIndex }); // [!code highlight]
+
+  return createUIMessageStreamResponse({ stream }); // [!code highlight]
+}
+```
+
+Parameter `startIndex` memastikan klien dapat memilih dari mana melanjutkan aliran. Misalnya, jika fungsi berakhir karena batas waktu saat streaming, transport obrolan akan menggunakan `startIndex` untuk melanjutkan aliran persis dari token terakhir yang diterima.
+
+</Step>
+
+<Step>
+
+### Gunakan `WorkflowChatTransport` di Klien
+
+Ganti transport default di `useChat` AI-SDK dengan [`WorkflowChatTransport`](/docs/api-reference/workflow-ai/workflow-chat-transport), dan perbarui callback untuk menyimpan serta menggunakan run ID terbaru. Untuk sekarang, kita akan menyimpan run ID di localStorage. Untuk aplikasi Anda sendiri, ini akan disimpan di tempat Anda menyimpan informasi sesi.
+
+```typescript title="app/page.tsx" lineNumbers
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { WorkflowChatTransport } from "@workflow/ai"; // [!code highlight]
+import { useMemo, useState } from "react";
+
+export default function ChatPage() {
+
+  // Check for an active workflow run on mount
+  const activeRunId = useMemo(() => { // [!code highlight]
+    if (typeof window === "undefined") return; // [!code highlight]
+    return localStorage.getItem("active-workflow-run-id") ?? undefined; // [!code highlight]
+  }, []); // [!code highlight]
+
+  const { messages, sendMessage, status } = useChat({
+    resume: Boolean(activeRunId), // [!code highlight]
+    transport: new WorkflowChatTransport({ // [!code highlight]
+      api: "/api/chat",
+
+      // Store the run ID when a new chat starts
+      onChatSendMessage: (response) => { // [!code highlight]
+        const workflowRunId = response.headers.get("x-workflow-run-id"); // [!code highlight]
+        if (workflowRunId) { // [!code highlight]
+          localStorage.setItem("active-workflow-run-id", workflowRunId); // [!code highlight]
+        } // [!code highlight]
+      }, // [!code highlight]
+
+      // Clear the run ID when the chat completes
+      onChatEnd: () => { // [!code highlight]
+        localStorage.removeItem("active-workflow-run-id"); // [!code highlight]
+      }, // [!code highlight]
+
+      // Use the stored run ID for reconnection
+      prepareReconnectToStreamRequest: ({ api, ...rest }) => { // [!code highlight]
+        const runId = localStorage.getItem("active-workflow-run-id"); // [!code highlight]
+        if (!runId) throw new Error("No active workflow run ID found"); // [!code highlight]
+        return { // [!code highlight]
+          ...rest, // [!code highlight]
+          api: `/api/chat/${encodeURIComponent(runId)}/stream`, // [!code highlight]
+        }; // [!code highlight]
+      }, // [!code highlight]
+    }), // [!code highlight]
+  });
+
+  // ... render your chat UI
+}
+```
+
+</Step>
+
+</Steps>
+
+Sekarang coba lagi contoh pemesanan penerbangan. Buka di tab terpisah, atau tekan tombol segarkan berulang kali, dan lihat bagaimana klien tersambung ke aliran obrolan yang sama setiap kali.
+
+## Bagaimana Ini Bekerja
+
+1. Saat pengguna mengirim pesan, `WorkflowChatTransport` melakukan POST ke `/api/chat`
+2. API memulai workflow dan mengembalikan run ID di header `x-workflow-run-id`
+3. `onChatSendMessage` menyimpan run ID ini di localStorage
+4. Jika aliran terputus sebelum menerima chunk "finish", transport secara otomatis menyambung kembali
+5. `prepareReconnectToStreamRequest` membangun URL penyambungan ulang menggunakan run ID yang disimpan, mengarah ke endpoint baru `/api/chat/{runId}/stream`
+6. Endpoint penyambungan ulang mengembalikan aliran dari posisi terakhir yang ditinggalkan klien
+7. Ketika aliran selesai, `onChatEnd` menghapus run ID yang tersimpan
+
+Pendekatan ini juga menangani penyegaran halaman, karena klien akan otomatis menyambung kembali ke aliran dari posisi terakhir ketika UI dimuat dengan run ID yang tersimpan, mengikuti perilaku [Pemulihan aliran AI SDK](https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-resume-streams#chatbot-resume-streams).
+
+## Dokumentasi Terkait
+
+- [`WorkflowChatTransport` Referensi API](/docs/api-reference/workflow-ai/workflow-chat-transport) - Opsi konfigurasi lengkap
+- [Streaming](/docs/foundations/streaming) - Memahami aliran workflow
+- [`getRun()` Referensi API](/docs/api-reference/workflow-api/get-run) - Mengambil run yang sudah ada

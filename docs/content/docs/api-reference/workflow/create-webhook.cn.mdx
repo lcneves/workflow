@@ -1,0 +1,225 @@
+---
+title: createWebhook
+---
+
+创建一个 webhook，可用于在接收到 HTTP 请求时暂停和恢复工作流运行。
+
+Webhooks 提供了一种让外部系统直接向你的工作流发送 HTTP 请求的方式。与接受任意负载的 hooks 不同，webhooks 使用标准的 HTTP `Request` 对象，并且可以返回 HTTP `Response` 对象。
+
+```ts lineNumbers
+import { createWebhook } from "workflow"
+
+export async function webhookWorkflow() {
+  "use workflow";
+  const webhook = createWebhook();  // [!code highlight]
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook; // Suspends until HTTP request received
+  console.log("Received request:", request.method, request.url);
+}
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['parameters']}
+/>
+
+### 返回值
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['returns']}
+/>
+
+返回的 `Webhook` 对象包含：
+
+- `url`: 外部系统可以调用的 HTTP 端点 URL
+- `token`: 标识该 webhook 的唯一令牌
+- 实现了 `AsyncIterable<RequestWithResponse>`，用于处理多个请求
+
+`RequestWithResponse` 类型在标准 `Request` 接口的基础上扩展了 `respondWith(response: Response)` 方法，用于向调用方发送自定义响应。
+
+## 示例
+
+### 基本用法
+
+创建一个接收 HTTP 请求并记录请求详情的 webhook：
+
+```typescript lineNumbers
+import { createWebhook } from "workflow"
+
+export async function basicWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook(); // [!code highlight]
+  console.log("Send requests to:", webhook.url);
+
+  const request = await webhook;
+
+  console.log("Method:", request.method);
+  console.log("Headers:", Object.fromEntries(request.headers));
+
+  const body = await request.text();
+  console.log("Body:", body);
+}
+```
+
+### 响应 Webhook 请求
+
+使用 `respondWith()` 方法发送自定义 HTTP 响应。注意，必须在 step 函数内部调用 `respondWith()`：
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendResponse(request: RequestWithResponse) { // [!code highlight]
+  "use step"; // [!code highlight]
+  await request.respondWith( // [!code highlight]
+    new Response(JSON.stringify({ success: true, message: "Received!" }), { // [!code highlight]
+      status: 200, // [!code highlight]
+      headers: { "Content-Type": "application/json" } // [!code highlight]
+    }) // [!code highlight]
+  ); // [!code highlight]
+} // [!code highlight]
+
+export async function respondingWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook;
+
+  // Send a custom response back to the caller
+  await sendResponse(request);
+
+  // Continue workflow processing
+  const data = await request.json();
+  await processData(data);
+}
+
+async function processData(data: any) {
+  "use step";
+  // Process the webhook data
+  console.log("Processing:", data);
+}
+```
+
+### 自定义令牌
+
+令牌用于标识特定的 webhook。你可以自定义令牌以更贴合具体用例。
+
+```typescript lineNumbers
+import { type RequestWithResponse } from "workflow"
+
+async function sendAck(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response(JSON.stringify({ received: true }), {
+      headers: { "Content-Type": "application/json" }
+    })
+  );
+}
+
+export async function githubWebhookWorkflow(repoName: string) {
+  "use workflow";
+
+  // Use a deterministic token based on the repository
+  const webhook = createWebhook({ // [!code highlight]
+    token: `github_webhook:${repoName}`, // [!code highlight]
+  }); // [!code highlight]
+
+  console.log("Configure GitHub webhook:", webhook.url);
+
+  const request = await webhook;
+  const event = await request.json();
+
+  await sendAck(request);
+
+  await deployCommit(event);
+}
+
+async function deployCommit(event: any) {
+  "use step";
+  // Deploy logic here
+}
+```
+
+### 等待多个请求
+
+你也可以使用 `for await...of` 语法等待多个请求。
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendSlackResponse(request: RequestWithResponse, message: string) {
+  "use step";
+  await request.respondWith(
+    new Response(
+      JSON.stringify({
+        response_type: "in_channel",
+        text: message
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+}
+
+async function sendStopResponse(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response("Stopping workflow...")
+  );
+}
+
+export async function slackCommandWorkflow(channelId: string) {
+  "use workflow";
+
+  const webhook = createWebhook({
+    token: `slack_command:${channelId}`,
+  });
+
+  for await (const request of webhook) { // [!code highlight]
+    const formData = await request.formData();
+    const command = formData.get("command");
+    const text = formData.get("text");
+
+    if (command === "/status") {
+      // Respond immediately to Slack
+      await sendSlackResponse(request, "Checking status...");
+
+      // Process the command
+      const status = await checkSystemStatus();
+      await postToSlack(channelId, `Status: ${status}`);
+    }
+
+    if (text === "stop") {
+      await sendStopResponse(request);
+      break;
+    }
+  }
+}
+
+async function checkSystemStatus() {
+  "use step";
+  return "All systems operational";
+}
+
+async function postToSlack(channelId: string, message: string) {
+  "use step";
+  // Post message to Slack
+}
+```
+
+## 相关函数
+
+- [`createHook()`](/docs/api-reference/workflow/create-hook) - 用于任意负载的更低级别的 hook 原语
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - 类型安全的 hook 辅助函数
+- [`resumeWebhook()`](/docs/api-reference/workflow-api/resume-webhook) - 从 API 路由恢复 webhook

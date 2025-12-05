@@ -1,0 +1,138 @@
+---
+title: Actualizaciones en tiempo real desde herramientas
+---
+
+Después de [construir un agente de IA duradero](/docs/ai), ya recibimos fragmentos de mensajes de IU para mostrar invocaciones de herramientas y valores devueltos. Sin embargo, para pasos de larga duración, puede que queramos mostrar actualizaciones de progreso o transmitir la salida del paso al usuario mientras se genera.
+
+Workflow DevKit permite esto al dejar que las funciones de paso escriban fragmentos personalizados en el mismo flujo que utiliza el agente. Estos fragmentos aparecen como partes de datos en tus mensajes, que puedes renderizar como prefieras.
+
+Como ejemplo, ampliaremos el Agente de reservas de vuelos para emitir actualizaciones de progreso más granulares mientras busca vuelos.
+
+<Steps>
+
+<Step>
+
+### Define el tipo de tu parte de datos
+
+Primero, define un tipo de TypeScript para tu parte de datos personalizada. Esto asegura la seguridad de tipos en tu código de herramienta y cliente:
+
+```typescript title="schemas/chat.ts" lineNumbers
+export interface FoundFlightDataPart {
+  type: "data-found-flight"; // [!code highlight]
+  id: string;
+  data: {
+    flightNumber: string;
+    from: string;
+    to: string;
+  };
+}
+```
+
+El campo `type` debe ser una cadena que empiece con `data-` seguida de tu identificador personalizado. El campo `id` debe coincidir con el `toolCallId` para que el cliente pueda asociar los datos con la invocación de herramienta correcta. Aprende más sobre [partes de datos](https://ai-sdk.dev/docs/ai-sdk-ui/streaming-data#data-parts-persistent) en la documentación del AI SDK.
+
+</Step>
+
+<Step>
+
+### Emite actualizaciones desde tu herramienta
+
+Usa [`getWritable()`](/docs/api-reference/workflow/get-writable) dentro de una función de paso para obtener un manejador del flujo. Este es el mismo flujo al que el LLM y otras llamadas a herramientas están escribiendo, por lo que podemos inyectar nuestros propios paquetes de datos directamente.
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable } from "workflow"; // [!code highlight]
+import type { UIMessageChunk } from "ai";
+
+export async function searchFlights(
+  { from, to, date }: { from: string; to: string; date: string },
+  { toolCallId }: { toolCallId: string } // [!code highlight]
+) {
+  "use step";
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+  const writer = writable.getWriter(); // [!code highlight]
+
+  // ... existing logic to generate flights ...
+
+  for (const flight of generatedFlights) { // [!code highlight]
+
+    // Simulate the time it takes to find each flight
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // [!code highlight]
+
+    await writer.write({ // [!code highlight]
+      id: `${toolCallId}-${flight.flightNumber}`, // [!code highlight]
+      type: "data-found-flight", // [!code highlight]
+      data: flight, // [!code highlight]
+    }); // [!code highlight]
+  } // [!code highlight]
+
+  writer.releaseLock(); // [!code highlight]
+
+  return {
+    message: `Found ${generatedFlights.length} flights from ${from} to ${to} on ${date}`,
+    flights: generatedFlights.sort((a, b) => a.price - b.price), // Sort by price
+  };
+}
+```
+
+Puntos clave:
+
+- Llama a `getWritable<UIMessageChunk>()` para obtener el flujo
+- Usa `getWriter()` para adquirir un writer
+- Escribe objetos con los campos `type`, `id` y `data`
+- Siempre llama a `releaseLock()` cuando termines de escribir (aprende más sobre [transmisión](/docs/foundations/streaming))
+
+</Step>
+
+<Step>
+### Maneja las partes de datos en el cliente
+
+Actualiza tu componente de chat para detectar y renderizar las partes de datos personalizadas. Las partes de datos se almacenan en la matriz `parts` del mensaje junto al texto y las partes de invocación de herramientas:
+
+```typescript title="app/page.tsx" lineNumbers
+{message.parts.map((part, partIndex) => {
+  // Render text parts
+  if (part.type === "text") {
+    return (
+      <Response key={`${message.id}-text-${partIndex}`}>
+        {part.text}
+      </Response>
+    );
+  }
+
+  // Render streaming flight data parts // [!code highlight]
+  if (part.type === "data-found-flight") { // [!code highlight]
+    const flight = part.data as { // [!code highlight]
+      flightNumber: string; // [!code highlight]
+      airline: string; // [!code highlight]
+      from: string; // [!code highlight]
+      to: string; // [!code highlight]
+    }; // [!code highlight]
+    return ( // [!code highlight]
+      <div key={`${part.id}-${flight.flightNumber}`} className="p-3 bg-muted rounded-md"> // [!code highlight]
+        <div className="font-medium">{flight.airline} - {flight.flightNumber}</div> // [!code highlight]
+        <div className="text-muted-foreground">{flight.from} → {flight.to}</div> // [!code highlight]
+      </div> // [!code highlight]
+    ); // [!code highlight]
+  } // [!code highlight]
+
+  // ... other rendering logic ...
+})}
+```
+
+El patrón es:
+
+1. Las partes de datos tienen un campo `type` que empieza con `data-`
+2. Haz coincidir el `type` con tu identificador personalizado (p. ej., `data-found-flight`)
+3. Usa la carga útil de la parte de datos para mostrar progreso o resultados intermedios
+
+</Step>
+
+</Steps>
+
+Ahora, cuando ejecutes el agente para buscar vuelos, verás los resultados aparecer uno tras otro. Esto será especialmente útil si tienes llamadas a herramientas que tardan minutos en completarse y necesitas mostrar actualizaciones de progreso granulares al usuario.
+
+## Documentación relacionada
+
+- [Construir agentes de IA duraderos](/docs/ai) - Guía completa sobre agentes duraderos
+- [`getWritable()` Referencia de la API](/docs/api-reference/workflow/get-writable) - Detalles de la API de transmisión
+- [Transmisión](/docs/foundations/streaming) - Comprender los flujos de trabajo de transmisión

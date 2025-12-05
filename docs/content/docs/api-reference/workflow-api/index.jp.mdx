@@ -1,0 +1,24 @@
+---
+title: "workflow/api"
+---
+
+`workflow/api` パッケージのランタイム関数に関する API リファレンス。
+
+## 関数
+
+Workflow DevKit はワークフローやステップ関数の外部で使用されるランタイム関数を提供します。これらはランタイムのエントリポイント（例: `start(workflowFn)` が呼び出される場所）からアクセスされます:
+
+<Cards>
+    <Card href="/docs/api-reference/workflow-api/start" title="start()">
+        新しいワークフロー実行を開始/キューに登録します。
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-hook" title="resumeHook()">
+        フックにペイロードを送信してワークフローを再開します。
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-webhook" title="resumeWebhook()">
+        ウェブフックに `Request` を送信してワークフローを再開します。
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/get-run" title="getRun()">
+        完了を待たずにワークフロー実行のステータスとメタデータを取得します。
+    </Card>
+</Cards>

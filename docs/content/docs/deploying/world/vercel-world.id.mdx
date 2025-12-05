@@ -1,0 +1,205 @@
+---
+title: Vercel World
+---
+
+The **Vercel World** (`@workflow/world-vercel`) adalah backend workflow siap-produksi yang terintegrasi dengan infrastruktur Vercel. Ini menyediakan penyimpanan yang dapat diskalakan, antrean yang andal, dan otentikasi yang aman untuk penyebaran workflow di platform Vercel.
+
+Vercel World dirancang untuk penyebaran produksi dan menyediakan:
+
+- **Penyimpanan yang dapat diskalakan** - Persistensi data workflow berbasis cloud
+- **Antrean terdistribusi** - Eksekusi langkah asinkron yang andal
+- **Otentikasi yang aman** - Kontrol akses berbasis token API
+- **Dukungan multi-lingkungan** - Lingkungan produksi, preview, dan pengembangan yang terpisah
+- **Dukungan tim** - Integrasi dengan tim dan proyek Vercel
+
+## Bagaimana Cara Kerjanya
+
+### Penyimpanan
+
+Vercel World menyimpan data workflow menggunakan Workflow Storage API Vercel:
+
+- Runs, steps, hooks, dan streams disimpan di infrastruktur cloud Vercel
+- Data direplikasi dan dibackup secara otomatis
+- Penyimpanan meningkat otomatis sejalan dengan aplikasi Anda
+- Data dienkripsi saat tersimpan dan saat ditransmisikan
+
+### Antrian
+
+Vercel World menggunakan sistem antrean terdistribusi Vercel:
+
+1. Ketika sebuah langkah dimasukkan ke antrean, langkah itu ditambahkan ke layanan antrean Vercel
+2. Antrean mendistribusikan langkah ke fungsi serverless yang tersedia
+3. Langkah dieksekusi dengan retry otomatis dan penanganan kesalahan
+4. Langkah yang gagal dicoba ulang sesuai kebijakan retry
+
+### Otentikasi
+
+Vercel World menggunakan otentikasi berbasis token:
+
+- Permintaan API menyertakan header otentikasi
+- Token dibatasi untuk proyek dan tim tertentu
+- Token dapat spesifik terhadap lingkungan (production, preview, development)
+- Otentikasi ditangani secara otomatis dalam penyebaran Vercel
+
+## Menyebarkan ke Vercel
+
+### Konfigurasi Otomatis
+
+Saat Anda menyebarkan ke Vercel, world dikonfigurasi secara otomatis:
+
+```bash
+npx vercel deploy
+```
+
+Tidak diperlukan konfigurasi tambahan, Vercel secara otomatis:
+
+- Memilih backend Vercel World
+- Menyiapkan otentikasi
+- Mengonfigurasi ID proyek dan tim
+- Menyediakan infrastruktur penyimpanan dan antrean
+
+### Alur Kerja Penyebaran
+
+Sebarkan aplikasi Anda ke Vercel menggunakan Vercel CLI:
+
+```bash
+npx vercel deploy --prod
+```
+
+Workflow berjalan secara otomatis:
+
+- Gunakan Vercel World di produksi
+- Data disimpan di infrastruktur Vercel
+- Langkah dimasukkan ke antrean dan dieksekusi pada fungsi serverless Vercel
+
+## Dukungan Multi-Lingkungan
+
+Vercel World mendukung beberapa lingkungan:
+
+- **Production** - Penyebaran produksi langsung Anda
+- **Preview** - Penyebaran preview untuk pull request
+- **Development** - Pengujian di lingkungan pengembangan
+
+Setiap lingkungan memiliki data workflow yang terisolasi, memastikan bahwa pengembangan dan pengujian tidak mengganggu workflow produksi.
+
+## Konfigurasi Akses Jarak Jauh
+
+Untuk memeriksa workflow produksi dari mesin lokal Anda menggunakan [alat observabilitas](/docs/observability), Anda dapat menggunakan flag CLI untuk mengonfigurasi akses jarak jauh.
+
+Dalam banyak kasus, flag ini tidak diperlukan. CLI secara otomatis mengambil token otentikasi dari penyimpanan token Vercel CLI dan menafsirkan ID tim serta proyek berdasarkan direktori kerja saat ini dan status pengaitan proyek Vercel.
+
+### Flag CLI
+
+Jika Anda perlu menimpa konfigurasi otomatis, Anda dapat mengirimkan konfigurasi melalui flag CLI:
+
+```bash
+npx workflow inspect runs \
+  --backend vercel \
+  --env production \
+  --project my-project \
+  --team my-team \
+  --authToken <your-token>
+```
+
+Pelajari lebih lanjut tentang inspeksi jarak jauh di bagian [Observabilitas](/docs/observability).
+
+## Dukungan Tim
+
+Jika proyek Anda termasuk dalam tim Vercel, Vercel World secara otomatis terintegrasi dengan izin tim:
+
+- Menghormati kontrol akses tim
+- Memerlukan token otentikasi yang berskala tim
+- Mengisolasi data workflow per tim
+
+## Skalabilitas
+
+Vercel World dirancang untuk skala produksi:
+
+- **Skala otomatis** - Menangani jumlah workflow konkuren berapa pun
+- **Eksekusi terdistribusi** - Langkah berjalan di banyak fungsi serverless
+- **Distribusi global** - Bekerja dengan jaringan edge global Vercel
+- **Ketersediaan tinggi** - Redundansi dan failover bawaan
+
+## Keamanan
+
+Vercel World menerapkan praktik keamanan terbaik:
+
+- **Otentikasi berbasis token** - Akses API yang aman
+- **Isolasi lingkungan** - Data produksi, preview, dan pengembangan terpisah
+- **Enkripsi** - Data dienkripsi saat tersimpan dan saat ditransmisikan
+- **Izin tim** - Menghormati kontrol akses tim Vercel
+
+## Referensi API
+
+### createVercelWorld
+
+Membuat instance Vercel World:
+
+```typescript
+function createVercelWorld(
+  config?: APIConfig
+): World
+```
+
+**Parameter:**
+
+- `config.token` - Token otentikasi
+- `config.headers` - Header kustom termasuk:
+  - `x-vercel-environment` - Nama lingkungan
+  - `x-vercel-project-id` - ID proyek
+  - `x-vercel-team-id` - ID tim
+- `config.baseUrl` - URL dasar API (default: `https://api.vercel.com/v1/workflow`)
+
+**Mengembalikan:**
+
+- `World` - Sebuah instance world yang mengimplementasikan antarmuka World
+
+**Contoh:**
+
+```typescript
+import { createVercelWorld } from "@workflow/world-vercel";
+
+const world = createVercelWorld({
+  token: process.env.WORKFLOW_VERCEL_AUTH_TOKEN,
+  headers: {
+    "x-vercel-environment": "production",
+    "x-vercel-project-id": "my-project",
+    "x-vercel-team-id": "my-team",
+  },
+});
+```
+
+## Pemecahan Masalah
+
+### Kesalahan Otentikasi
+
+Jika Anda melihat kesalahan otentikasi:
+
+1. Verifikasi token Anda valid: `vercel whoami --token <your-token>`
+2. Periksa token memiliki scope yang diperlukan
+3. Pastikan ID proyek dan tim benar
+
+### Lingkungan Tidak Ditemukan
+
+Jika lingkungan tidak ditemukan:
+
+1. Verifikasi nama lingkungan (`production`, `preview`, `development`)
+2. Periksa proyek telah disebarkan ke lingkungan tersebut
+3. Pastikan token Anda memiliki akses ke proyek
+
+### Masalah Penyebaran
+
+Jika workflow tidak berfungsi setelah penyebaran:
+
+1. Verifikasi `withWorkflow()` membungkus konfigurasi Next.js Anda
+2. Periksa log build untuk kesalahan
+3. Pastikan file workflow berada di direktori yang benar
+4. Uji secara lokal terlebih dahulu dengan [World Lokal](/docs/deploying/world/local-world)
+
+## Pelajari Lebih Lanjut
+
+- [Antarmuka World](/docs/deploying/world) - Memahami antarmuka World
+- [World Lokal](/docs/deploying/world/local-world) - Untuk pengembangan lokal
+- [Observabilitas](/docs/observability) - Alat pemantauan dan debugging
+- [Dokumentasi Deploy Vercel](https://vercel.com/docs/deployments/overview)
+- [Dokumentasi Workflow di Vercel](https://vercel.com/docs/workflow)

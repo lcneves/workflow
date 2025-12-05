@@ -1,0 +1,76 @@
+---
+title: getStepMetadata
+---
+
+Mengembalikan metadata yang tersedia dalam fungsi langkah saat ini.
+
+Anda mungkin ingin menggunakan fungsi ini ketika Anda perlu:
+
+- Melacak upaya pengulangan (retry) dalam penanganan kesalahan
+- Mengakses informasi waktu dari sebuah langkah dan metadata eksekusi
+- Menghasilkan kunci idempotensi untuk API eksternal
+
+<Callout type="warn">
+  Fungsi ini hanya dapat dipanggil di dalam fungsi langkah.
+</Callout>
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function testWorkflow() {
+  "use workflow";
+  await logStepId();
+}
+
+async function logStepId() {
+  "use step";
+  const ctx = getStepMetadata(); // [!code highlight]
+  console.log(ctx.stepId); // Grab the current step ID
+}
+```
+
+### Contoh: Gunakan `stepId` sebagai kunci idempotensi
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+  const { stepId } = getStepMetadata();
+
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: `charge:${stepId}`, // [!code highlight]
+    }
+  );
+}
+```
+
+<Callout type="info">
+  Pelajari lebih lanjut tentang pola dan hal yang perlu diperhatikan dalam panduan{" "}
+  <a href="/docs/foundations/idempotency">Idempotensi</a>.
+</Callout>
+
+## Tanda Tangan API
+
+### Parameter
+
+<TSDoc
+  definition={`
+import { getStepMetadata } from "workflow";
+export default getStepMetadata;`}
+  showSections={["parameters"]}
+/>
+
+### Mengembalikan
+
+<TSDoc
+  definition={`
+import type { StepMetadata } from "workflow";
+export default StepMetadata;`}
+/>

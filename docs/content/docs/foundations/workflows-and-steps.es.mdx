@@ -1,0 +1,196 @@
+---
+title: Flujos de trabajo y pasos
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+Workflows (a.k.a. *durable functions*) son un modelo de programación para construir lógica de aplicación de larga duración y con estado que puede mantener su estado de ejecución a través de reinicios, fallos o eventos del usuario. A diferencia de las funciones serverless tradicionales que pierden todo el estado cuando terminan, los flujos de trabajo persisten su progreso y pueden reanudar exactamente donde se quedaron.
+
+Además, los flujos de trabajo te permiten modelar fácilmente procesos complejos de múltiples pasos en código simple y elegante. Para ello, introducimos dos entidades fundamentales:
+
+1. **Funciones de flujo de trabajo**: Funciones que orquestan/organizan pasos
+2. **Funciones de paso**: Funciones que realizan el trabajo real
+
+## Funciones de flujo de trabajo
+
+*Directiva: `"use workflow"`*
+
+Las funciones de flujo de trabajo definen el punto de entrada de un flujo de trabajo y organizan cómo se llaman las funciones de paso. Este tipo de función no tiene acceso al runtime de Node.js, y los paquetes `npm` utilizables son limitados.
+
+Aunque esto pueda parecer restrictivo al principio, esta característica es importante para suspender y reanudar con precisión la ejecución de los flujos de trabajo.
+
+Conviene pensar en la función de flujo de trabajo menos como un runtime completo de JavaScript y más como "coser" varios pasos usando condicionales, bucles, manejadores try/catch, `Promise.all` y otros primitivos del lenguaje.
+
+```typescript lineNumbers
+export async function processOrderWorkflow(orderId: string) {
+  "use workflow"; // [!code highlight]
+
+  // Orchestrate multiple steps
+  const order = await fetchOrder(orderId);
+  const payment = await chargePayment(order);
+
+  return { orderId, status: "completed" };
+}
+```
+
+**Características clave:**
+
+- Se ejecuta en un entorno aislado sin acceso completo a Node.js
+- Todos los resultados de los pasos se persisten en el registro de eventos
+- Debe ser **determinista** para permitir la reanudación después de fallos
+
+El determinismo en el flujo de trabajo es necesario para reanudar el flujo desde una suspensión. Esencialmente, el código del flujo de trabajo se vuelve a ejecutar varias veces durante su ciclo de vida, cada vez usando un registro de eventos para reanudar el flujo hasta el punto correcto.
+
+El entorno aislado en el que se ejecutan los flujos de trabajo ya garantiza el determinismo. Por ejemplo, `Math.random` y los constructores `Date` están fijados en las ejecuciones de flujo de trabajo, por lo que es seguro usarlos, y el framework garantiza que los valores no cambien entre replays.
+
+## Funciones de paso
+
+*Directiva: `"use step"`*
+
+Las funciones de paso realizan el trabajo real en un flujo de trabajo y tienen acceso completo al runtime.
+
+```typescript lineNumbers
+async function chargePayment(order: Order) {
+  "use step"; // [!code highlight]
+
+  // Full Node.js access - use any npm package
+  const stripe = new Stripe(process.env.STRIPE_KEY);
+
+  const charge = await stripe.charges.create({
+    amount: order.total,
+    currency: "usd",
+    source: order.paymentToken
+  });
+
+  return { chargeId: charge.id };
+}
+```
+
+**Características clave:**
+
+- Acceso completo al runtime de Node.js y a paquetes npm
+- Reintento automático en caso de errores
+- Resultados persistidos para replay
+
+Por defecto, los pasos tienen un máximo de 3 intentos de reintento antes de fallar y propagar el error al flujo de trabajo. Aprende más sobre errores y reintentos en la página de [Errores y reintentos](/docs/foundations/errors-and-retries).
+
+<Callout type="warning">
+**Importante:** Debido a la serialización, los parámetros se pasan por **valor, no por referencia**. Si pasas un objeto o un array a un paso y lo mutas, esos cambios **no** serán visibles en el contexto del flujo de trabajo. Devuelve siempre los datos modificados desde tus funciones de paso. Consulta [Semántica de paso por valor](/docs/foundations/serialization#pass-by-value-semantics) para más detalles y ejemplos.
+</Callout>
+
+<Callout type="info">
+Las funciones de paso están pensadas principalmente para usarse dentro de un flujo de trabajo.
+</Callout>
+
+Llamar a un paso desde fuera de un flujo de trabajo o desde otro paso esencialmente ejecutará el paso en el mismo proceso como una función normal (en otras palabras, la directiva `use step` es un no-op). Esto significa que puedes reutilizar funciones de paso en otras partes de tu base de código sin duplicar la lógica de negocio.
+
+
+```typescript lineNumbers
+async function updateUser(userId: string) {
+  "use step";
+  await db.insert(...);
+}
+
+// Used inside a workflow
+export async function userOnboardingWorkflow(userId: string) {
+  "use workflow";
+  await updateUser(userId);
+  // ... more steps
+}
+
+// Used directly outside a workflow
+export async function POST() {
+  await updateUser("123");
+  // ... more logic
+}
+```
+
+<Callout type="info">
+Ten en cuenta que llamar a una función de paso fuera de una función de flujo de trabajo no tendrá semánticas de reintento, ni será observable. Además, ciertas funciones específicas de flujo de trabajo como [`getStepMetadata()`](/docs/api-reference/workflow/get-step-metadata) lanzarán un error cuando se usen dentro de un paso que se llame fuera de un flujo de trabajo.
+</Callout>
+
+### Suspensión y reanudación
+
+Las funciones de flujo de trabajo tienen la capacidad de suspenderse automáticamente mientras esperan trabajo asincrónico. Mientras están suspendidas, el estado del flujo se almacena mediante el registro de eventos y no se utilizan recursos de cómputo hasta que el flujo reanuda la ejecución.
+
+Hay varias formas en que un flujo de trabajo puede suspenderse:
+
+- Esperando a una función de paso: el flujo cede mientras el paso se ejecuta en el runtime de paso.
+- Usando `sleep()` para pausar durante una duración fija.
+- Esperando una promesa devuelta por [`createWebhook()`](/docs/api-reference/workflow/create-webhook), que reanuda el flujo cuando un sistema externo pasa datos al flujo.
+
+```typescript lineNumbers
+import { sleep, createWebhook } from "workflow";
+
+export async function documentReviewProcess(userId: string) {
+  "use workflow";
+
+  await sleep("1 month"); // Sleep will suspend without consuming any resources [!code highlight]
+
+  // Create a webhook for external workflow resumption
+  const webhook = createWebhook();
+
+  // Send the webhook url to some external service or in an email, etc.
+  await sendHumanApprovalEmail("Click this link to accept the review", webhook.url)
+
+  const data = await webhook; // The workflow suspends till the URL is resumed [!code highlight]
+
+  console.log("Document reviewed!")
+}
+```
+
+## Escribir flujos de trabajo
+
+### Estructura básica
+
+El flujo de trabajo más simple consiste en una función de flujo de trabajo y una o más funciones de paso.
+
+```typescript lineNumbers
+// Workflow function (orchestrates the steps)
+export async function greetingWorkflow(name: string) {
+  "use workflow";
+
+  const message = await greet(name);
+  return { message };
+}
+
+// Step function (does the actual work)
+async function greet(name: string) {
+  "use step";
+
+  // Access Node.js APIs
+  const message = `Hello ${name} at ${new Date().toISOString()}`;
+  console.log(message);
+  return message;
+}
+```
+
+### Estructura del proyecto
+
+Aunque puedes organizar las funciones de flujo de trabajo y de paso como prefieras, creemos que los proyectos más grandes se benefician de cierta estructura:
+<Files>
+  <Folder name="workflows" defaultOpen disabled>
+    <Folder name="userOnboarding" defaultOpen disabled>
+      <File name="index.ts" />
+      <File name="steps.ts" />
+    </Folder>
+    <Folder name="aiVideoGeneration" defaultOpen disabled>
+      <File name="index.ts" />
+      <Folder name="steps" defaultOpen disabled>
+        <File name="transcribeUpload.ts" />
+        <File name="generateVideo.ts" />
+        <File name="notifyUser.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="shared" defaultOpen disabled>
+      <File name="validateInput.ts" />
+      <File name="logActivity.ts" />
+    </Folder>
+  </Folder>
+</Files>
+
+Puedes optar por organizar tus pasos en un único archivo `steps.ts` o en archivos separados dentro de una carpeta `steps`. La carpeta `shared` es un buen lugar para poner pasos comunes que son usados por múltiples flujos de trabajo.
+
+<Callout type="info">
+Separar pasos y flujos de trabajo también ayudará a evitar la mayoría de los errores relacionados con el empaquetador con el Workflow DevKit.
+</Callout>

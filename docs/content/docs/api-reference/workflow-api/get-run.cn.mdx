@@ -1,0 +1,78 @@
+---
+title: getRun
+---
+
+检索给定运行 ID 的工作流运行元数据和状态信息。此函数可在不等待工作流完成的情况下即时访问工作流运行详细信息，非常适合用于状态检查和监控。
+
+当您需要检查工作流状态、获取计时信息或在不阻塞等待工作流完成的情况下访问工作流元数据时，请使用此函数。
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+const run = getRun("my-run-id");
+```
+
+## API 签名
+
+### 参数
+
+<TSDoc
+definition={`
+import { getRun } from "workflow/api";
+export default getRun;`}
+showSections={["parameters"]}
+/>
+
+### 返回值
+
+返回一个 `Run` 对象：
+
+<TSDoc
+definition={`
+import { Run } from "workflow/api";
+export default Run;`}
+showSections={["returns"]}
+/>
+
+#### WorkflowReadableStreamOptions
+
+<TSDoc
+definition={`
+import type { WorkflowReadableStreamOptions } from "workflow/api";
+export default WorkflowReadableStreamOptions;`}
+/>
+
+## 示例
+
+### 基本状态检查
+
+检查工作流运行的当前状态：
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const runId = url.searchParams.get("runId");
+
+  if (!runId) {
+    return Response.json({ error: "No runId provided" }, { status: 400 });
+  }
+
+  try {
+    const run = getRun(runId); // [!code highlight]
+    const status = await run.status;
+
+    return Response.json({ status });
+  } catch (error) {
+    return Response.json(
+      { error: "Workflow run not found" },
+      { status: 404 }
+    );
+  }
+}
+```
+
+## 相关函数
+
+- [`start()`](/docs/api-reference/workflow-api/start) - 启动一个新的工作流并获取其运行 ID。

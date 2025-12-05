@@ -1,0 +1,259 @@
+---
+title: Express
+---
+
+本指南将引导你在一个 Express 应用中设置第一个 workflow。在此过程中，你将了解在自己的项目中使用开发工具包所需掌握的基本概念。
+
+---
+
+<Steps>
+
+<Step>
+## 创建你的 Express 项目
+
+首先创建一个新的 Express 项目。
+
+```bash
+mkdir my-workflow-app
+```
+
+进入新创建的目录：
+
+```bash
+cd my-workflow-app
+```
+
+初始化项目：
+
+```bash
+npm init --y
+```
+
+### 安装 `workflow`, `express`, `nitro`, 和 `rollup`
+
+```package-install
+npm i workflow express nitro rollup
+```
+
+<Callout>
+默认情况下，Express 不包含构建系统。Nitro 会添加一个构建系统，使得在开发和生产环境中能够编译 workflows、运行和部署。关于 Nitro 的更多信息请在[此处](https://v3.nitro.build)查看。
+</Callout>
+
+如果使用 TypeScript，你需要安装 `@types/express` 包。
+
+```bash
+npm i -D @types/express
+```
+
+### 配置 Nitro
+
+为 Nitro 配置创建一个新的文件 `nitro.config.ts`，在其中使用模块 `workflow/nitro`。这将启用 `"use workflow"` 和 `"use step"` 指令的使用。
+
+```typescript title="nitro.config.ts" lineNumbers
+import { defineNitroConfig } from "nitro/config";
+
+export default defineNitroConfig({
+  modules: ["workflow/nitro"],
+  vercel: { entryFormat: "node" },
+  routes: {
+    "/**": { handler: "./src/index.ts", format: "node" },
+  },
+});
+```
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      为 TypeScript 设置 IntelliSense（可选）
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+要在你的 IDE 中启用有用的提示，请在 `tsconfig.json` 中设置 workflow 插件：
+
+```json title="tsconfig.json" lineNumbers
+{
+  "compilerOptions": {
+    // ... rest of your TypeScript config
+    "plugins": [
+      {
+        "name": "workflow" // [!code highlight]
+      }
+    ]
+  }
+}
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+### 更新 `package.json`
+
+要使用 Nitro 构建器，请更新你的 `package.json` 以包含以下脚本：
+
+```json title="package.json" lineNumbers
+{
+  // ...
+  "scripts": {
+    "dev": "nitro dev",
+    "build": "nitro build"
+  },
+  // ...
+}
+```
+
+</Step>
+
+<Step>
+
+## 创建你的第一个 Workflow
+
+为我们的第一个 workflow 创建一个新文件：
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+接下来我们将补充这些函数，但先来看这段代码：
+
+- 我们使用指令 `"use workflow"` 定义了一个 **workflow** 函数。可以把 workflow 函数看作各个 **steps** 的协调者。
+- Workflow DevKit 的 `sleep` 函数允许我们在不消耗任何资源的情况下挂起 workflow 的执行。sleep 可以是几秒、几小时、几天，甚至几个月。
+
+## 创建你的 Workflow 步骤
+
+现在我们来定义那些缺失的函数。
+
+```typescript title="workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+看看这段代码：
+
+- 业务逻辑位于 **steps** 内。当在 **workflow** 中调用一个 step 时，它会被排队在独立的请求中执行，而 workflow 本身则被挂起，就像 `sleep` 一样。
+- 如果 step 抛出错误（例如在 `sendWelcomeEmail` 中），默认情况下该 step 会自动重试，直到成功（或达到该 step 的最大重试次数）。
+- 如果某个错误是有意为之且不应重试，step 可以抛出 `FatalError`。
+
+<Callout>
+  我们将在 [基础](/docs/foundations) 中更深入地探讨 workflows、steps 以及挂起或处理事件的其他方式。
+</Callout>
+
+</Step>
+
+<Step>
+
+## 创建你的路由处理器
+
+为了调用你的新 workflow，我们将创建 Express 应用并在 `src/index.ts` 中添加一个新的 API 路由处理器，内容如下：
+
+```typescript title="src/index.ts"
+import express from "express";
+import { start } from "workflow/api";
+import { handleUserSignup } from "../workflows/user-signup.js";
+
+const app = express();
+app.use(express.json());
+
+app.post("/api/signup", async (req, res) => {
+  const { email } = req.body;
+  await start(handleUserSignup, [email]);
+  return res.json({ message: "User signup workflow started" });
+});
+
+export default app;
+```
+
+此路由处理器创建了一个位于 `/api/signup` 的 `POST` 请求端点，用于触发你的 workflow。
+
+</Step>
+
+<Step>
+
+## 在开发环境运行
+
+要启动开发服务器，请在 Express 根目录的终端中运行以下命令：
+
+```bash
+npm run dev
+```
+
+一旦开发服务器运行起来，你可以通过在终端中运行以下命令来触发你的 workflow：
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+检查 Express 开发服务器日志以查看 workflow 的执行情况以及正在处理的 steps。
+
+此外，你可以使用 [Workflow DevKit CLI 或 Web UI](/docs/observability) 来详细检查你的 workflow 运行和步骤。
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Workflow DevKit Web 界面" />
+
+</Step>
+
+</Steps>
+
+---
+
+## 部署到生产环境
+
+Workflow DevKit 应用目前在部署到 [Vercel](https://vercel.com/home) 时表现最佳，且不需要特殊配置。
+
+查看 [部署](/docs/deploying) 部分以了解如何将你的 workflows 部署到其他平台。
+
+## 后续步骤
+
+- 了解更多关于 [基础](/docs/foundations) 的内容。
+- 如果遇到问题，请查看 [错误](/docs/errors)。
+- 浏览 [API 参考](/docs/api-reference)。

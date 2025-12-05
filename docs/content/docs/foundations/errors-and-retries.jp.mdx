@@ -1,0 +1,180 @@
+---
+title: エラーと再試行
+---
+
+デフォルトでは、ステップ内でスローされたエラーは再試行されます。さらに、Workflow DevKit は再試行をカスタマイズするために使用できる 2 種類の新しいエラーを提供します。
+
+## デフォルトの再試行
+
+デフォルトでは、ステップは任意のエラーで最大 3 回まで再試行されます。ステップ関数に `maxRetries` プロパティを追加して再試行回数をカスタマイズできます。
+
+```typescript lineNumbers
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!"); // [!code highlight]
+  }
+
+  return response.json();
+}
+
+callApi.maxRetries = 5; // Set a custom number of retries
+```
+
+ステップは失敗後すぐにキューに登録されます。これをどのようにカスタマイズできるかは以下を参照してください。
+
+<Callout type="info">
+  再試行されるステップが外部の副作用（支払い、メール、API への書き込み）を実行する場合、重複した副作用を避けるためにそれらの呼び出しが <strong>冪等である</strong> ことを確認してください。詳細は <a href="/docs/foundations/idempotency">冪等性</a> を参照してください。
+</Callout>
+
+## 意図的なエラー
+
+ステップで意図的にエラーをスローして再試行をスキップする必要がある場合は、[`FatalError`](/docs/api-reference/workflow/fatal-error) をスローしてください。
+
+```typescript lineNumbers
+import { FatalError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Any uncaught error gets retried
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries."); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## 再試行動作のカスタマイズ
+
+再試行時の遅延をカスタマイズする必要がある場合は、[`RetryableError`](/docs/api-reference/workflow/retryable-error) を使用し、`retryAfter` プロパティを設定してください。
+
+```typescript lineNumbers
+import { FatalError, RetryableError } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    throw new Error("Uncaught exceptions get retried!");
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", { // [!code highlight]
+      retryAfter: "1m", // Duration string // [!code highlight]
+    }); // [!code highlight]
+  }
+
+  return response.json();
+}
+```
+
+## 応用例
+
+この最終的な例では、ここまで学んだすべての内容と [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata) を組み合わせています。
+
+```typescript lineNumbers
+import { FatalError, RetryableError, getStepMetadata } from "workflow";
+
+async function callApi(endpoint: string) {
+  "use step";
+
+  const metadata = getStepMetadata();
+
+  const response = await fetch(endpoint);
+
+  if (response.status >= 500) {
+    // Exponential backoffs
+    throw new RetryableError("Backing off...", {
+      retryAfter: (metadata.attempt ** 2) * 1000,  // [!code highlight]
+    });
+  }
+
+  if (response.status === 404) {
+    throw new FatalError("Resource not found. Skipping retries.");
+  }
+
+  if (response.status === 429) {
+    throw new RetryableError("Rate limited. Retrying...", {
+      retryAfter: new Date(Date.now() + 60000),  // Date instance // [!code highlight]
+    });
+  }
+
+  return response.json();
+}
+callApi.maxRetries = 5;
+```
+
+## 失敗したステップのロールバック
+
+ワークフローが途中で失敗すると、システムが不整合な状態のままになる可能性があります。
+これに対処する一般的なパターンは「ロールバック（補償）」です: 各成功したステップに対応する取り消しアクションを記録しておき、後続のステップが失敗した場合は逆順にロールバックを実行します。
+
+キーガイドライン:
+
+- ロールバックもステップにしてください。そうすることで耐久性が得られ、再試行の恩恵を受けます。
+- ロールバックは <a href="/docs/foundations/idempotency">冪等性</a> を確保してください; 複数回実行される可能性があります。
+- フォワードのステップが成功した後にのみ、その補償をキューに追加してください。
+
+```typescript lineNumbers
+// Forward steps
+async function reserveInventory(orderId: string) {
+  "use step";
+  // ... call inventory service to reserve ...
+}
+
+async function chargePayment(orderId: string) {
+  "use step";
+  // ... charge the customer ...
+}
+
+// Rollback steps
+async function releaseInventory(orderId: string) {
+  "use step";
+  // ... undo inventory reservation ...
+}
+
+async function refundPayment(orderId: string) {
+  "use step";
+  // ... refund the charge ...
+}
+
+export async function placeOrderSaga(orderId: string) {
+  "use workflow";
+
+  const rollbacks: Array<() => Promise<void>> = [];
+
+  try {
+    await reserveInventory(orderId);
+    rollbacks.push(() => releaseInventory(orderId));
+
+    await chargePayment(orderId);
+    rollbacks.push(() => refundPayment(orderId));
+
+    // ... more steps & rollbacks ...
+  } catch (e) {
+    for (const rollback of rollbacks.reverse()) {
+      await rollback();
+    }
+    // Rethrow so the workflow records the failure after rollbacks
+    throw e;
+  }
+}
+```

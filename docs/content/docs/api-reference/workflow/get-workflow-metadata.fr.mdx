@@ -1,0 +1,44 @@
+---
+title: getWorkflowMetadata
+---
+
+Renvoie des métadonnées supplémentaires disponibles dans la fonction de workflow en cours.
+
+Vous pouvez utiliser cette fonction lorsque vous avez besoin de :
+
+* Enregistrer les identifiants d'exécution du workflow
+* Obtenir des informations temporelles sur un workflow
+
+<Callout>
+Si vous avez besoin d'accéder au contexte d'une étape, consultez [`getStepMetadata`](/docs/api-reference/workflow/get-step-metadata).
+</Callout>
+
+```typescript lineNumbers
+import { getWorkflowMetadata } from "workflow"
+
+async function testWorkflow() {
+    "use workflow"
+
+    const ctx = getWorkflowMetadata() // [!code highlight]
+    console.log(ctx.workflowRunId)
+}
+```
+
+## Signature de l'API
+
+### Paramètres
+
+<TSDoc
+definition={`
+import { getWorkflowMetadata } from "workflow";
+export default getWorkflowMetadata;`}
+showSections={['parameters']}
+/>
+
+### Renvoie
+
+<TSDoc
+definition={`
+import type { WorkflowMetadata } from "workflow";
+export default WorkflowMetadata;`}
+/>

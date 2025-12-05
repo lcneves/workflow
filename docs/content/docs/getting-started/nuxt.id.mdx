@@ -1,0 +1,225 @@
+---
+title: Nuxt
+description: Panduan ini akan memandu Anda menyiapkan workflow pertama Anda dalam aplikasi Nuxt. Sepanjang proses, Anda akan mempelajari lebih banyak tentang konsep-konsep yang mendasar untuk menggunakan Development Kit pada proyek Anda sendiri.
+---
+
+<Steps>
+
+<Step>
+## Buat Proyek Nuxt Anda
+
+Mulailah dengan membuat proyek Nuxt baru. Perintah ini akan membuat direktori baru bernama `nuxt-app` dan menyiapkan proyek Nuxt di dalamnya.
+
+```bash
+npm create nuxt@latest nuxt-app
+```
+
+Masuk ke direktori yang baru dibuat:
+
+```bash
+cd nuxt-app
+```
+
+### Instal `workflow`
+
+```package-install
+npm i workflow
+```
+
+### Konfigurasikan Nuxt
+
+Tambahkan `workflow` ke `nuxt.config.ts` Anda. Ini secara otomatis mengonfigurasi integrasi Nitro dan memungkinkan penggunaan direktif `"use workflow"` dan `"use step"`.
+
+```typescript title="nuxt.config.ts" lineNumbers
+import { defineNuxtConfig } from "nuxt/config";
+
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"], // [!code highlight]
+  compatibilityDate: "latest",
+});
+```
+
+Ini juga akan secara otomatis mengaktifkan plugin TypeScript, yang menyediakan petunjuk IntelliSense yang berguna di IDE Anda untuk fungsi workflow dan step.
+
+<Accordion type="single" collapsible>
+  <AccordionItem value="typescript-intellisense" className="[&_h3]:my-0">
+    <AccordionTrigger className="[&_p]:my-0 text-lg [&_p]:text-foreground">
+      Nonaktifkan Plugin TypeScript (Opsional)
+    </AccordionTrigger>
+    <AccordionContent className="[&_p]:my-2">
+Plugin TypeScript diaktifkan secara default. Jika Anda perlu menonaktifkannya, Anda dapat mengonfigurasikannya di `nuxt.config.ts` Anda:
+
+```typescript title="nuxt.config.ts" lineNumbers
+export default defineNuxtConfig({
+  modules: ["workflow/nuxt"],
+  workflow: {
+    typescriptPlugin: false, // [!code highlight]
+  },
+  compatibilityDate: "latest",
+});
+```
+
+    </AccordionContent>
+
+  </AccordionItem>
+</Accordion>
+
+</Step>
+
+<Step>
+
+## Buat Workflow Pertama Anda
+
+Buat file baru untuk workflow pertama kita:
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { sleep } from "workflow";
+
+export async function handleUserSignup(email: string) {
+  "use workflow"; // [!code highlight]
+
+  const user = await createUser(email);
+  await sendWelcomeEmail(user);
+
+  await sleep("5s"); // Pause for 5s - doesn't consume any resources
+  await sendOnboardingEmail(user);
+
+  console.log("Workflow is complete! Run 'npx workflow web' to inspect your run")
+
+  return { userId: user.id, status: "onboarded" };
+}
+```
+
+Kita akan mengisi fungsi-fungsi tersebut selanjutnya, tetapi mari lihat kode ini:
+
+- Kita mendefinisikan fungsi **workflow** dengan direktif `"use workflow"`. Anggap fungsi workflow sebagai _pengatur_ dari **step** individual.
+- Fungsi `sleep` dari Workflow DevKit memungkinkan kita menjeda eksekusi workflow tanpa menggunakan sumber daya. Jeda dapat berlangsung beberapa detik, jam, hari, atau bahkan bulan.
+
+## Buat Step Workflow Anda
+
+Sekarang mari definisikan fungsi-fungsi yang hilang tersebut.
+
+```typescript title="server/workflows/user-signup.ts" lineNumbers
+import { FatalError } from "workflow";
+
+// Our workflow function defined earlier
+
+async function createUser(email: string) {
+  "use step"; // [!code highlight]
+
+  console.log(`Creating user with email: ${email}`);
+
+  // Full Node.js access - database calls, APIs, etc.
+  return { id: crypto.randomUUID(), email };
+}
+
+async function sendWelcomeEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  console.log(`Sending welcome email to user: ${user.id}`);
+
+  if (Math.random() < 0.3) {
+    // By default, steps will be retried for unhandled errors
+    throw new Error("Retryable!");
+  }
+}
+
+async function sendOnboardingEmail(user: { id: string; email: string }) {
+  "use step"; // [!code highlight]
+
+  if (!user.email.includes("@")) {
+    // To skip retrying, throw a FatalError instead
+    throw new FatalError("Invalid Email");
+  }
+
+  console.log(`Sending onboarding email to user: ${user.id}`);
+}
+```
+
+Melihat kode ini:
+
+- Logika bisnis berada di dalam **step**. Ketika sebuah step dipanggil di dalam **workflow**, step tersebut dimasukkan ke antrean untuk dijalankan pada permintaan terpisah sementara workflow dijeda, sama seperti `sleep`.
+- Jika sebuah step melempar error, seperti pada `sendWelcomeEmail`, step tersebut akan dicoba ulang secara otomatis hingga berhasil (atau mencapai jumlah retry maksimum step).
+- Step dapat melempar `FatalError` jika error tersebut disengaja dan tidak boleh dicoba ulang.
+
+<Callout>
+  Kami akan membahas lebih dalam tentang workflow, step, dan cara lain untuk menangguhkan atau menangani peristiwa di [Dasar](/docs/foundations).
+</Callout>
+
+</Step>
+
+<Step>
+
+## Buat Rute API Anda
+
+Untuk memanggil workflow baru Anda, kita akan membuat handler rute API baru di `server/api/signup.post.ts` dengan kode berikut:
+
+```typescript title="server/api/signup.post.ts"
+import { start } from "workflow/api";
+import { defineEventHandler, readBody } from "h3";
+import { handleUserSignup } from "../workflows/user-signup";
+
+export default defineEventHandler(async (event) => {
+  const { email } = await readBody(event);
+
+  // Executes asynchronously and doesn't block your app
+  await start(handleUserSignup, [email]);
+
+  return {
+    message: "User signup workflow started",
+  };
+});
+```
+
+Rute API ini membuat endpoint permintaan `POST` di `/api/signup` yang akan memicu workflow Anda.
+
+<Callout>
+  Workflow dapat dipicu dari rute API atau kode sisi server mana pun.
+</Callout>
+
+</Step>
+
+<Step>
+
+## Jalankan dalam pengembangan
+
+Untuk memulai server pengembangan Anda, jalankan perintah berikut di terminal pada direktori root Nuxt:
+
+```bash
+npm run dev
+```
+
+Setelah server pengembangan Anda berjalan, Anda dapat memicu workflow dengan menjalankan perintah ini di terminal:
+
+```bash
+curl -X POST --json '{"email":"hello@example.com"}' http://localhost:3000/api/signup
+```
+
+Periksa log server pengembangan Nuxt untuk melihat eksekusi workflow Anda serta step yang sedang diproses.
+
+Selain itu, Anda dapat menggunakan [CLI atau Antarmuka Web Workflow DevKit](/docs/observability) untuk memeriksa run dan step workflow Anda secara mendetail.
+
+```bash
+# Open the observability Web UI
+npx workflow web
+# or if you prefer a terminal interface, use the CLI inspect command
+npx workflow inspect runs
+```
+
+<img src="/o11y-ui.png" alt="Antarmuka Web Workflow DevKit" />
+
+</Step>
+
+</Steps>
+
+## Menerapkan ke produksi
+
+Aplikasi Workflow DevKit saat ini bekerja paling baik ketika diterapkan ke [Vercel](https://vercel.com/home) dan tidak memerlukan konfigurasi khusus.
+
+Periksa bagian [Penerapan](/docs/deploying) untuk mempelajari bagaimana workflow Anda dapat diterapkan di tempat lain.
+
+## Langkah Berikutnya
+
+- Pelajari lebih lanjut tentang [Dasar](/docs/foundations).
+- Periksa [Kesalahan](/docs/errors) jika Anda menghadapi masalah.
+- Jelajahi [Referensi API](/docs/api-reference).

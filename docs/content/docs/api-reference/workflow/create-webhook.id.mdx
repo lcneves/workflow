@@ -1,0 +1,225 @@
+---
+title: createWebhook
+---
+
+Membuat webhook yang dapat digunakan untuk menangguhkan dan melanjutkan eksekusi workflow saat menerima permintaan HTTP.
+
+Webhooks menyediakan cara bagi sistem eksternal untuk mengirim permintaan HTTP langsung ke workflow Anda. Berbeda dengan hooks yang menerima payload sembarang, webhooks bekerja dengan objek HTTP `Request` standar dan dapat mengembalikan objek HTTP `Response`.
+
+```ts lineNumbers
+import { createWebhook } from "workflow"
+
+export async function webhookWorkflow() {
+  "use workflow";
+  const webhook = createWebhook();  // [!code highlight]
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook; // Suspends until HTTP request received
+  console.log("Received request:", request.method, request.url);
+}
+```
+
+## Tanda Tangan API
+
+### Parameter
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['parameters']}
+/>
+
+### Mengembalikan
+
+<TSDoc
+definition={`
+import { createWebhook } from "workflow";
+export default createWebhook;`}
+showSections={['returns']}
+/>
+
+Objek `Webhook` yang dikembalikan memiliki:
+
+- `url`: URL endpoint HTTP yang dapat dipanggil oleh sistem eksternal
+- `token`: token unik yang mengidentifikasi webhook ini
+- Mengimplementasikan `AsyncIterable<RequestWithResponse>` untuk menangani beberapa permintaan
+
+Tipe `RequestWithResponse` memperluas antarmuka `Request` standar dengan metode `respondWith(response: Response)` untuk mengirimkan respons kustom kembali ke pemanggil.
+
+## Contoh
+
+### Penggunaan Dasar
+
+Buat webhook yang menerima permintaan HTTP dan mencatat detail permintaan:
+
+```typescript lineNumbers
+import { createWebhook } from "workflow"
+
+export async function basicWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook(); // [!code highlight]
+  console.log("Send requests to:", webhook.url);
+
+  const request = await webhook;
+
+  console.log("Method:", request.method);
+  console.log("Headers:", Object.fromEntries(request.headers));
+
+  const body = await request.text();
+  console.log("Body:", body);
+}
+```
+
+### Merespons Permintaan Webhook
+
+Gunakan metode `respondWith()` untuk mengirim respons HTTP kustom. Perhatikan bahwa `respondWith()` harus dipanggil dari dalam fungsi step:
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendResponse(request: RequestWithResponse) { // [!code highlight]
+  "use step"; // [!code highlight]
+  await request.respondWith( // [!code highlight]
+    new Response(JSON.stringify({ success: true, message: "Received!" }), { // [!code highlight]
+      status: 200, // [!code highlight]
+      headers: { "Content-Type": "application/json" } // [!code highlight]
+    }) // [!code highlight]
+  ); // [!code highlight]
+} // [!code highlight]
+
+export async function respondingWebhookWorkflow() {
+  "use workflow";
+
+  const webhook = createWebhook();
+  console.log("Webhook URL:", webhook.url);
+
+  const request = await webhook;
+
+  // Send a custom response back to the caller
+  await sendResponse(request);
+
+  // Continue workflow processing
+  const data = await request.json();
+  await processData(data);
+}
+
+async function processData(data: any) {
+  "use step";
+  // Process the webhook data
+  console.log("Processing:", data);
+}
+```
+
+### Menyesuaikan Token
+
+Token digunakan untuk mengidentifikasi webhook tertentu. Anda dapat menyesuaikan token agar lebih spesifik untuk kasus penggunaan.
+
+```typescript lineNumbers
+import { type RequestWithResponse } from "workflow"
+
+async function sendAck(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response(JSON.stringify({ received: true }), {
+      headers: { "Content-Type": "application/json" }
+    })
+  );
+}
+
+export async function githubWebhookWorkflow(repoName: string) {
+  "use workflow";
+
+  // Use a deterministic token based on the repository
+  const webhook = createWebhook({ // [!code highlight]
+    token: `github_webhook:${repoName}`, // [!code highlight]
+  }); // [!code highlight]
+
+  console.log("Configure GitHub webhook:", webhook.url);
+
+  const request = await webhook;
+  const event = await request.json();
+
+  await sendAck(request);
+
+  await deployCommit(event);
+}
+
+async function deployCommit(event: any) {
+  "use step";
+  // Deploy logic here
+}
+```
+
+### Menunggu Beberapa Permintaan
+
+Anda juga dapat menunggu beberapa permintaan dengan menggunakan sintaks `for await...of`.
+
+```typescript lineNumbers
+import { createWebhook, type RequestWithResponse } from "workflow"
+
+async function sendSlackResponse(request: RequestWithResponse, message: string) {
+  "use step";
+  await request.respondWith(
+    new Response(
+      JSON.stringify({
+        response_type: "in_channel",
+        text: message
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+}
+
+async function sendStopResponse(request: RequestWithResponse) {
+  "use step";
+  await request.respondWith(
+    new Response("Stopping workflow...")
+  );
+}
+
+export async function slackCommandWorkflow(channelId: string) {
+  "use workflow";
+
+  const webhook = createWebhook({
+    token: `slack_command:${channelId}`,
+  });
+
+  for await (const request of webhook) { // [!code highlight]
+    const formData = await request.formData();
+    const command = formData.get("command");
+    const text = formData.get("text");
+
+    if (command === "/status") {
+      // Respond immediately to Slack
+      await sendSlackResponse(request, "Checking status...");
+
+      // Process the command
+      const status = await checkSystemStatus();
+      await postToSlack(channelId, `Status: ${status}`);
+    }
+
+    if (text === "stop") {
+      await sendStopResponse(request);
+      break;
+    }
+  }
+}
+
+async function checkSystemStatus() {
+  "use step";
+  return "All systems operational";
+}
+
+async function postToSlack(channelId: string, message: string) {
+  "use step";
+  // Post message to Slack
+}
+```
+
+## Fungsi Terkait
+
+- [`createHook()`](/docs/api-reference/workflow/create-hook) - Primitif hook tingkat rendah untuk payload sembarang
+- [`defineHook()`](/docs/api-reference/workflow/define-hook) - Bantuan hook tipe-aman
+- [`resumeWebhook()`](/docs/api-reference/workflow-api/resume-webhook) - Melanjutkan webhook dari rute API

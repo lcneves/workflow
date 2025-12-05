@@ -1,0 +1,75 @@
+---
+title: getStepMetadata
+---
+
+返回当前 step 函数中可用的元数据。
+
+当您需要以下情况时，您可能想要使用此函数：
+
+- 在错误处理时跟踪重试次数
+- 访问 step 的时序信息和执行元数据
+- 为外部 API 生成幂等键
+
+<Callout type="warn">
+  此函数只能在 step 函数内部调用。
+</Callout>
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function testWorkflow() {
+  "use workflow";
+  await logStepId();
+}
+
+async function logStepId() {
+  "use step";
+  const ctx = getStepMetadata(); // [!code highlight]
+  console.log(ctx.stepId); // Grab the current step ID
+}
+```
+
+### 示例：使用 `stepId` 作为幂等键
+
+```typescript lineNumbers
+import { getStepMetadata } from "workflow";
+
+async function chargeUser(userId: string, amount: number) {
+  "use step";
+  const { stepId } = getStepMetadata();
+
+  await stripe.charges.create(
+    {
+      amount,
+      currency: "usd",
+      customer: userId,
+    },
+    {
+      idempotencyKey: `charge:${stepId}`, // [!code highlight]
+    }
+  );
+}
+```
+
+<Callout type="info">
+  了解有关模式和注意事项，请参阅 <a href="/docs/foundations/idempotency">幂等性</a> 指南。
+</Callout>
+
+## API 签名
+
+### 参数
+
+<TSDoc
+  definition={`
+import { getStepMetadata } from "workflow";
+export default getStepMetadata;`}
+  showSections={["parameters"]}
+/>
+
+### 返回值
+
+<TSDoc
+  definition={`
+import type { StepMetadata } from "workflow";
+export default StepMetadata;`}
+/>

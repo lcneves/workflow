@@ -1,0 +1,78 @@
+---
+title: getRun
+---
+
+指定した run ID のワークフロー実行のメタデータとステータス情報を取得します。この関数は完了を待たずにワークフロー実行の詳細へ即時アクセスを提供するため、ステータス確認や監視に最適です。
+
+ワークフローの完了を待たずにステータスを確認したい場合、タイミング情報を取得したい場合、またはワークフローのメタデータにアクセスしたい場合にこの関数を使用してください。
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+const run = getRun("my-run-id");
+```
+
+## API シグネチャ
+
+### パラメータ
+
+<TSDoc
+definition={`
+import { getRun } from "workflow/api";
+export default getRun;`}
+showSections={["parameters"]}
+/>
+
+### 戻り値
+
+`Run` オブジェクトを返します:
+
+<TSDoc
+definition={`
+import { Run } from "workflow/api";
+export default Run;`}
+showSections={["returns"]}
+/>
+
+#### WorkflowReadableStreamOptions
+
+<TSDoc
+definition={`
+import type { WorkflowReadableStreamOptions } from "workflow/api";
+export default WorkflowReadableStreamOptions;`}
+/>
+
+## 例
+
+### 基本的なステータス確認
+
+ワークフロー実行の現在のステータスを確認します:
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const runId = url.searchParams.get("runId");
+
+  if (!runId) {
+    return Response.json({ error: "No runId provided" }, { status: 400 });
+  }
+
+  try {
+    const run = getRun(runId); // [!code highlight]
+    const status = await run.status;
+
+    return Response.json({ status });
+  } catch (error) {
+    return Response.json(
+      { error: "Workflow run not found" },
+      { status: 404 }
+    );
+  }
+}
+```
+
+## 関連関数
+
+- [`start()`](/docs/api-reference/workflow-api/start) - 新しいワークフローを開始してその run ID を取得します。

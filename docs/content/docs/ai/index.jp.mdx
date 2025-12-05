@@ -1,0 +1,412 @@
+---
+title: 耐久性のある AI エージェントの構築
+---
+
+AI エージェントは LLM とツール呼び出しのループという基本的な原始に基づいて構築されており、データ取得、リソースプロビジョニング、外部イベントへの応答などの追加プロセスを伴うことが多いです。
+
+Workflow DevKit はエージェントを耐久性があり再開可能なワークフローに変換することで、本番運用に耐えうる状態にします。LLM 呼び出し、ツール実行、その他の非同期操作をリトライ可能、スケーラブル、観測可能なステップに変換します。
+
+<AgentTraces />
+
+このガイドでは、基本的な AI チャットアプリを Workflow DevKit を使って耐久性のある AI エージェントに変換する手順を説明します。
+
+## なぜ耐久性のあるエージェントが必要か
+
+長時間実行タスクを本番運用にする際の通常の課題に加えて、成熟した AI エージェントを構築するには通常いくつかの**追加の課題**を解決する必要があります:
+
+- **ステートフルネス**: チャットセッションを永続化し、LLM とツール呼び出しをワーカーとキューを使った非同期ジョブに変換すること。
+- **観測性**: トレースやメトリクスを収集するサービスを利用し、それらをメッセージやユーザー履歴とは別に管理すること。
+- **再開可能性**: ストリームを再開するには、メッセージを保存するだけでなくストリーム自体を保存し、サービス間でパイプする必要があります。
+- **人間を介した処理**: クライアント、API、非同期ジョブのオーケストレーションが連携して、人間の承認リクエストや類似のウェブフック操作を作成・追跡・ルーティング・表示できる必要があります。
+
+Workflow DevKit はこれらの機能をすべてアウトオブボックスで提供します。エージェントはワークフローとなり、ツールはステップとなり、フレームワークが既存インフラとの連携を処理します。
+
+## はじめに
+
+Agent を耐久性のあるものにするには、まず Agent が必要です。ここではそのセットアップを行います。既に追従したいアプリがある場合は、このセクションをスキップできます。
+
+例では、Workflow DevKit を追加できるように、シンプルなチャットインターフェースと LLM を呼び出す API ルートを持つアプリが必要です。出発点として [フライト予約エージェント](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) の例を使用します。この例は Next.js、AI SDK、Shadcn UI を使って構築されたチャットインターフェースを含んでいます。
+
+<Steps>
+
+<Step>
+### サンプルアプリをクローンする
+
+Workflow DevKit を追加できるように、シンプルなチャットインターフェースと LLM を呼び出す API ルートを持つアプリが必要です。追従手順では出発点として [フライト予約エージェント](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) の例を使用します。この例は Next.js、AI SDK、Shadcn UI を使って構築されたチャットインターフェースを含んでいます。
+
+独自のプロジェクトがある場合はこのステップをスキップし、次のステップで示す変更を自分のプロジェクトに適用してください。
+
+```bash
+git clone https://github.com/vercel/workflow-examples -b plain-ai-sdk
+cd workflow-examples/flight-booking-app
+```
+
+</Step>
+
+<Step>
+
+### API キーの設定
+
+LLM に接続するために API キーを設定する必要があります。最も簡単な方法は Vercel Gateway を使用することです（すべてのプロバイダーでゼロマークアップで動作します）。または、カスタムプロバイダーを構成することもできます。
+<Tabs items={['Gateway', 'カスタムプロバイダー']}>
+
+<Tab value="Gateway">
+
+[Vercel Gateway](https://vercel.com/docs/gateway/api-reference/overview) ページから Gateway の API キーを取得してください。
+
+それを `.env.local` ファイルに追加します:
+
+```bash title=".env.local" lineNumbers
+GATEWAY_API_KEY=...
+```
+
+</Tab>
+
+<Tab value="Custom Provider">
+
+これは AI SDK で OpenAI プロバイダーを使用する例です。他のプロバイダーや詳細については、[AI SDK のプロバイダーガイド](https://ai-sdk.dev/providers/ai-sdk-providers) を参照してください。
+
+```package-install
+npm i @ai-sdk/openai
+```
+
+環境変数に OpenAI の API キーを設定します:
+
+```bash title=".env.local" lineNumbers
+OPENAI_API_KEY=...
+```
+
+その後、API エンドポイントを OpenAI プロバイダーを使うように変更します:
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+// ...
+import { openai } from "@workflow/ai/openai"; // [!code highlight]
+
+export async function POST(req: Request) {
+  // ...
+  const agent = new Agent({
+    // This uses the OPENAI_API_KEY environment variable by default, but you
+    // can also pass { apiKey: string } as an option.
+    model: openai("gpt-5.1"), // [!code highlight]
+    // ...
+  });
+```
+
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+
+### コードに慣れる
+
+まず、どんなコードを扱っているか見てみましょう。`npm run dev` でアプリを実行し、ブラウザで [http://localhost:3000](http://localhost:3000) を開いてください。シンプルなチャットインターフェースが表示されるはずです。実際に試してみてください。
+
+これを実現しているコアコードは非常にシンプルです。主な部分の内訳は以下の通りです。ここではコードに変更を加える必要はありません。単に何が起きているかを理解するためにコードを見ているだけです。
+
+<Tabs items={['API ルート', 'ツール', 'クライアント']}>
+
+<Tab value="API Route">
+
+私たちの API ルートは [AI SDK の `Agent` クラス](https://ai-sdk.dev/docs/agents/overview) をシンプルに呼び出しており、これは [AI SDK の `streamText` 関数](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#streamtext) のラッパーです。ここでツールをエージェントに渡しています。
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const agent = new Agent({ // [!code highlight]
+    model: gateway("bedrock/claude-4-5-haiku-20251001-v1"),
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+  const modelMessages = convertToModelMessages(messages);
+  const stream = agent.stream({ messages: modelMessages }); // [!code highlight]
+  return createUIMessageStreamResponse({
+    stream: stream.toUIMessageStream(),
+  });
+}
+```
+
+</Tab>
+
+<Tab value="Tools">
+
+この例のためにツールはほとんどモック化されています。ツールを定義するために AI SDK の `tool` 関数を使用し、それをエージェントに渡しています。実際のアプリでは、これはデータベースクエリや外部サービスへの呼び出しなど、あらゆる種類のツール呼び出しになり得ます。
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { tool } from "ai";
+import { z } from "zod";
+
+export const tools = {
+  searchFlights: tool({
+    description: "Search for flights",
+    inputSchema: z.object({ query: z.string() }),
+    execute: searchFlights,
+  }),
+};
+
+async function searchFlights({ from, to, date }: { from: string; to: string; date: string }) {
+  // ... generate some fake flights
+}
+```
+
+</Tab>
+
+<Tab value="Client">
+
+`ChatPage` コンポーネントにはチャットメッセージをきれいに表示するための多くのロジックがありますが、その核心は AI SDK の [`useChat` フック](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat#usechat) の入力/出力を管理していることです。
+
+```typescript title="app/chat.tsx" lineNumbers
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+
+export default function ChatPage() {
+  const { messages, input, handleInputChange, handleSubmit } = useChat({ // [!code highlight]
+    // ... other options ...
+  });
+
+  // ... more UI logic
+
+  return (
+    <div>
+      // This is a simplified example of the rendering logic
+      {messages.map((m) => (
+        <div key={m.id}>
+          <strong>{m.role}:</strong>
+          {m.parts.map((part, i) => {
+            if (part.type === "text") { // [!code highlight]
+              return <span key={i}>{part.text}</span>;
+            }
+            if (part.type === "tool-searchFlights") { // [!code highlight]
+              // ... some special rendering for our tool results
+            }
+            return null;
+          })}
+        </div>
+      ))}
+      <form onSubmit={handleSubmit}>
+        <input
+          value={input}
+          onChange={handleInputChange}
+          placeholder="Type a message..."
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+</Tabs>
+
+</Step>
+
+</Steps>
+
+## Workflow DevKit の統合
+
+AI SDK を使った基本的なエージェントができたので、それを耐久性のあるものに変更できます。
+
+<Steps>
+<Step>
+
+### 依存関係のインストール
+
+プロジェクトに Workflow DevKit パッケージを追加します:
+
+```package-install
+npm i workflow @workflow/ai
+```
+
+また、ワークフローコードを変換するために Next.js の設定を拡張します（詳細は [Getting Started](/docs/getting-started/next) を参照）。
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next";
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // ... rest of your Next.js config
+};
+
+export default withWorkflow(nextConfig);
+```
+
+</Step>
+
+<Step>
+
+### ワークフロー関数を作成する
+
+エージェントのロジックを別の関数に移動します。これがワークフロー定義となります。
+
+```typescript title="workflows/chat/workflow.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent"; // [!code highlight]
+import { getWritable } from "workflow"; // [!code highlight]
+import { tools } from "@/ai/tools";
+import { openai } from "@workflow/ai/openai";
+import type { ModelMessage, UIMessageChunk } from "ai";
+
+export async function chatWorkflow(messages: ModelMessage[]) {
+  "use workflow"; // [!code highlight]
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+
+  const agent = new DurableAgent({ // [!code highlight]
+
+    // If using AI Gateway, just specify the model name as a string:
+    model: "bedrock/claude-4-5-haiku-20251001-v1", // [!code highlight]
+
+    // ELSE if using a custom provider, pass the provider call as an argument:
+    model: openai("gpt-5.1"), // [!code highlight]
+
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+
+  await agent.stream({ // [!code highlight]
+    messages,
+    writable,
+  });
+}
+```
+
+主な変更点:
+
+- `Agent` をワークフロー関数としてマークするために `"use workflow"` ディレクティブを追加する
+- `Agent` を `@workflow/ai/agent` からの [`DurableAgent`](/docs/api-reference/workflow-ai/durable-agent) に置き換える。これにより LLM への呼び出しはすべて「ステップ」として実行され、結果はワークフローコンテキスト内で集約されます（ワークフローとステップの定義については [Workflows and Steps](/docs/foundations/workflows-and-steps) を参照してください）。
+- エージェント出力用のストリームを取得するために [`getWritable()`](/docs/api-reference/workflow/get-writable) を使用する。このストリームは永続化され、API エンドポイントはいつでもランのストリームを読み取れます。
+
+</Step>
+
+<Step>
+### API ルートの更新
+
+抽出したエージェント呼び出しを削除し、ワークフローを実行するために `start()` を呼び出すように置き換えます:
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+import type { UIMessage } from "ai";
+import { convertToModelMessages, createUIMessageStreamResponse } from "ai";
+import { start } from "workflow/api";
+import { chatWorkflow } from "@/workflows/chat/workflow";
+
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const modelMessages = convertToModelMessages(messages);
+
+  const run = await start(chatWorkflow, [modelMessages]); // [!code highlight]
+
+  return createUIMessageStreamResponse({
+    stream: run.readable, // [!code highlight]
+  });
+}
+```
+
+主な変更点:
+
+- ワークフロー関数を実行するために `start()` を呼び出します。これによりラン ID と読み取り可能なストリームを含む `Run` オブジェクトが返されます（`Run` オブジェクトの詳細は [Starting Workflows](/docs/foundations/starting-workflows) を参照してください）。
+- エージェント出力がランのストリームに書き込まれるように、ストリームを直接返すのではなく `writable` を `agent.stream()` に渡すようにします。
+
+</Step>
+
+<Step>
+### ツールをステップに変換する
+
+すべてのツール定義に `"use step"` をマークして耐久性を持たせます。これにより各ツール呼び出しの自動リトライと観測性が有効になります:
+
+```typescript title="workflows/chat/steps/tools.ts​" lineNumbers
+// ...
+
+export async function searchFlights(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function checkFlightStatus(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function getAirportInfo(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function bookFlight({
+  // ... arguments
+}) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function checkBaggageAllowance(
+  // ... arguments
+) {
+    "use step"; // [!code highlight]
+
+    // ... rest of the tool code
+  }
+}
+```
+
+`"use step"` を付けることで:
+
+- ツール実行はフル Node.js アクセスを持つ別個のステップとして実行されます。本番環境では各ステップが別個のワーカープロセスで実行され、ワークロードに応じて自動的にスケールします。
+- 失敗したツール呼び出しは自動的にリトライされます（デフォルトでは最大 3 回）。詳細は [Errors and Retries](/docs/foundations/errors-and-retries) を参照してください。
+- 各ツール実行は観測ツール上で個別のステップとして表示されます。詳細は [Observability](/docs/observability) を参照してください。
+</Step>
+
+</Steps>
+
+基本的な AI SDK エージェントを耐久性のあるエージェントに変換するために必要な手順は以上です。開発サーバーを起動してチャットメッセージを送信すると、以前と同様にエージェントが応答しますが、耐久性と観測性が追加されています。
+
+## 観測性
+
+アプリディレクトリで CLI を使って観測ダッシュボードを開き、ワークフローの動作を確認できます:
+
+```bash
+npx workflow web
+```
+
+これにより、すべてのワークフロ―ランとそのステータスを表示するローカルダッシュボードが開き、リトライ試行やステップ間で渡されるデータなど、ワークフローを詳細に検査できるトレースビューアが表示されます。
+
+## 次のステップ
+
+基本的な耐久性のあるエージェントができたら、次の追加機能を導入するのは簡単です:
+
+<Cards>
+  <Card title="ツールからのストリーミング更新" href="/docs/ai/streaming-updates-from-tools">
+    ツールが実行中に進捗の更新を UI にストリーミングします。
+  </Card>
+  <Card title="再開可能なストリーム" href="/docs/ai/resumable-streams">
+    中断したストリームにクライアントが再接続してもデータを失わないようにします。
+  </Card>
+  <Card title="スリープ、サスペンス、スケジューリング" href="/docs/ai/sleep-and-delays">
+    Agent とワークフローにネイティブなスリープ、サスペンス、スケジューリング機能を追加します。
+  </Card>
+  <Card title="ヒューマンインザループ" href="/docs/ai/human-in-the-loop">
+    人間の入力や外部イベントを待つ承認ステップを実装します。
+  </Card>
+</Cards>
+
+## 完全な例
+
+上記のすべてに加えて「次のステップ」機能をすべて含む完全な例は、[フライト予約エージェント](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) の main ブランチで利用可能です。
+
+## 関連ドキュメント
+
+- [ツール](/docs/ai/defining-tools) - エージェントのためのツール定義パターン
+- [`DurableAgent` API Reference](/docs/api-reference/workflow-ai/durable-agent) - 完全な API ドキュメント
+- [ワークフローとステップ](/docs/foundations/workflows-and-steps) - コア概念
+- [ストリーミング](/docs/foundations/streaming) - 詳細なストリーミングガイド
+- [エラーと再試行](/docs/foundations/errors-and-retries) - エラーハンドリングのパターン

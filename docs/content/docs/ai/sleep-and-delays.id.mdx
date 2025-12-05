@@ -1,0 +1,204 @@
+---
+title: Tidur, Penangguhan, dan Penjadwalan
+---
+
+AI agents terkadang perlu menghentikan eksekusi untuk menjadwalkan tindakan berulang atau di masa depan, menunggu sebelum mencoba kembali suatu operasi (mis. karena pembatasan laju), atau menunggu agar status eksternal tersedia.
+
+Workflow DevKit's `sleep` function memungkinkan Agents untuk menghentikan eksekusi tanpa menggunakan sumber daya, dan melanjutkan pada waktu tertentu, setelah durasi tertentu, atau sebagai respons terhadap event eksternal. Operasi workflow yang ditangguhkan akan bertahan saat restart, deploy baru, dan perubahan infrastruktur, terlepas apakah penangguhan berlangsung dalam hitungan detik atau bulan.
+
+<Callout type="info">
+Lihat [`sleep()` Referensi API](/docs/api-reference/workflow/sleep) untuk daftar lengkap format durasi yang didukung dan dokumentasi API terperinci, dan lihat dokumentasi [hooks](/docs/foundations/hooks) untuk informasi lebih lanjut tentang cara melanjutkan sebagai respons terhadap event eksternal.
+</Callout>
+
+## Menambahkan Alat Sleep
+
+Sleep adalah fungsi bawaan di Workflow DevKit, jadi mengeksposnya sebagai alat sesederhana membungkusnya dalam definisi tool. Pelajari lebih lanjut tentang cara mendefinisikan tools di [Pol a pola untuk Mendefinisikan Tools](/docs/ai/defining-tools).
+
+<Steps>
+
+<Step>
+
+### Definisikan Tool
+
+Tambahkan sebuah tool "sleep" baru ke `tools` yang didefinisikan di `workflows/chat/steps/tools.ts`:
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { getWritable, sleep } from "workflow"; // [!code highlight]
+
+// ... existing imports ...
+
+async function executeSleep( // [!code highlight]
+  { durationMs }: { durationMs: number }, // [!code highlight]
+) { // [!code highlight]
+  // Note: No "use step" here - sleep is a workflow-level function // [!code highlight]
+  await sleep(durationMs); // [!code highlight]
+  return { message: `Slept for ${durationMs}ms` }; // [!code highlight]
+}
+
+// ... existing tool functions ...
+
+export const flightBookingTools = {
+ // ... existing tool definitions ...
+ sleep: { // [!code highlight]
+  description: "Pause execution for a specified duration", // [!code highlight]
+  inputSchema: z.object({ // [!code highlight]
+    durationMs: z.number().describe("Duration to sleep in milliseconds"), // [!code highlight]
+  }), // [!code highlight]
+  execute: executeSleep, // [!code highlight]
+ } // [!code highlight]
+}
+```
+
+<Callout type="info">
+  Perhatikan bahwa fungsi `sleep()` harus dipanggil dari dalam konteks workflow, bukan dari dalam sebuah step. Inilah mengapa `executeSleep` tidak memiliki `"use step"` - ia berjalan dalam konteks workflow di mana `sleep()` tersedia.
+</Callout>
+
+ Ini sudah membuat seluruh fungsionalitas sleep tersedia bagi Agent!
+
+</Step>
+
+<Step>
+
+### Tampilkan status tool di UI
+
+Untuk melengkapinya, perluas UI agar menampilkan status pemanggilan tool. Ini bisa dilakukan dengan menampilkan informasi pemanggilan tool secara langsung, atau dengan mengirimkan bagian data kustom ke stream (lihat [Streaming Updates from Tools](/docs/ai/streaming-updates-from-tools) untuk detail lebih lanjut). Dalam kasus ini, karena tidak ada pembaruan progres yang rinci untuk ditampilkan, kita cukup menampilkan informasi pemanggilan tool secara langsung:
+
+```typescript title="app/page.tsx" lineNumbers
+export default function ChatPage() {
+
+  // ...
+
+  const { stop, messages, sendMessage, status, setMessages } =
+    useChat<MyUIMessage>({
+      // ... options
+    });
+
+  // ...
+
+  return (
+    <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
+      // ...
+
+      <Conversation className="mb-10">
+        <ConversationContent>
+          {messages.map((message, index) => {
+            const hasText = message.parts.some((part) => part.type === "text");
+
+            return (
+              <div key={message.id}>
+                // ...
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+
+                      // ...
+
+                      if (
+                        part.type === "tool-searchFlights" ||
+                        part.type === "tool-checkFlightStatus" ||
+                        part.type === "tool-getAirportInfo" ||
+                        part.type === "tool-bookFlight" ||
+                        part.type === "tool-checkBaggageAllowance"
+                        part.type === "tool-sleep" // [!code highlight]
+                      ) {
+                        // ...
+                      }
+                      return null;
+                    })}
+                  </MessageContent>
+                </Message>
+              </div>
+            );
+          })}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      // ...
+    </div>
+  );
+}
+
+function renderToolOutput(part: any) {
+  // ...
+  switch (part.type) {
+    // ...
+    case "tool-sleep": { // [!code highlight]
+      return ( // [!code highlight]
+        <div className="space-y-2"> // [!code highlight]
+          <p className="text-sm font-medium">Sleeping for {part.input.durationMs}ms...</p> // [!code highlight]
+        </div> // [!code highlight]
+      ); // [!code highlight]
+    }
+    // ...
+}
+
+```
+
+</Step>
+
+</Steps>
+
+Sekarang, coba Agent Pemesanan Penerbangan lagi, dan minta agar ia tidur selama 10 detik sebelum memeriksa penerbangan apa pun. Anda akan melihat agent berhenti sejenak, dan UI mencerminkan status pemanggilan tool.
+
+## Kasus Penggunaan
+
+Selain menyediakan `sleep()` sebagai sebuah tool, ada kasus penggunaan lain untuk Agents yang umumnya membutuhkan penangguhan dan pelanjutan.
+
+### Pembatasan Laju
+
+Saat terkena batas laju API, gunakan `RetryableError` dengan penundaan:
+
+```typescript lineNumbers
+async function callRateLimitedAPI(endpoint: string) {
+  "use step";
+
+  const response = await fetch(endpoint);
+
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After");
+    throw new RetryableError("Rate limited", {
+      retryAfter: retryAfter ? parseInt(retryAfter) * 1000 : "1m",
+    });
+  }
+
+  return response.json();
+}
+```
+
+### Polling dengan Backoff
+
+Lakukan polling untuk mendapatkan hasil dengan penundaan yang meningkat:
+
+```typescript lineNumbers
+export async function pollForResult(jobId: string) {
+  "use workflow";
+
+  let attempt = 0;
+  const maxAttempts = 10;
+
+  while (attempt < maxAttempts) {
+    const result = await checkJobStatus(jobId);
+
+    if (result.status === "complete") {
+      return result.data;
+    }
+
+    attempt++;
+    await sleep(Math.min(1000 * 2 ** attempt, 60000)); // Exponential backoff, max 1 minute
+  }
+
+  throw new Error("Job did not complete in time");
+}
+
+async function checkJobStatus(jobId: string) {
+  "use step";
+  // Check job status...
+}
+```
+
+## Dokumentasi Terkait
+
+- [`sleep()` Referensi API](/docs/api-reference/workflow/sleep) - Dokumentasi API lengkap dengan semua format durasi
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - Memahami konteks workflow
+- [Errors and Retries](/docs/foundations/errors-and-retries) - Menggunakan `RetryableError` dengan penundaan

@@ -1,0 +1,79 @@
+---
+title: Despliegue
+icon: FlaskConical
+---
+
+<Callout>
+  Esta sección está actualmente en fase experimental y sujeta a cambios. Pruébala y comparte tus comentarios en [GitHub](https://github.com/vercel/workflow/discussions).
+</Callout>
+
+Los workflows pueden ejecutarse en cualquier infraestructura mediante los **Worlds**. Un World es un adaptador responsable de gestionar el almacenamiento de workflows, la encolación, la autenticación y el streaming a través de un backend determinado.
+
+## ¿Qué son los Worlds?
+
+Un **World** conecta los workflows con la infraestructura que los ejecuta. Piénsalo como el "entorno" donde viven y se ejecutan tus workflows. La interfaz World abstrae las diferencias entre el desarrollo local y los despliegues en producción, permitiendo que el mismo código de workflow se ejecute sin problemas en distintos entornos.
+
+## Comportamiento predeterminado
+
+Los Worlds se configuran automáticamente según el escenario:
+
+- **Desarrollo local** - Usa automáticamente el Local World
+- **Despliegues en Vercel** - Usa automáticamente el Vercel World
+
+Al utilizar otros worlds, puedes establecer explícitamente la configuración mediante variables de entorno. Consulta la documentación del World apropiado para los detalles de configuración.
+
+## Worlds integrados
+
+Workflow DevKit incluye dos implementaciones de world:
+
+<Cards>
+  <Card title="Local World" href="/docs/deploying/world/local-world">
+    Backend basado en el sistema de archivos para desarrollo local, que almacena los datos en el directorio `.workflow-data/`.
+  </Card>
+  <Card title="Vercel World" href="/docs/deploying/world/vercel-world">
+    Backend listo para producción para despliegues en Vercel, integrado con la infraestructura de Vercel.
+    </Card>
+</Cards>
+
+## Crear un World
+
+Además de los Worlds predeterminados proporcionados por Workflow DevKit, también puedes crear nuevas implementaciones de world para infraestructuras personalizadas:
+
+- Backends de base de datos (PostgreSQL, MySQL, MongoDB, etc.)
+- Proveedores de nube (AWS, GCP, Azure, etc.)
+- Sistemas de colas personalizados
+- Plataformas de terceros
+
+Para crear un world personalizado, utiliza un `World` implementado por la comunidad o implementa la interfaz `World` tú mismo. Se requieren las siguientes interfaces:
+
+- **Storage** - Persistencia de ejecuciones de workflow, pasos, hooks y metadatos
+- **Queue** - Encolar y procesar pasos de workflow de forma asíncrona
+- **AuthProvider** - Gestión de la autenticación para el acceso a la API
+- **Streamer** - Gestión de streams legibles y escribibles
+
+Consulta la [World API Reference](/docs/deploying/world) para obtener detalles de implementación.
+
+### Usar un World de terceros
+
+Para backends personalizados e implementaciones de world de terceros, consulta la documentación específica del world para los detalles de configuración. Cada world puede tener su propio conjunto de variables de entorno y opciones de configuración requeridas.
+
+## Observabilidad
+
+Las [herramientas de observabilidad](/docs/observability) (CLI y UI web) pueden conectarse a cualquier backend de World para inspeccionar los datos de los workflows. Por defecto, se conectan a tu entorno local, pero también pueden configurarse para inspeccionar entornos remotos:
+
+```bash
+# Inspect local workflows
+npx workflow inspect runs
+
+# Inspect remote workflows (custom worlds)
+npx workflow inspect runs --backend <your-world-name>
+```
+
+Obtén más información sobre las herramientas de [Observabilidad](/docs/observability).
+
+## Más información
+
+- [Local World](/docs/deploying/world/local-world) - Backend para desarrollo local
+- [Vercel World](/docs/deploying/world/vercel-world) - Backend de producción para Vercel
+- [World API Reference](/docs/deploying/world) - Construcción de Worlds personalizados
+- [Observabilidad](/docs/observability) - Inspección de datos de workflow

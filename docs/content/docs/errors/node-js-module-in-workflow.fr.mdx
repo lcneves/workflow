@@ -1,0 +1,73 @@
+---
+title: module-node-js-dans-un-workflow
+---
+
+Cette erreur se produit lorsque vous essayez d'importer ou d'utiliser directement des modules principaux de Node.js (comme `fs`, `http`, `crypto`, `path`, etc.) à l'intérieur d'une fonction de workflow.
+
+## Message d'erreur
+
+```
+Cannot use Node.js module "fs" in workflow functions. Move this module to a step function.
+```
+
+## Pourquoi cela se produit
+
+Les fonctions de workflow s'exécutent dans un environnement sandboxé sans accès complet au runtime Node.js. Cette restriction est importante pour préserver le **déterminisme** - la capacité de rejouer les workflows exactement et de reprendre là où ils se sont arrêtés après des suspensions ou des échecs.
+
+Les modules Node.js ont des effets secondaires et un comportement non déterministe qui pourraient compromettre les garanties de rejouabilité des workflows.
+
+## Solution rapide
+
+Déplacez tout code utilisant des modules Node.js dans une fonction d'étape. Les fonctions d'étape disposent d'un accès complet au runtime Node.js.
+
+Par exemple, lorsque vous essayez de lire un fichier dans une fonction de workflow, vous devriez déplacer le code dans une fonction d'étape.
+
+**Avant :**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // This will cause an error - Node.js module in workflow context
+  const content = fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+  return content;
+}
+```
+
+**Après :**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // Call step function that has Node.js access
+  const content = await read(filePath); // [!code highlight]
+  return content;
+}
+
+async function read(filePath: string) {
+  "use step";
+
+  // Node.js modules are allowed in step functions
+  return fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+}
+```
+
+## Modules Node.js courants
+
+Ces modules principaux courants de Node.js ne peuvent pas être utilisés dans les fonctions de workflow :
+
+- Système de fichiers: `fs`, `path`
+- Réseau: `http`, `https`, `net`, `dns`, `fetch`
+- Processus: `child_process`, `cluster`
+- Cryptographie: `crypto` (utilisez l'API Web Crypto à la place)
+- Système d'exploitation: `os`
+- Flux: `stream` (utilisez l'API Web Streams à la place)
+
+<Callout type="info">
+Vous pouvez utiliser les API Web dans les fonctions de workflow (comme `Headers`, `crypto.randomUUID()`, `Response`, etc.), puisque celles-ci sont disponibles dans l'environnement sandboxé.
+</Callout>

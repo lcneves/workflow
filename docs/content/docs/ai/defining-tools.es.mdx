@@ -1,0 +1,71 @@
+---
+title: Patrones para Definir Herramientas
+---
+
+Esta página cubre los detalles de algunos patrones comunes al definir herramientas para agentes de IA usando Workflow DevKit.
+
+Usando DurableAgent, modelamos la mayoría de las herramientas como pasos. Estos pueden ser cualquier cosa, desde una simple llamada de función hasta un flujo de trabajo completo de varios días.
+
+## Acceder al contexto de mensajes en las herramientas
+
+Al igual que en las definiciones de herramientas del SDK de IA habituales, las herramientas en DurableAgent se llaman con un primer argumento de los parámetros de entrada de la herramienta y un segundo argumento del contexto de la llamada de la herramienta.
+
+Cuando tu herramienta necesita acceso al historial completo de mensajes, puedes acceder a él a través de la propiedad `messages` del contexto de la llamada de la herramienta:
+
+```typescript title="tools.ts" lineNumbers
+async function getWeather(
+  { city }: { city: string },
+  { messages, toolCallId }: { messages: LanguageModelV2Prompt, toolCallId: string }) { // [!code highlight]
+  "use step";
+  return `Weather in ${city} is sunny`;
+}
+```
+
+## Escribir en Streams
+
+Como se comenta en [Streaming Updates from Tools](/docs/ai/streaming-updates-from-tools), es común usar un paso solo para llamar a `getWritable()` para escribir partes de datos personalizadas en el stream.
+
+Esto se puede hacer genérico, creando una función auxiliar de paso para escribir datos arbitrarios en el stream:
+
+```typescript title="tools.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeToStream(data: any) {
+  "use step";
+
+  const writable = getWritable();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## Herramientas a nivel de paso vs a nivel de workflow
+
+Las herramientas pueden implementarse ya sea a nivel de paso o a nivel de flujo de trabajo, con diferentes capacidades y restricciones.
+
+| Capacidad | A nivel de paso (`"use step"`) | A nivel de flujo de trabajo (`"use workflow"`) |
+|------------|---------------------------|----------------|
+| `getWritable()` | ✅ | ❌ |
+| Reintentos automáticos | ✅ | ❌ |
+| Efectos secundarios (p. ej., llamadas a API) permitidos | ✅ | ❌ |
+| `sleep()` | ❌ | ✅ |
+| `createWebhook()` | ❌ | ✅ |
+
+Las herramientas también pueden combinar ambos enfoques comenzando en el nivel de flujo de trabajo y llamando a pasos para operaciones de E/S, de la siguiente manera:
+
+```typescript title="tools.ts" lineNumbers
+// Step: handles I/O with retries
+async function performFetch(url: string) {
+  "use step";
+  const response = await fetch(url);
+  return response.json();
+}
+
+// Workflow-level: orchestrates steps and can use sleep()
+async function executeFetchWithDelay({ url }: { url: string }) {
+  const result = await performFetch(url);
+  await sleep("5s"); // Only available at workflow level
+  return result;
+}
+```

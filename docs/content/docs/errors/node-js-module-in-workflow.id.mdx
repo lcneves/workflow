@@ -1,0 +1,73 @@
+---
+title: node-js-modul-di-workflow
+---
+
+Kesalahan ini terjadi ketika Anda mencoba mengimpor atau menggunakan modul inti Node.js (seperti `fs`, `http`, `crypto`, `path`, dll.) secara langsung di dalam sebuah fungsi workflow.
+
+## Pesan Kesalahan
+
+```
+Cannot use Node.js module "fs" in workflow functions. Move this module to a step function.
+```
+
+## Mengapa Ini Terjadi
+
+Fungsi workflow berjalan di dalam lingkungan terisolasi tanpa akses penuh ke runtime Node.js. Pembatasan ini penting untuk menjaga **determinisme** - kemampuan untuk memutar ulang workflow secara tepat dan melanjutkan dari titik terakhir setelah penangguhan atau kegagalan.
+
+Modul Node.js memiliki efek samping dan perilaku nondeterministik yang dapat merusak jaminan pemutaran ulang workflow.
+
+## Solusi Cepat
+
+Pindahkan kode apa pun yang menggunakan modul Node.js ke fungsi langkah. Fungsi langkah memiliki akses penuh ke runtime Node.js.
+
+Sebagai contoh, ketika mencoba membaca file di dalam fungsi workflow, Anda harus memindahkan kode tersebut ke fungsi langkah.
+
+**Sebelum:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // This will cause an error - Node.js module in workflow context
+  const content = fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+  return content;
+}
+```
+
+**Setelah:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // Call step function that has Node.js access
+  const content = await read(filePath); // [!code highlight]
+  return content;
+}
+
+async function read(filePath: string) {
+  "use step";
+
+  // Node.js modules are allowed in step functions
+  return fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+}
+```
+
+## Modul Node.js Umum
+
+Modul inti Node.js berikut ini tidak dapat digunakan di dalam fungsi workflow:
+
+- Sistem berkas: `fs`, `path`
+- Jaringan: `http`, `https`, `net`, `dns`, `fetch`
+- Proses: `child_process`, `cluster`
+- Kripto: `crypto` (gunakan Web Crypto API sebagai gantinya)
+- Sistem operasi: `os`
+- Streams: `stream` (gunakan Web Streams API sebagai gantinya)
+
+<Callout type="info">
+Anda dapat menggunakan Web Platform APIs dalam fungsi workflow (seperti `Headers`, `crypto.randomUUID()`, `Response`, dll.), karena ini tersedia di lingkungan terisolasi (sandbox).
+</Callout>

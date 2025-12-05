@@ -1,0 +1,39 @@
+---
+title: Worlds エコシステム
+description: 公式およびコミュニティの Workflow World 実装の互換性ステータスとパフォーマンスベンチマークの概要。
+---
+
+import { WorldsDashboardServer } from "@/components/worlds";
+
+# Workflow Worlds エコシステム
+
+Workflow `World` は、ワークフローとステップが外部とどのように通信するかを抽象化するインターフェースです。このページでは、利用可能なすべての World 実装の互換性状況とパフォーマンスを表示します。
+
+<WorldsDashboardServer />
+
+## World とは？
+
+World 実装は以下を扱います：
+- **ワークフロー ストレージ**: ワークフローの状態とイベントログの永続化
+- **ステップ実行**: ステップ関数の呼び出しの管理
+- **メッセージパッシング**: ワークフローオーケストレーターとステップ関数間の通信
+
+## World の選択
+
+| ユースケース | 推奨される World |
+|----------|------------------|
+| ローカル開発 | Local World |
+| Vercel デプロイ | Vercel World |
+| PostgreSQL を使用したセルフホスト | Postgres World |
+| エッジ／組み込みデータベース | Turso World |
+| 高スループットのキュー | Redis World |
+
+## World の貢献方法
+
+独自の World 実装を構築したいですか？ガイダンスについては [World インターフェースのドキュメント](/docs/deploying/world) と [参照実装](https://github.com/vercel/workflow/tree/main/packages) を確認してください。
+
+コミュニティの World は、CI 上で当社の E2E テストスイートに対してテストされます。このダッシュボードにあなたの World を追加するには：
+
+1. World インターフェースを実装する
+2. npm に公開する
+3. `worlds-manifest.json` にあなたの World を追加する PR を開く

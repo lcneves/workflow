@@ -1,0 +1,177 @@
+---
+title: webhook-响应未发送
+---
+
+此错误发生在将 webhook 配置为 `respondWith: "manual"`，但工作流在 webhook 执行完成之前未使用 `request.respondWith()` 发送响应的情况下。
+
+## 错误信息
+
+```
+Workflow run did not send a response
+```
+
+## 发生原因
+
+当你使用 `respondWith: "manual"` 创建 webhook 时，你需要负责调用 `request.respondWith()` 将 HTTP 响应发送回调用方。如果工作流执行完成而未发送响应，则会抛出此错误。
+
+webhook 基础设施会等待响应被发送，如果没有响应，它无法正确完成该 HTTP 请求。
+
+## 常见原因
+
+### 忘记调用 `request.respondWith()`
+
+```typescript lineNumbers
+// Error - no response sent
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  // Process data...
+  console.log(data);
+
+  // Error: workflow ends without calling request.respondWith() // [!code highlight]
+}
+```
+
+**解决方案：** 在使用手动响应模式时始终调用 `request.respondWith()`。
+
+```typescript lineNumbers
+// Fixed - response sent
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  // Process data...
+  console.log(data);
+
+  // Send response before workflow ends // [!code highlight]
+  await request.respondWith(new Response("Processed", { status: 200 })); // [!code highlight]
+}
+```
+
+### 有条件的响应逻辑
+
+```typescript lineNumbers
+// Error - response only sent in some branches
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  if (data.isValid) {
+    await request.respondWith(new Response("OK", { status: 200 }));
+  }
+  // Error: no response when data.isValid is false // [!code highlight]
+}
+```
+
+**解决方案：** 确保所有代码路径都会发送响应。
+
+```typescript lineNumbers
+// Fixed - response sent in all branches
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+  const data = await request.json();
+
+  if (data.isValid) { // [!code highlight]
+    await request.respondWith(new Response("OK", { status: 200 })); // [!code highlight]
+  } else { // [!code highlight]
+    await request.respondWith(new Response("Invalid data", { status: 400 })); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+### 在发送响应之前抛出异常
+
+```typescript lineNumbers
+// Error - exception thrown before response
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+
+  // Error occurs here // [!code highlight]
+  throw new Error("Something went wrong"); // [!code highlight]
+
+  // Never reached
+  await request.respondWith(new Response("OK", { status: 200 }));
+}
+```
+
+**解决方案：** 使用 try-catch 来处理错误并发送适当的响应。
+
+```typescript lineNumbers
+// Fixed - error handling with response
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual",
+  });
+
+  const request = await webhook;
+
+  try { // [!code highlight]
+    // Process request...
+    const result = await processData(request); // [!code highlight]
+    await request.respondWith(new Response("OK", { status: 200 })); // [!code highlight]
+  } catch (error) { // [!code highlight]
+    // Send error response // [!code highlight]
+    await request.respondWith( // [!code highlight]
+      new Response("Internal error", { status: 500 }) // [!code highlight]
+    ); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+## 替代方案：使用默认响应模式
+
+如果你不需要自定义响应控制，可以考虑使用默认响应模式，它会自动返回 `202 Accepted` 响应：
+
+```typescript lineNumbers
+// Automatic 202 response - no manual response needed
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook(); // [!code highlight]
+  const request = await webhook;
+
+  // Process request asynchronously
+  await processData(request);
+
+  // No need to call request.respondWith()
+}
+```
+
+## 了解更多
+
+- [createWebhook() API 参考](/docs/api-reference/workflow/create-webhook)
+- [resumeWebhook() API 参考](/docs/api-reference/workflow-api/resume-webhook)
+- [Webhook 指南](/docs/foundations/hooks)

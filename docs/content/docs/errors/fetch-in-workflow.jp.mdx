@@ -1,0 +1,108 @@
+---
+title: ワークフロー内でのfetch
+---
+
+このエラーは、ワークフロー関数内で `fetch()` を直接使用しようとした場合、またはライブラリ（AI SDK のような）が内部で `fetch()` を呼び出そうとした場合に発生します。
+
+## エラーメッセージ
+
+```
+Global "fetch" is unavailable in workflow functions. Use the "fetch" step function from "workflow" to make HTTP requests.
+```
+
+## なぜ発生するか
+
+ワークフロー関数はサンドボックス化された環境で実行され、`fetch()` に直接アクセスできません。
+
+多くのライブラリは内部で HTTP リクエストを行います。例えば、AI SDK の `generateText()` 関数は AI プロバイダへの HTTP リクエストを行うために `fetch()` を呼び出します。これらのライブラリがワークフロー関数内で実行されると、グローバルの `fetch` が利用できないため失敗します。
+
+## クイックフィックス
+
+`workflow` パッケージから `fetch` ステップ関数をインポートし、ワークフロー関数内で `globalThis.fetch` に割り当ててください。このバージョンの `fetch` は標準の `fetch` API をラップするステップ関数で、シリアライズ処理を自動的に行い、リトライ機能を提供します。これにより、現在のワークフロー関数内のすべての関数やライブラリで `fetch()` が利用可能になります。
+
+**変更前:**
+
+```typescript lineNumbers title="workflows/ai.ts"
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+export async function chatWorkflow(prompt: string) {
+  "use workflow";
+
+  // Error - generateText() calls fetch() under the hood
+  const result = await generateText({ // [!code highlight]
+    model: openai("gpt-4"), // [!code highlight]
+    prompt, // [!code highlight]
+  }); // [!code highlight]
+
+  return result.text;
+}
+```
+
+**変更後:**
+
+```typescript lineNumbers title="workflows/ai.ts"
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { fetch } from "workflow"; // [!code highlight]
+
+export async function chatWorkflow(prompt: string) {
+  "use workflow";
+
+  globalThis.fetch = fetch; // [!code highlight]
+
+  // Now generateText() can make HTTP requests via the fetch step
+  const result = await generateText({
+    model: openai("gpt-4"),
+    prompt,
+  });
+
+  return result.text;
+}
+```
+
+## よくあるシナリオ
+
+### AI SDK の統合
+
+最も一般的なシナリオは、HTTP リクエストを行う AI SDK の関数を使用することです:
+
+```typescript lineNumbers
+import { generateText, streamText } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { fetch } from "workflow"; // [!code highlight]
+
+export async function aiWorkflow(userMessage: string) {
+  "use workflow";
+
+  globalThis.fetch = fetch; // [!code highlight]
+
+  // generateText makes HTTP requests to OpenAI
+  const response = await generateText({
+    model: openai("gpt-4"),
+    prompt: userMessage,
+  });
+
+  return response.text;
+}
+```
+
+### 直接の API 呼び出し
+
+独自の HTTP リクエストには、fetch ステップ関数を直接使用することもできます:
+
+```typescript lineNumbers
+import { fetch } from "workflow";
+
+export async function dataWorkflow() {
+  "use workflow";
+
+  // Use fetch directly for HTTP requests
+  const response = await fetch("https://api.example.com/data"); // [!code highlight]
+  const data = await response.json();
+
+  return data;
+}
+```
+
+詳細は `fetch` ステップ関数の[fetch API リファレンス](/docs/api-reference/workflow/fetch)を参照してください。

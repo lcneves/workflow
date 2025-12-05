@@ -1,0 +1,413 @@
+---
+title: 构建持久化的 AI 代理
+---
+
+AI 代理构建在 LLM 与工具调用循环的原语之上，通常还包含用于数据获取、资源配置或对外部事件做出响应的附加进程。
+
+Workflow DevKit 通过将代理转换为持久化、可续执行的工作流，使您的代理具备生产就绪能力。它将您的 LLM 调用、工具执行和其他异步操作转换为可重试、可扩展且可观测的步骤。
+
+<AgentTraces />
+
+本指南将引导您将一个基本的 AI 聊天应用转换为使用 Workflow DevKit 的持久化 AI 代理。
+
+## 为什么要使用持久化代理？
+
+除了使长时间运行任务达到生产就绪状态的常见挑战外，构建成熟的 AI 代理通常还需要解决若干 **附加挑战**：
+
+- **有状态性**：持久化聊天会话，并将 LLM 和工具调用转换为带有工作进程和队列的异步作业。
+- **可观测性**：使用服务来收集跟踪和指标，并将它们与消息和用户历史分开管理。
+- **可恢复性**：恢复流式传输不仅需要存储消息，还需要存储流并在服务之间进行管道传输。
+- **人工介入**：您的客户端、API 和异步作业编排需要协同工作，以创建、跟踪、路由并展示人工审批请求或类似的 webhook 操作。
+
+Workflow DevKit 开箱即提供所有这些能力。您的代理变成一个工作流，您的工具变成步骤，框架负责与现有基础设施的交互。
+
+## 开始使用
+
+要让一个代理具备持久化能力，首先我们需要一个代理，这里我们将进行设置。如果您已有一个想要跟随的应用，可以跳过本节。
+
+在本示例中，我们需要一个具有简单聊天界面和调用 LLM 的 API 路由的应用，以便向其添加 Workflow DevKit。我们将使用 [Flight Booking Agent](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) 示例作为起点，该示例使用 Next.js、AI SDK 和 Shadcn UI 构建了一个聊天界面。
+
+<Steps>
+
+<Step>
+### 克隆示例应用
+
+我们需要一个具有简单聊天界面和调用 LLM 的 API 路由的应用，以便向其添加 Workflow DevKit。用于演示的示例是 [Flight Booking Agent](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app)，它使用 Next.js、AI SDK 和 Shadcn UI 构建了聊天界面。
+
+如果您已有自己的项目，可以跳过此步骤，仅将后续步骤中的更改应用到您的项目中。
+
+```bash
+git clone https://github.com/vercel/workflow-examples -b plain-ai-sdk
+cd workflow-examples/flight-booking-app
+```
+
+</Step>
+
+<Step>
+
+### 设置 API 密钥
+
+为了连接到 LLM，我们需要设置一个 API 密钥。最简单的方法是使用 Vercel Gateway（对所有提供商均无附加费用），或者您也可以配置自定义提供商。
+<Tabs items={['Gateway', 'Custom Provider']}>
+
+<Tab value="Gateway">
+
+从 [Vercel Gateway](https://vercel.com/docs/gateway/api-reference/overview) 页面获取 Gateway API 密钥。
+
+然后将其添加到您的 `.env.local` 文件：
+
+```bash title=".env.local" lineNumbers
+GATEWAY_API_KEY=...
+```
+
+</Tab>
+
+<Tab value="Custom Provider">
+
+下面是如何在 AI SDK 中使用 OpenAI 提供者的示例。有关其他提供者和更多详细信息，请参阅 [AI SDK provider guide](https://ai-sdk.dev/providers/ai-sdk-providers)。
+
+```package-install
+npm i @ai-sdk/openai
+```
+
+在环境变量中设置您的 OpenAI API 密钥：
+
+```bash title=".env.local" lineNumbers
+OPENAI_API_KEY=...
+```
+
+然后修改您的 API 端点以使用 OpenAI 提供者：
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+// ...
+import { openai } from "@workflow/ai/openai"; // [!code highlight]
+
+export async function POST(req: Request) {
+  // ...
+  const agent = new Agent({
+    // This uses the OPENAI_API_KEY environment variable by default, but you
+    // can also pass { apiKey: string } as an option.
+    model: openai("gpt-5.1"), // [!code highlight]
+    // ...
+  });
+```
+
+</Tab>
+</Tabs>
+</Step>
+
+<Step>
+
+### 熟悉代码
+
+我们先花点时间看看当前的代码。运行应用：`npm run dev`，在浏览器中打开 [http://localhost:3000](http://localhost:3000)。您应该会看到一个可供交互的简易聊天界面。可以去尝试一下。
+
+实现这一切的核心代码相当简单。下面是主要部分的拆解说明。注意这里无需进行更改，我们只是查看代码以理解其工作原理。
+
+<Tabs items={['API Route', 'Tools', 'Client']}>
+
+<Tab value="API Route">
+
+我们的 API 路由简单地调用了 [AI SDK 的 `Agent` 类](https://ai-sdk.dev/docs/agents/overview)，它是对 [AI SDK 的 `streamText` 函数](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#streamtext) 的简单封装。这也是我们将工具传递给代理的地方。
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const agent = new Agent({ // [!code highlight]
+    model: gateway("bedrock/claude-4-5-haiku-20251001-v1"),
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+  const modelMessages = convertToModelMessages(messages);
+  const stream = agent.stream({ messages: modelMessages }); // [!code highlight]
+  return createUIMessageStreamResponse({
+    stream: stream.toUIMessageStream(),
+  });
+}
+```
+
+</Tab>
+
+<Tab value="Tools">
+
+为示例起见，我们的大多数工具都做了模拟处理。我们使用 AI SDK 的 `tool` 函数来定义工具，并将其传递给代理。在您自己的应用中，这可能是任何类型的工具调用，例如数据库查询、对外部服务的调用等。
+
+```typescript title="workflows/chat/steps/tools.ts" lineNumbers
+import { tool } from "ai";
+import { z } from "zod";
+
+export const tools = {
+  searchFlights: tool({
+    description: "Search for flights",
+    inputSchema: z.object({ query: z.string() }),
+    execute: searchFlights,
+  }),
+};
+
+async function searchFlights({ from, to, date }: { from: string; to: string; date: string }) {
+  // ... generate some fake flights
+}
+```
+
+</Tab>
+
+<Tab value="Client">
+
+我们的 `ChatPage` 组件包含大量用于美化展示聊天消息的逻辑，但其核心只是管理 AI SDK 的 [`useChat` hook](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat#usechat) 的输入/输出。
+
+```typescript title="app/chat.tsx" lineNumbers
+"use client";
+
+import { useChat } from "@ai-sdk/react";
+
+export default function ChatPage() {
+  const { messages, input, handleInputChange, handleSubmit } = useChat({ // [!code highlight]
+    // ... other options ...
+  });
+
+  // ... more UI logic
+
+  return (
+    <div>
+      // This is a simplified example of the rendering logic
+      {messages.map((m) => (
+        <div key={m.id}>
+          <strong>{m.role}:</strong>
+          {m.parts.map((part, i) => {
+            if (part.type === "text") { // [!code highlight]
+              return <span key={i}>{part.text}</span>;
+            }
+            if (part.type === "tool-searchFlights") { // [!code highlight]
+              // ... some special rendering for our tool results
+            }
+            return null;
+          })}
+        </div>
+      ))}
+      <form onSubmit={handleSubmit}>
+        <input
+          value={input}
+          onChange={handleInputChange}
+          placeholder="Type a message..."
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+</Tabs>
+
+</Step>
+
+</Steps>
+
+## 集成 Workflow DevKit
+
+现在我们已经有了一个基于 AI SDK 的基本代理，可以修改它以使其具备持久化能力。
+
+<Steps>
+<Step>
+
+### 安装依赖
+
+将 Workflow DevKit 包添加到您的项目：
+
+```package-install
+npm i workflow @workflow/ai
+```
+
+并扩展 Next.js 配置以转换您的工作流代码（有关更多详细信息，请参阅 [Getting Started](/docs/getting-started/next)）。
+
+```typescript title="next.config.ts" lineNumbers
+import { withWorkflow } from "workflow/next";
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // ... rest of your Next.js config
+};
+
+export default withWorkflow(nextConfig);
+```
+
+</Step>
+
+<Step>
+
+### 创建 Workflow 函数
+
+将代理逻辑移动到单独的函数中，该函数将作为我们的工作流定义。
+
+```typescript title="workflows/chat/workflow.ts" lineNumbers
+import { DurableAgent } from "@workflow/ai/agent"; // [!code highlight]
+import { getWritable } from "workflow"; // [!code highlight]
+import { tools } from "@/ai/tools";
+import { openai } from "@workflow/ai/openai";
+import type { ModelMessage, UIMessageChunk } from "ai";
+
+export async function chatWorkflow(messages: ModelMessage[]) {
+  "use workflow"; // [!code highlight]
+
+  const writable = getWritable<UIMessageChunk>(); // [!code highlight]
+
+  const agent = new DurableAgent({ // [!code highlight]
+
+    // If using AI Gateway, just specify the model name as a string:
+    model: "bedrock/claude-4-5-haiku-20251001-v1", // [!code highlight]
+
+    // ELSE if using a custom provider, pass the provider call as an argument:
+    model: openai("gpt-5.1"), // [!code highlight]
+
+    system: FLIGHT_ASSISTANT_PROMPT,
+    tools: flightBookingTools,
+  });
+
+  await agent.stream({ // [!code highlight]
+    messages,
+    writable,
+  });
+}
+```
+
+关键更改：
+
+- 添加 `"use workflow"` 指令以将我们的 Agent 标记为工作流函数。
+- 将 `Agent` 替换为来自 `@workflow/ai/agent` 的 [`DurableAgent`](/docs/api-reference/workflow-ai/durable-agent)。这可确保对 LLM 的所有调用作为“步骤”执行，并在工作流上下文中聚合结果（有关工作流/步骤如何定义的更多详情，请参阅 [Workflows and Steps](/docs/foundations/workflows-and-steps)）。
+- 使用 [`getWritable()`](/docs/api-reference/workflow/get-writable) 来获取代理输出的流。此流是持久化的，API 端点可以随时读取某次运行的流。
+
+</Step>
+
+<Step>
+### 更新 API 路由
+
+移除我们刚刚提取的代理调用，并用对 `start()` 的调用来运行工作流：
+
+```typescript title="app/api/chat/route.ts" lineNumbers
+import type { UIMessage } from "ai";
+import { convertToModelMessages, createUIMessageStreamResponse } from "ai";
+import { start } from "workflow/api";
+import { chatWorkflow } from "@/workflows/chat/workflow";
+
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const modelMessages = convertToModelMessages(messages);
+
+  const run = await start(chatWorkflow, [modelMessages]); // [!code highlight]
+
+  return createUIMessageStreamResponse({
+    stream: run.readable, // [!code highlight]
+  });
+}
+```
+
+关键更改：
+
+- 调用 `start()` 来运行工作流函数。它返回一个 `Run` 对象，其中包含运行 ID 和可读流（有关 `Run` 对象的更多详细信息，请参阅 [Starting Workflows](/docs/foundations/starting-workflows)）。
+- 将 `writable` 传递给 `agent.stream()`，而不是直接返回流，确保所有 Agent 输出都写入到该运行的流中。
+
+</Step>
+
+<Step>
+### 将工具转换为步骤
+
+在所有工具定义中添加 `"use step"` 以使其持久化。这将为每次工具调用启用自动重试和可观测性：
+
+```typescript title="workflows/chat/steps/tools.ts​" lineNumbers
+// ...
+
+export async function searchFlights(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function checkFlightStatus(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function getAirportInfo(
+  // ... arguments
+) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function bookFlight({
+  // ... arguments
+}) {
+  "use step"; // [!code highlight]
+
+  // ... rest of the tool code
+}
+
+export async function checkBaggageAllowance(
+  // ... arguments
+) {
+    "use step"; // [!code highlight]
+
+    // ... rest of the tool code
+  }
+}
+```
+
+启用 `"use step"` 后：
+
+- 工具执行在单独的步骤中运行，并具有完整的 Node.js 访问权限。在生产环境中，每个步骤在单独的工作进程中执行，并会根据工作负载自动扩展。
+- 失败的工具调用会自动重试（默认最多重试 3 次）。有关更多细节，请参阅 [Errors and Retries](/docs/foundations/errors-and-retries)。
+- 每次工具执行都会作为独立步骤出现在可观测性工具中。有关更多信息，请参阅 [Observability](/docs/observability)。
+
+</Step>
+
+</Steps>
+
+完成上述操作后，您就将基本的 AI SDK 代理转换为了持久化代理。如果运行开发服务器并发送聊天消息，您应该会看到代理像之前一样响应，但现在具备了额外的持久性和可观测性。
+
+## 可观测性
+
+在您的应用目录中，您可以使用 CLI 打开可观测性仪表板来查看工作流的运行情况：
+
+```bash
+npx workflow web
+```
+
+这会打开一个本地仪表板，显示所有工作流运行及其状态，以及用于详细检查工作流（包括重试尝试和步骤之间传递的数据）的跟踪查看器。
+
+## 后续步骤
+
+现在您已经拥有了一个基本的持久化代理，接下来可以很容易地添加以下功能：
+
+<Cards>
+  <Card title="Streaming Updates from Tools" href="/docs/ai/streaming-updates-from-tools">
+    在工具执行过程中向 UI 流式传输进度更新。
+  </Card>
+  <Card title="Resumable Streams" href="/docs/ai/resumable-streams">
+    使客户端能够在不中断数据的情况下重新连接到被中断的流。
+  </Card>
+  <Card title="Sleep, Suspense, and Scheduling" href="/docs/ai/sleep-and-delays">
+    为您的 Agent 和工作流添加原生的睡眠、挂起和调度功能。
+  </Card>
+  <Card title="Human-in-the-Loop" href="/docs/ai/human-in-the-loop">
+    实现审批步骤以等待人工输入或外部事件。
+  </Card>
+</Cards>
+
+## 完整示例
+
+包含上述所有内容以及所有“后续步骤”功能的完整示例可在 [Flight Booking Agent](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) 示例的 main 分支中找到。
+
+## 相关文档
+
+- [Tools](/docs/ai/defining-tools) - 定义代理工具的模式
+- [`DurableAgent` API Reference](/docs/api-reference/workflow-ai/durable-agent) - 完整的 API 文档
+- [Workflows and Steps](/docs/foundations/workflows-and-steps) - 核心概念
+- [Streaming](/docs/foundations/streaming) - 深入的流式传输指南
+- [Errors and Retries](/docs/foundations/errors-and-retries) - 错误处理模式

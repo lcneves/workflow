@@ -1,0 +1,71 @@
+---
+title: Modèles pour définir des outils
+---
+
+Cette page couvre les détails de quelques schémas courants pour définir des outils pour des agents IA en utilisant Workflow DevKit.
+
+En utilisant DurableAgent, nous modélisons la plupart des outils en tant qu'étapes. Ceux-ci peuvent être n'importe quoi, d'un simple appel de fonction à un workflow entier s'étalant sur plusieurs jours.
+
+## Accéder au contexte des messages dans les outils
+
+Comme dans les définitions d'outils classiques de l'AI SDK, les outils dans DurableAgent sont appelés avec en premier argument les paramètres d'entrée de l'outil, et en second argument le contexte d'appel de l'outil.
+
+Lorsque votre outil a besoin d'accéder à l'historique complet des messages, vous pouvez y accéder via la propriété `messages` du contexte d'appel de l'outil :
+
+```typescript title="tools.ts" lineNumbers
+async function getWeather(
+  { city }: { city: string },
+  { messages, toolCallId }: { messages: LanguageModelV2Prompt, toolCallId: string }) { // [!code highlight]
+  "use step";
+  return `Weather in ${city} is sunny`;
+}
+```
+
+## Écriture dans les flux
+
+Comme expliqué dans [Mises à jour en continu depuis les outils](/docs/ai/streaming-updates-from-tools), il est courant d'utiliser une étape uniquement pour appeler `getWritable()` afin d'écrire des parties de données personnalisées dans le flux.
+
+Cela peut être rendu générique en créant une fonction d'étape utilitaire pour écrire des données arbitraires dans le flux :
+
+```typescript title="tools.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeToStream(data: any) {
+  "use step";
+
+  const writable = getWritable();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## Outils au niveau de l'étape vs au niveau du workflow
+
+Les outils peuvent être implémentés soit au niveau de l'étape, soit au niveau du workflow, avec des capacités et des contraintes différentes.
+
+| Capacité | Niveau de l'étape (`"use step"`) | Niveau du workflow (`"use workflow"`) |
+|------------|---------------------------|----------------|
+| `getWritable()` | ✅ | ❌ |
+| Reprises automatiques | ✅ | ❌ |
+| Effets secondaires (p. ex. appels API) autorisés | ✅ | ❌ |
+| `sleep()` | ❌ | ✅ |
+| `createWebhook()` | ❌ | ✅ |
+
+Les outils peuvent aussi combiner les deux en démarrant au niveau du workflow, puis en appelant des étapes pour les opérations d'E/S, comme suit :
+
+```typescript title="tools.ts" lineNumbers
+// Step: handles I/O with retries
+async function performFetch(url: string) {
+  "use step";
+  const response = await fetch(url);
+  return response.json();
+}
+
+// Workflow-level: orchestrates steps and can use sleep()
+async function executeFetchWithDelay({ url }: { url: string }) {
+  const result = await performFetch(url);
+  await sleep("5s"); // Only available at workflow level
+  return result;
+}
+```

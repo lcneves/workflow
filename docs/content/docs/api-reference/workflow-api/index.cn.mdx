@@ -1,0 +1,24 @@
+---
+title: "workflow/api"
+---
+
+来自 `workflow/api` 包的运行时函数的 API 参考。
+
+## 函数
+
+Workflow DevKit 提供在 workflow 和 step 函数之外使用的运行时函数。这些函数从运行时入口点访问（例如调用 `start(workflowFn)` 的位置）：
+
+<Cards>
+    <Card href="/docs/api-reference/workflow-api/start" title="start()">
+        启动或将新的工作流运行加入队列。
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-hook" title="resumeHook()">
+        通过向 hook 发送负载来恢复工作流。
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/resume-webhook" title="resumeWebhook()">
+        通过向 webhook 发送 `Request` 来恢复工作流。
+    </Card>
+    <Card href="/docs/api-reference/workflow-api/get-run" title="getRun()">
+        在不等待完成的情况下获取工作流运行的状态和元数据。
+    </Card>
+</Cards>

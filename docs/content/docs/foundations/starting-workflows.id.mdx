@@ -1,0 +1,211 @@
+---
+title: Memulai Alur Kerja
+---
+
+Setelah Anda mendefinisikan fungsi alur kerja, Anda perlu memicunya untuk memulai eksekusi. Ini dilakukan menggunakan fungsi `start()` dari `workflow/api`, yang mengantri run alur kerja baru dan mengembalikan objek `Run` yang dapat Anda gunakan untuk melacak progresnya.
+
+## Fungsi `start()`
+
+Fungsi [`start()`](/docs/api-reference/workflow-api/start) digunakan untuk memicu eksekusi alur kerja secara programatik dari konteks runtime seperti API routes, Server Actions, atau kode sisi server lainnya.
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { handleUserSignup } from "./workflows/user-signup";
+
+export async function POST(request: Request) {
+  const { email } = await request.json();
+
+  // Start the workflow
+  const run = await start(handleUserSignup, [email]); // [!code highlight]
+
+  return Response.json({
+    message: "Workflow started",
+    runId: run.runId
+  });
+}
+```
+
+**Poin Kunci:**
+
+- `start()` mengembalikan segera setelah mengantri alur kerja - fungsi ini tidak menunggu penyelesaian
+- Argumen pertama adalah fungsi alur kerja Anda
+- Argumen kedua adalah array argumen yang akan diteruskan ke alur kerja (opsional jika alur kerja tidak menerima argumen)
+- Semua argumen harus [serializable](/docs/foundations/serialization)
+
+**Pelajari lebih lanjut**: [`start()` Referensi API](/docs/api-reference/workflow-api/start)
+
+## Objek `Run`
+
+Ketika Anda memanggil `start()`, ia mengembalikan objek [`Run`](/docs/api-reference/workflow-api/start#returns) yang memberikan akses ke status dan hasil alur kerja.
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { processOrder } from "./workflows/process-order";
+
+const run = await start(processOrder, [orderId]);
+
+// The run object has properties you can await
+console.log("Run ID:", run.runId);
+
+// Check the workflow status
+const status = await run.status; // "running" | "completed" | "failed"
+
+// Get the workflow's return value (blocks until completion)
+const result = await run.returnValue;
+```
+
+**Properti Utama:**
+
+- `runId` - Pengidentifikasi unik untuk run alur kerja ini
+- `status` - Status saat ini dari alur kerja (async)
+- `returnValue` - Nilai yang dikembalikan oleh fungsi alur kerja (async, menunggu hingga selesai)
+- `readable` - ReadableStream untuk streaming pembaruan dari alur kerja
+
+<Callout type="info">
+Sebagian besar properti `Run` adalah getter async yang mengembalikan promise. Anda perlu melakukan `await` pada properti tersebut untuk mendapatkan nilainya. Untuk daftar lengkap properti dan metode, lihat referensi API di bawah.
+</Callout>
+
+**Pelajari lebih lanjut**: [`Run` Referensi API](/docs/api-reference/workflow-api/start#returns)
+
+## Pola Umum
+
+### Mulai dan Lupakan
+
+Pola yang paling umum adalah memulai alur kerja dan langsung mengembalikan respons, membiarkannya berjalan di latar belakang:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { sendNotifications } from "./workflows/notifications";
+
+export async function POST(request: Request) {
+  // Start workflow and don't wait for it
+  const run = await start(sendNotifications, [userId]);
+
+  // Return immediately
+  return Response.json({
+    message: "Notifications queued",
+    runId: run.runId
+  });
+}
+```
+
+### Menunggu Penyelesaian
+
+Jika Anda perlu menunggu alur kerja selesai sebelum merespons:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateReport } from "./workflows/reports";
+
+export async function POST(request: Request) {
+  const run = await start(generateReport, [reportId]);
+
+  // Wait for the workflow to complete
+  const report = await run.returnValue; // [!code highlight]
+
+  return Response.json({ report });
+}
+```
+
+<Callout type="warn">
+Berhati-hatilah saat menunggu `returnValue` - jika alur kerja Anda membutuhkan waktu lama, route API Anda mungkin mengalami timeout.
+</Callout>
+
+### Streaming Pembaruan ke Klien
+
+Streaming pembaruan real-time dari alur kerja saat dieksekusi, tanpa menunggu penyelesaian:
+
+```typescript lineNumbers
+import { start } from "workflow/api";
+import { generateAIContent } from "./workflows/ai-generation";
+
+export async function POST(request: Request) {
+  const { prompt } = await request.json();
+
+  // Start the workflow
+  const run = await start(generateAIContent, [prompt]);
+
+  // Get the readable stream (can also use run.readable as shorthand)
+  const stream = run.getReadable(); // [!code highlight]
+
+  // Return the stream immediately
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+    },
+  });
+}
+```
+
+Workflow Anda dapat menulis ke stream menggunakan [`getWritable()`](/docs/api-reference/workflow/get-writable):
+
+```typescript lineNumbers
+import { getWritable } from "workflow";
+
+export async function generateAIContent(prompt: string) {
+  "use workflow";
+
+  const writable = getWritable(); // [!code highlight]
+
+  await streamContentToClient(writable, prompt);
+
+  return { status: "complete" };
+}
+
+async function streamContentToClient(
+  writable: WritableStream,
+  prompt: string
+) {
+  "use step";
+
+  const writer = writable.getWriter();
+
+  // Stream updates as they become available
+  for (let i = 0; i < 10; i++) {
+    const chunk = new TextEncoder().encode(`Update ${i}\n`);
+    await writer.write(chunk);
+  }
+
+  writer.releaseLock();
+}
+```
+
+<Callout type="info">
+Streams sangat berguna untuk alur kerja AI ketika Anda ingin menampilkan progres kepada pengguna secara real-time, atau untuk proses yang berjalan lama yang menghasilkan hasil antara.
+</Callout>
+
+**Pelajari lebih lanjut**: [Streaming in Workflows](/docs/foundations/serialization#streaming)
+
+### Periksa Status Nanti
+
+Anda dapat mengambil run alur kerja nanti menggunakan `runId` dengan [`getRun()`](/docs/api-reference/workflow-api/get-run):
+
+```typescript lineNumbers
+import { getRun } from "workflow/api";
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const runId = url.searchParams.get("runId");
+
+  // Retrieve the existing run
+  const run = getRun(runId); // [!code highlight]
+
+  // Check its status
+  const status = await run.status;
+
+  if (status === "completed") {
+    const result = await run.returnValue;
+    return Response.json({ result });
+  }
+
+  return Response.json({ status });
+}
+```
+
+## Langkah Selanjutnya
+
+Sekarang setelah Anda memahami cara memulai alur kerja dan melacak pelaksanaannya:
+
+- Pelajari tentang [Pola Alur Kontrol](/docs/foundations/control-flow-patterns) untuk mengorganisir alur kerja kompleks
+- Jelajahi [Kesalahan & Pengulangan](/docs/foundations/errors-and-retries) untuk menangani kegagalan dengan elegan
+- Periksa [ `start()` Referensi API](/docs/api-reference/workflow-api/start) untuk detail lengkap

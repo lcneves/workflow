@@ -1,0 +1,171 @@
+---
+title: Dunia Postgres
+---
+
+Dunia PostgreSQL adalah implementasi referensi dari [Dunia](/docs/deploying/world) yang sepenuhnya didukung oleh PostgreSQL, termasuk pemrosesan pekerjaan (menggunakan [pg-boss](https://github.com/timgit/pg-boss)) dan streaming (menggunakan NOTIFY dan LISTEN PostgreSQL).
+
+Dunia ini dirancang untuk proses yang berjalan lama, sehingga dapat menerima dan mengirimkan peristiwa dari database PostgreSQL, dan tidak dimaksudkan untuk dideploy pada platform serverless seperti Vercel karena sifat tersebut.
+
+<Steps>
+
+<Step>
+
+## Instalasi
+
+Pasang paket `@workflow/world-postgres`:
+
+```package-install
+@workflow/world-postgres
+```
+
+</Step>
+
+<Step>
+
+## Tambahkan Variabel Lingkungan
+
+Tambahkan variabel lingkungan berikut ke file `.env` Anda yang diperlukan untuk workflow:
+
+```bash
+WORKFLOW_TARGET_WORLD="@workflow/world-postgres"
+WORKFLOW_POSTGRES_URL="postgres://postgres:password@db.yourdb.co:5432/postgres"
+WORKFLOW_POSTGRES_JOB_PREFIX="workflow_"
+WORKFLOW_POSTGRES_WORKER_CONCURRENCY=10
+```
+
+Konfigurasi world dibaca otomatis dari variabel lingkungan:
+
+- `WORKFLOW_TARGET_WORLD` - Diperlukan, menentukan implementasi world mana yang akan digunakan
+- `WORKFLOW_POSTGRES_URL` - String koneksi PostgreSQL (default ke `postgres://world:world@localhost:5432/world`)
+- `WORKFLOW_POSTGRES_JOB_PREFIX` - Prefix untuk nama job antrean
+- `WORKFLOW_POSTGRES_WORKER_CONCURRENCY` - Jumlah worker konkuren (default `10` jika tidak ditentukan)
+
+
+</Step>
+
+<Step>
+
+## Siapkan Skema Basis Data
+
+Jalankan skrip pengaturan untuk membuat tabel basis data yang diperlukan:
+
+```bash
+pnpm exec workflow-postgres-setup
+```
+
+Ini akan membuat tabel-tabel berikut di basis data PostgreSQL Anda:
+
+- `workflow_runs` - Menyimpan status eksekusi workflow
+- `workflow_events` - Menyimpan peristiwa workflow
+- `workflow_steps` - Menyimpan status langkah workflow
+- `workflow_hooks` - Menyimpan hook workflow
+- `workflow_stream_chunks` - Menyimpan data streaming
+
+Anda akan melihat keluaran seperti:
+
+```
+🔧 Setting up database schema...
+📍 Connection: postgres://postgres:****@db.yourcloudprovider.co:5432/postgres
+✅ Database schema created successfully!
+```
+
+</Step>
+
+<Step>
+
+## Inisialisasi Dunia PostgreSQL
+
+Memulai Dunia PostgreSQL akan berbeda antar kerangka kerja. Intinya adalah memulai Dunia PostgreSQL saat aplikasi server dinyalakan.
+
+Berikut beberapa contoh seperti apa tampilannya:
+
+### Next.js
+
+Buat file `instrumentation.ts` di root proyek Anda untuk menginisialisasi dan memulai world:
+
+```ts title="instrumentation.ts" lineNumbers
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== "edge") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+}
+```
+
+<Callout>
+  Pelajari lebih lanjut tentang [Instrumentasi Next.js](https://nextjs.org/docs/app/guides/instrumentation).
+</Callout>
+
+### SvelteKit
+
+Buat file `src/hooks.server.ts`:
+
+```ts title="src/hooks.server.ts" lineNumbers
+import type { ServerInit } from "@sveltejs/kit";
+
+export const init: ServerInit = async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    const { getWorld } = await import("workflow/runtime");
+    console.log("Starting Postgres World...");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+};
+```
+
+<Callout>
+  Pelajari lebih lanjut tentang [Hooks SvelteKit](https://svelte.dev/docs/kit/hooks).
+</Callout>
+
+### Aplikasi berbasis Nitro
+
+Buat plugin untuk memulai Dunia PostgreSQL. Ini akan dipanggil saat server Nitro dimulai.
+
+```ts title="plugins/start-pg-world.ts" lineNumbers
+import { defineNitroPlugin } from "nitro/~internal/runtime/plugin";
+
+export default defineNitroPlugin(async () => {
+  if (process.env.WORKFLOW_TARGET_WORLD === "@workflow/world-postgres") {
+    // Dynamic import to avoid edge runtime bundling issues
+    console.log("Starting Postgres World...");
+    const { getWorld } = await import("workflow/runtime");
+    await getWorld().start?.();
+    console.log("Postgres World started");
+  }
+});
+```
+
+Tambahkan plugin ke file `nitro.config.ts` Anda. Ini mengaktifkan plugin:
+
+```ts title="nitro.config.ts"
+import { defineNitroConfig } from "nitropack";
+
+export default defineNitroConfig({
+  // ... your nitro config
+  modules: ["workflow/nitro"],
+  plugins: ["plugins/start-pg-world.ts"],
+});
+```
+
+<Callout>
+  Pelajari lebih lanjut tentang [Plugin Nitro](https://v3.nitro.build/docs/plugins)
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Cara kerjanya
+
+Postgres World menggunakan PostgreSQL sebagai backend yang tahan lama untuk eksekusi workflow:
+
+- **Antrian Pekerjaan**: Menggunakan [pg-boss](https://github.com/timgit/pg-boss) untuk pemrosesan pekerjaan yang andal
+- **Streaming Peristiwa**: Memanfaatkan NOTIFY/LISTEN PostgreSQL untuk distribusi peristiwa waktu nyata
+- **Persistensi Status**: Semua status workflow disimpan di tabel PostgreSQL
+- **Manajemen Pekerja**: Mendukung worker konkuren yang dapat dikonfigurasi untuk pemrosesan pekerjaan
+
+Pengaturan ini memastikan bahwa workflow Anda dapat bertahan dari restart aplikasi dan kegagalan, dengan semua status disimpan secara andal di basis data PostgreSQL Anda.

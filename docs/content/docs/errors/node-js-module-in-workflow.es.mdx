@@ -1,0 +1,73 @@
+---
+title: módulo-de-node-js-en-workflow
+---
+
+Este error ocurre cuando intentas importar o usar módulos centrales de Node.js (como `fs`, `http`, `crypto`, `path`, etc.) directamente dentro de una función de workflow.
+
+## Mensaje de error
+
+```
+Cannot use Node.js module "fs" in workflow functions. Move this module to a step function.
+```
+
+## Por qué ocurre esto
+
+Las funciones de workflow se ejecutan en un entorno aislado sin acceso completo al runtime de Node.js. Esta restricción es importante para mantener el **determinismo**: la capacidad de reproducir exactamente los workflows y reanudar desde donde quedaron después de suspensiones o fallos.
+
+Los módulos de Node.js tienen efectos secundarios y comportamientos no deterministas que podrían romper las garantías de reproducción de los workflows.
+
+## Solución rápida
+
+Mueve cualquier código que utilice módulos de Node.js a una step function. Las step functions tienen acceso completo al runtime de Node.js.
+
+Por ejemplo, cuando intentas leer un archivo en una función de workflow, debes mover el código a una step function.
+
+**Antes:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // This will cause an error - Node.js module in workflow context
+  const content = fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+  return content;
+}
+```
+
+**Después:**
+
+```typescript lineNumbers
+import * as fs from "fs";
+
+export async function processFileWorkflow(filePath: string) {
+  "use workflow";
+
+  // Call step function that has Node.js access
+  const content = await read(filePath); // [!code highlight]
+  return content;
+}
+
+async function read(filePath: string) {
+  "use step";
+
+  // Node.js modules are allowed in step functions
+  return fs.readFileSync(filePath, "utf-8"); // [!code highlight]
+}
+```
+
+## Módulos comunes de Node.js
+
+Estos módulos centrales comunes de Node.js no pueden usarse en funciones de workflow:
+
+- Sistema de archivos: `fs`, `path`
+- Red: `http`, `https`, `net`, `dns`, `fetch`
+- Proceso: `child_process`, `cluster`
+- Cripto: `crypto` (usar la Web Crypto API en su lugar)
+- Sistema operativo: `os`
+- Streams: `stream` (usar la Web Streams API en su lugar)
+
+<Callout type="info">
+Puedes usar las Web Platform APIs en funciones de workflow (como `Headers`, `crypto.randomUUID()`, `Response`, etc.), ya que están disponibles en el entorno aislado.
+</Callout>

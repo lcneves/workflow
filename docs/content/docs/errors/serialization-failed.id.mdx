@@ -1,0 +1,120 @@
+---
+title: serialisasi-gagal
+---
+
+Kesalahan ini terjadi ketika Anda mencoba mengirim data yang tidak dapat diserialisasi antar batas eksekusi dalam workflow Anda. Semua data yang dikirim antara fungsi workflow, fungsi step, dan runtime workflow harus dapat diserialisasi agar dapat disimpan dalam log peristiwa.
+
+## Pesan Kesalahan
+
+```
+Failed to serialize workflow arguments. Ensure you're passing serializable types
+(plain objects, arrays, primitives, Date, RegExp, Map, Set).
+```
+
+Kesalahan ini dapat muncul ketika:
+
+- Menyerialisasi argumen workflow saat memanggil `start()`
+- Menyerialisasi nilai pengembalian workflow
+- Menyerialisasi argumen step
+- Menyerialisasi nilai pengembalian step
+
+## Mengapa Ini Terjadi
+
+Workflow mempertahankan statusnya menggunakan log peristiwa. Setiap nilai yang melintasi batas eksekusi harus:
+
+1. **Diserialisasi** agar dapat disimpan di log peristiwa  
+2. **Dideserialisasi** ketika workflow dilanjutkan
+
+Fungsi, instans kelas, simbol, dan tipe lain yang tidak dapat diserialisasi tidak dapat direkonstruksi dengan benar setelah diserialisasi, yang akan mematahkan pemutaran ulang workflow.
+
+## Penyebab Umum
+
+### Melewatkan Fungsi
+
+```typescript lineNumbers
+// Error - functions cannot be serialized
+export async function processWorkflow() {
+  "use workflow";
+
+  const callback = () => console.log("done"); // [!code highlight]
+  await processStep(callback); // Error! // [!code highlight]
+}
+```
+
+**Solusi:** Lewatkan data sebagai gantinya, lalu definisikan logika fungsi di step.
+
+```typescript lineNumbers
+// Fixed - pass configuration data instead
+export async function processWorkflow() {
+  "use workflow";
+
+  await processStep({ shouldLog: true }); // [!code highlight]
+}
+
+async function processStep(config: { shouldLog: boolean }) {
+  "use step";
+
+  if (config.shouldLog) { // [!code highlight]
+    console.log("done"); // [!code highlight]
+  } // [!code highlight]
+}
+```
+
+### Instans Kelas
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Error - class instances lose methods after serialization
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep(new User("Alice")); // Error! // [!code highlight]
+}
+```
+
+**Solusi:** Lewatkan objek biasa dan rekonstruksi kelas di dalam step.
+
+```typescript lineNumbers
+class User {
+  constructor(public name: string) {}
+  greet() { return `Hello ${this.name}`; }
+}
+
+// Fixed - pass plain object, reconstruct in step
+export async function greetWorkflow() {
+  "use workflow";
+
+  await greetStep({ name: "Alice" }); // [!code highlight]
+}
+
+async function greetStep(userData: { name: string }) {
+  "use step";
+
+  const user = new User(userData.name); // [!code highlight]
+  console.log(user.greet());
+}
+```
+
+## Tipe yang Didukung untuk Serialisasi
+
+Workflow DevKit mendukung tipe-tipe ini melintasi batas eksekusi:
+
+### Tipe JSON Standar
+
+- `string`, `number`, `boolean`, `null`
+- Array dari nilai yang dapat diserialisasi
+- Objek biasa dengan nilai yang dapat diserialisasi
+
+Untuk mempelajari lebih lanjut tentang tipe yang didukung, lihat bagian [Serialisasi](/docs/foundations/serialization).
+
+## Memecahkan Masalah Serialisasi
+
+Untuk mengidentifikasi apa yang menyebabkan kegagalan serialisasi:
+
+1. **Periksa stack trace kesalahan** - seringkali menunjukkan properti mana yang gagal  
+2. **Sederhanakan data Anda** - sementara waktu kirim objek yang lebih kecil untuk mengisolasi masalah  
+3. **Pastikan Anda menggunakan tipe data yang didukung** - lihat bagian [Serialisasi](/docs/foundations/serialization) untuk detail lebih lanjut

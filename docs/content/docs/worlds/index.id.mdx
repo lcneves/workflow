@@ -1,0 +1,39 @@
+---
+title: Ekosistem Worlds
+description: Gambaran implementasi World untuk Workflow yang resmi dan komunitas beserta status kompatibilitas dan tolok ukur kinerja.
+---
+
+import { WorldsDashboardServer } from "@/components/worlds";
+
+# Ekosistem Workflow Worlds
+
+Workflow `World` adalah sebuah antarmuka yang mengabstraksikan bagaimana alur kerja dan langkah berkomunikasi dengan dunia luar. Halaman ini menampilkan status kompatibilitas dan kinerja semua implementasi World yang tersedia.
+
+<WorldsDashboardServer />
+
+## Apa itu World?
+
+Sebuah implementasi World menangani:
+- **Penyimpanan alur kerja**: Mempertahankan status alur kerja dan log peristiwa
+- **Eksekusi langkah**: Mengelola pemanggilan fungsi langkah
+- **Pengiriman pesan**: Komunikasi antara orkestrator alur kerja dan fungsi langkah
+
+## Memilih World
+
+| Kasus Penggunaan | World yang Disarankan |
+|----------|------------------|
+| Pengembangan lokal | Local World |
+| Deploy ke Vercel | Vercel World |
+| Self-hosted dengan PostgreSQL | Postgres World |
+| Edge / basis data tertanam | Turso World |
+| Antrian throughput tinggi | Redis World |
+
+## Berkontribusi pada World
+
+Ingin membangun implementasi World Anda sendiri? Lihat [dokumentasi antarmuka World](/docs/deploying/world) dan [implementasi referensi](https://github.com/vercel/workflow/tree/main/packages) untuk panduan.
+
+World komunitas diuji di CI menggunakan rangkaian uji E2E kami. Untuk menambahkan world Anda ke dashboard ini:
+
+1. Implementasikan antarmuka World
+2. Publikasikan ke npm
+3. Buka PR untuk menambahkan world Anda ke `worlds-manifest.json`

@@ -1,0 +1,206 @@
+---
+title: defineHook
+---
+
+Crea un helper de hook con tipado seguro que garantiza que el tipo de payload sea consistente entre la creación del hook y su reanudación.
+
+Esto es un envoltorio ligero alrededor de [`createHook()`](/docs/api-reference/workflow/create-hook) y [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) para evitar desajustes de tipos. También admite validación y transformación opcional en tiempo de ejecución de los payloads usando cualquier validador compatible con [Standard Schema v1](https://standardschema.dev), como Zod o Valibot.
+
+<Callout>
+Recomendamos usar `defineHook()` en lugar de `createHook()` en bases de código de producción para mejorar la seguridad de tipos y habilitar la validación opcional en tiempo de ejecución.
+</Callout>
+
+```ts lineNumbers
+import { defineHook } from "workflow";
+
+const nameHook = defineHook<{
+  name: string;
+}>();
+
+export async function nameWorkflow() {
+  "use workflow";
+
+  const hook = nameHook.create();  // [!code highlight]
+  const result = await hook; // Fully typed as { name: string }
+  console.log("Name:", result.name);
+}
+```
+
+## Firma de la API
+
+### Parámetros
+
+<TSDoc
+definition={`
+import { defineHook } from "workflow";
+export default defineHook;`}
+showSections={['parameters']}
+/>
+
+### Devuelve
+
+<TSDoc
+definition={`
+interface DefineHook<T> {
+  /**
+
+* Creates a new hook with the defined payload type.
+  */
+  create: (options?: HookOptions) => Hook<T>;
+
+  /**
+
+* Resumes a hook by sending a payload with the defined type.
+   */
+  resume: (token: string, payload: T) => Promise<HookEntity | null>;
+}
+export default DefineHook;`}
+/>
+
+## Ejemplos
+
+### Definición básica de hook con tipado seguro
+
+Al definir el hook una vez con un tipo de payload específico, puedes reutilizarlo en múltiples flujos de trabajo y rutas de API con tipado automático.
+
+```typescript lineNumbers
+import { defineHook } from "workflow";
+
+// Define once with a specific payload type
+const approvalHook = defineHook<{ // [!code highlight]
+  approved: boolean; // [!code highlight]
+  comment: string; // [!code highlight]
+}>(); // [!code highlight]
+
+// In your workflow
+export async function workflowWithApproval() {
+  "use workflow";
+
+  const hook = approvalHook.create();
+  const result = await hook; // Fully typed as { approved: boolean; comment: string }
+
+  console.log("Approved:", result.approved);
+  console.log("Comment:", result.comment);
+}
+```
+
+### Reanudar con tipado seguro
+
+Los hooks pueden reanudarse usando el mismo hook definido y un token. Al usar el mismo hook, puedes asegurarte de que el payload coincida con el tipo definido al reanudarlo.
+
+```typescript lineNumbers
+// Use the same defined hook to resume
+export async function POST(request: Request) {
+  const { token, approved, comment } = await request.json();
+
+  // Type-safe resumption - TypeScript ensures the payload matches
+  const result = await approvalHook.resume(token, { // [!code highlight]
+    approved, // [!code highlight]
+    comment, // [!code highlight]
+  }); // [!code highlight]
+
+  if (!result) {
+    return Response.json({ error: "Hook not found" }, { status: 404 });
+  }
+
+  return Response.json({ success: true, runId: result.runId });
+}
+```
+
+### Validar y transformar con un esquema
+
+Puedes proporcionar validación y transformación en tiempo de ejecución de los payloads del hook usando la opción `schema`. Esta opción acepta cualquier validador que cumpla con la especificación [Standard Schema v1](https://standardschema.dev).
+
+<Callout type="info">
+Standard Schema es una especificación estandarizada para bibliotecas de validación de esquemas. La mayoría de las bibliotecas de validación populares lo soportan, incluyendo Zod, Valibot, ArkType y Effect Schema. También puedes escribir validadores personalizados.
+</Callout>
+
+#### Usar Zod con defineHook
+
+Aquí hay un ejemplo usando [Zod](https://zod.dev) para validar y transformar los payloads del hook:
+
+```typescript lineNumbers
+import { defineHook } from "workflow";
+import { z } from "zod";
+
+export const approvalHook = defineHook({
+  schema: z.object({ // [!code highlight]
+    approved: z.boolean(), // [!code highlight]
+    comment: z.string().min(1).transform((value) => value.trim()), // [!code highlight]
+  }), // [!code highlight]
+});
+
+export async function approvalWorkflow(approvalId: string) {
+  "use workflow";
+
+  const hook = approvalHook.create({
+    token: `approval:${approvalId}`,
+  });
+
+  // Payload is automatically typed based on the schema
+  const { approved, comment } = await hook;
+  console.log("Approved:", approved);
+  console.log("Comment (trimmed):", comment);
+}
+```
+
+Cuando se reanuda el hook desde una ruta de API, el esquema valida y transforma el payload entrante antes de que el flujo de trabajo se reanude:
+
+```typescript lineNumbers
+export async function POST(request: Request) {
+  // Incoming payload: { token: "...", approved: true, comment: "   Ready!   " }
+  const { token, approved, comment } = await request.json();
+
+  // The schema validates and transforms the payload:
+  // - Checks that `approved` is a boolean
+  // - Checks that `comment` is a non-empty string
+  // - Trims whitespace from the comment
+  // If validation fails, an error is thrown and the hook is not resumed
+  await approvalHook.resume(token, { // [!code highlight]
+    approved, // [!code highlight]
+    comment, // Automatically trimmed to "Ready!" // [!code highlight]
+  }); // [!code highlight]
+
+  return Response.json({ success: true });
+}
+```
+
+#### Usar otras bibliotecas compatibles con Standard Schema
+
+El mismo patrón funciona con cualquier biblioteca compatible con Standard Schema v1. Aquí hay un ejemplo con [Valibot](https://valibot.dev):
+
+```typescript lineNumbers
+import { defineHook } from "workflow";
+import * as v from "valibot";
+
+export const approvalHook = defineHook({
+  schema: v.object({ // [!code highlight]
+    approved: v.boolean(), // [!code highlight]
+    comment: v.pipe(v.string(), v.minLength(1), v.trim()), // [!code highlight]
+  }), // [!code highlight]
+});
+```
+
+### Personalizar tokens
+
+Los tokens se usan para identificar un hook específico y para reanudarlo. Puedes personalizar el token para que sea más específico para un caso de uso.
+
+```typescript lineNumbers
+const slackHook = defineHook<{ text: string; userId: string }>();
+
+export async function slackBotWorkflow(channelId: string) {
+  "use workflow";
+
+  const hook = slackHook.create({
+    token: `slack:${channelId}`, // [!code highlight]
+  });
+
+  const message = await hook;
+  console.log(`Message from ${message.userId}: ${message.text}`);
+}
+```
+
+## Funciones relacionadas
+
+* [`createHook()`](/docs/api-reference/workflow/create-hook) - Crear un hook en un flujo de trabajo.
+* [`resumeHook()`](/docs/api-reference/workflow-api/resume-hook) - Reanudar un hook con un payload.

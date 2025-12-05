@@ -1,0 +1,55 @@
+---
+title: "ワークフロー"
+---
+
+ステップ、コンテキスト管理、ストリーミング、ウェブフック、エラー処理を含むワークフローのコアプリミティブ。
+
+## インストール
+
+```package-install
+npm i workflow
+```
+
+## 関数
+
+Workflow DevKitには、ワークフロー関数内で使用できる次の関数が含まれています:
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/get-workflow-metadata" title="getWorkflowMetadata()">
+        現在のワークフロー実行に関するコンテキストを返す関数。
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-step-metadata" title="getStepMetadata()">
+        現在のステップ実行に関するコンテキストを返す関数。
+    </Card>
+    <Card href="/docs/api-reference/workflow/sleep" title="sleep()">
+        指定した期間ワークフローを待機させます。決定論的でリプレイ安全です。
+    </Card>
+    <Card href="/docs/api-reference/workflow/fetch" title="fetch()">
+        ワークフロー内から自動リトライのセマンティクスを持つHTTPリクエストを行います。
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-hook" title="createHook()">
+        外部システムから任意のペイロードを受け取るための低レベルフックを作成します。
+    </Card>
+    <Card href="/docs/api-reference/workflow/define-hook" title="defineHook()">
+        ペイロード型の一貫性を保つ型安全なフックヘルパー。
+    </Card>
+    <Card href="/docs/api-reference/workflow/create-webhook" title="createWebhook()">
+        HTTPリクエストが受信されるまでワークフローを一時停止するWebhookを作成します。
+    </Card>
+    <Card href="/docs/api-reference/workflow/get-writable" title="getWritable()">
+        現在のワークフロー実行のデフォルトストリームにアクセスします。
+    </Card>
+</Cards>
+
+## エラークラス
+
+Workflow DevKitには、ワークフローやステップ内でスローしてワークフローのエラー終了戦略を変更できるエラークラスが含まれています。
+
+<Cards>
+    <Card href="/docs/api-reference/workflow/fatal-error" title="FatalError()">
+        スローされると、ステップを失敗としてマークし、そのステップは再試行されません。
+    </Card>
+    <Card href="/docs/api-reference/workflow/retryable-error" title="RetryableError()">
+        スローされると、オプションのパラメータとともにステップを再試行可能としてマークします。
+    </Card>
+</Cards>

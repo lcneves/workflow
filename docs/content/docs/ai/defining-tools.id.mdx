@@ -1,0 +1,71 @@
+---
+title: Pola untuk Mendefinisikan Alat
+---
+
+Halaman ini membahas detail beberapa pola umum saat mendefinisikan alat untuk agen AI menggunakan Workflow DevKit.
+
+Dengan DurableAgent, kami memodelkan sebagian besar alat sebagai langkah. Ini bisa apa saja mulai dari pemanggilan fungsi sederhana hingga keseluruhan alur kerja berdurasi beberapa hari.
+
+## Mengakses konteks pesan dalam alat
+
+Sama seperti dalam definisi alat SDK AI biasa, alat dalam DurableAgent dipanggil dengan argumen pertama berisi parameter input alat, dan argumen kedua berisi konteks pemanggilan alat.
+
+Jika alat Anda membutuhkan akses ke seluruh riwayat pesan, Anda dapat mengaksesnya melalui properti `messages` dari konteks pemanggilan alat:
+
+```typescript title="tools.ts" lineNumbers
+async function getWeather(
+  { city }: { city: string },
+  { messages, toolCallId }: { messages: LanguageModelV2Prompt, toolCallId: string }) { // [!code highlight]
+  "use step";
+  return `Weather in ${city} is sunny`;
+}
+```
+
+## Menulis ke Stream
+
+Seperti dibahas dalam [Streaming Pembaruan dari Alat](/docs/ai/streaming-updates-from-tools), lazim menggunakan sebuah langkah hanya untuk memanggil `getWritable()` untuk menulis bagian data kustom ke stream.
+
+Ini bisa dibuat generik, dengan membuat fungsi langkah pembantu untuk menulis data sewenang-wenang ke stream:
+
+```typescript title="tools.ts" lineNumbers
+import { getWritable } from "workflow";
+
+async function writeToStream(data: any) {
+  "use step";
+
+  const writable = getWritable();
+  const writer = writable.getWriter();
+  await writer.write(data);
+  writer.releaseLock();
+}
+```
+
+## Alat Tingkat Langkah vs Alat Tingkat Alur Kerja
+
+Alat dapat diimplementasikan baik pada tingkat langkah maupun tingkat alur kerja, dengan kemampuan dan batasan yang berbeda.
+
+| Kemampuan | Tingkat Langkah (`"use step"`) | Tingkat Alur Kerja (`"use workflow"`) |
+|------------|---------------------------|----------------|
+| `getWritable()` | ✅ | ❌ |
+| Percobaan ulang otomatis | ✅ | ❌ |
+| Efek samping (mis. panggilan API) diizinkan | ✅ | ❌ |
+| `sleep()` | ❌ | ✅ |
+| `createWebhook()` | ❌ | ✅ |
+
+Alat juga dapat menggabungkan keduanya dengan memulai pada tingkat alur kerja, dan memanggil langkah untuk operasi I/O, seperti berikut:
+
+```typescript title="tools.ts" lineNumbers
+// Step: handles I/O with retries
+async function performFetch(url: string) {
+  "use step";
+  const response = await fetch(url);
+  return response.json();
+}
+
+// Workflow-level: orchestrates steps and can use sleep()
+async function executeFetchWithDelay({ url }: { url: string }) {
+  const result = await performFetch(url);
+  await sleep("5s"); // Only available at workflow level
+  return result;
+}
+```

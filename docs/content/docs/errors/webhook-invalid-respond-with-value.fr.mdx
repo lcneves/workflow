@@ -1,0 +1,129 @@
+---
+title: webhook-respondWith-valeur-invalide
+---
+
+Cette erreur se produit lorsque vous fournissez une valeur invalide pour l'option `respondWith` lors de la création d'un webhook. L'option `respondWith` doit être soit `"manual"`, soit un objet `Response`.
+
+## Message d'erreur
+
+```
+Invalid `respondWith` value: [value]
+```
+
+## Pourquoi cela se produit
+
+Lorsque vous créez un webhook avec `createWebhook()`, vous pouvez préciser comment le webhook doit répondre aux requêtes HTTP entrantes en utilisant l'option `respondWith`. Cette option n'accepte que des valeurs spécifiques :
+
+1. `"manual"` - Permet d'envoyer manuellement une réponse depuis le workflow
+2. Un objet `Response` - Une réponse pré-définie à envoyer immédiatement
+3. `undefined` (par défaut) - Renvoie une réponse `202 Accepted`
+
+## Causes courantes
+
+### Utilisation d'une valeur de chaîne invalide
+
+```typescript lineNumbers
+// Error - invalid string value
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "automatic", // Error! // [!code highlight]
+  });
+}
+```
+
+**Solution :** Utilisez `"manual"` ou fournissez un objet `Response`.
+
+```typescript lineNumbers
+// Fixed - use "manual"
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: "manual", // [!code highlight]
+  });
+
+  const request = await webhook;
+
+  // Send custom response
+  await request.respondWith(new Response("OK", { status: 200 })); // [!code highlight]
+}
+```
+
+### Utilisation d'un objet non-Response
+
+```typescript lineNumbers
+// Error - plain object instead of Response
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: { status: 200, body: "OK" }, // Error! // [!code highlight]
+  });
+}
+```
+
+**Solution :** Créez un objet `Response` approprié.
+
+```typescript lineNumbers
+// Fixed - use Response constructor
+export async function webhookWorkflow() {
+  "use workflow";
+
+  const webhook = await createWebhook({
+    respondWith: new Response("OK", { status: 200 }), // [!code highlight]
+  });
+}
+```
+
+## Exemples d'utilisation valides
+
+### Comportement par défaut (réponse 202)
+
+```typescript lineNumbers
+// Returns 202 Accepted automatically
+const webhook = await createWebhook();
+const request = await webhook;
+// No need to send a response
+```
+
+### Réponse manuelle
+
+```typescript lineNumbers
+// Manual response control
+const webhook = await createWebhook({
+  respondWith: "manual",
+});
+
+const request = await webhook;
+
+// Process the request...
+const data = await request.json();
+
+// Send custom response
+await request.respondWith(
+  new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })
+);
+```
+
+### Réponse pré-définie
+
+```typescript lineNumbers
+// Immediate response
+const webhook = await createWebhook({
+  respondWith: new Response("Request received", { status: 200 }),
+});
+
+const request = await webhook;
+// Response already sent
+```
+
+## En savoir plus
+
+- [Référence API de createWebhook()](/docs/api-reference/workflow/create-webhook)
+- [Référence API de resumeWebhook()](/docs/api-reference/workflow-api/resume-webhook)
+- [Guide des webhooks](/docs/foundations/hooks)
