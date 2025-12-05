@@ -5,9 +5,11 @@ const withMDX = createMDX();
 
 const config: NextConfig = {
   reactStrictMode: true,
-  typescript: {
-    ignoreBuildErrors: true,
+
+  experimental: {
+    turbopackFileSystemCacheForDev: true,
   },
+
   async rewrites() {
     return {
       beforeFiles: [
@@ -32,13 +34,18 @@ const config: NextConfig = {
       ],
       afterFiles: [
         {
-          source: '/docs/:path*.(mdx|md)',
+          source: '/docs/:path*.mdx',
+          destination: '/llms.mdx/:path*',
+        },
+        {
+          source: '/docs/:path*.md',
           destination: '/llms.mdx/:path*',
         },
       ],
     };
   },
-  redirects: () => {
+
+  async redirects() {
     return [
       {
         source: '/docs',
