@@ -352,7 +352,6 @@ export function SettingsSidebar({
                     </AlertDescription>
                   </Alert>
                 )}
-
                 <div className="flex flex-col gap-2 pt-4">
                   <Button
                     onClick={handleValidateAndApply}
