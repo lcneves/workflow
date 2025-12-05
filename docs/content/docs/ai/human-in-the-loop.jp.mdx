@@ -110,8 +110,6 @@ export const flightBookingTools = {
 };
 ```
 
-</Step>
-
 <Callout type="info">
 `defineHook().create()` 関数はステップ内ではなくワークフローコンテキスト内から呼び出す必要があることに注意してください。そのため `executeBookingApproval` には `"use step"` がありません — この関数はフックが利用可能なワークフローコンテキストで実行されます。
 </Callout>
