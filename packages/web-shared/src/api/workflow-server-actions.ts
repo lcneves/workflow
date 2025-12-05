@@ -1,5 +1,7 @@
 'use server';
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { hydrateResourceIO } from '@workflow/core/observability';
 import { createWorld, start } from '@workflow/core/runtime';
 import type {
@@ -498,4 +500,98 @@ export async function readStreamServerAction(
       }),
     };
   }
+}
+
+/**
+ * Fetch the workflows manifest from the workflow route directory
+ * The manifest is generated at build time and contains static structure info about workflows
+ *
+ * Configuration priority:
+ * 1. WORKFLOW_MANIFEST_PATH - explicit path to the manifest file
+ * 2. Standard Next.js app router locations (app/.well-known/workflow/v1/manifest.json)
+ * 3. WORKFLOW_EMBEDDED_DATA_DIR - legacy data directory
+ */
+export async function fetchWorkflowsManifest(
+  worldEnv: EnvMap
+): Promise<ServerActionResult<any>> {
+  const cwd = process.cwd();
+
+  console.log('[fetchWorkflowsManifest] cwd:', cwd);
+  console.log(
+    '[fetchWorkflowsManifest] WORKFLOW_MANIFEST_PATH from env:',
+    worldEnv.WORKFLOW_MANIFEST_PATH
+  );
+
+  // Helper to resolve path (absolute or relative to cwd)
+  const resolvePath = (p: string) =>
+    path.isAbsolute(p) ? p : path.join(cwd, p);
+
+  // Build list of paths to try, in priority order
+  const manifestPaths: string[] = [];
+
+  // 1. Explicit manifest path configuration (highest priority)
+  if (worldEnv.WORKFLOW_MANIFEST_PATH) {
+    manifestPaths.push(resolvePath(worldEnv.WORKFLOW_MANIFEST_PATH));
+  }
+  if (process.env.WORKFLOW_MANIFEST_PATH) {
+    manifestPaths.push(resolvePath(process.env.WORKFLOW_MANIFEST_PATH));
+  }
+
+  // 2. Standard Next.js app router locations
+  manifestPaths.push(
+    path.join(cwd, 'app/.well-known/workflow/v1/manifest.json'),
+    path.join(cwd, 'src/app/.well-known/workflow/v1/manifest.json')
+  );
+
+  // 3. Legacy data directory locations
+  if (worldEnv.WORKFLOW_EMBEDDED_DATA_DIR) {
+    manifestPaths.push(
+      path.join(
+        resolvePath(worldEnv.WORKFLOW_EMBEDDED_DATA_DIR),
+        'manifest.json'
+      )
+    );
+  }
+  if (process.env.WORKFLOW_EMBEDDED_DATA_DIR) {
+    manifestPaths.push(
+      path.join(
+        resolvePath(process.env.WORKFLOW_EMBEDDED_DATA_DIR),
+        'manifest.json'
+      )
+    );
+  }
+
+  console.log('[fetchWorkflowsManifest] Trying paths:', manifestPaths);
+
+  // Try each path until we find the manifest
+  for (const manifestPath of manifestPaths) {
+    try {
+      const content = await fs.readFile(manifestPath, 'utf-8');
+      const manifest = JSON.parse(content);
+      const workflowCount = Object.keys(manifest.workflows || {}).reduce(
+        (acc, filePath) =>
+          acc + Object.keys(manifest.workflows[filePath] || {}).length,
+        0
+      );
+      console.log(
+        `[fetchWorkflowsManifest] Found manifest at: ${manifestPath} with ${workflowCount} workflows`
+      );
+      return createResponse(manifest);
+    } catch (err) {
+      console.log(
+        `[fetchWorkflowsManifest] Failed to read: ${manifestPath}`,
+        (err as Error).message
+      );
+      // Continue to next path
+    }
+  }
+
+  // If no manifest found, return an empty manifest
+  // This allows the UI to work without workflows graph data
+  console.log('[fetchWorkflowsManifest] No manifest found, returning empty');
+  return createResponse({
+    version: '1.0.0',
+    steps: {},
+    workflows: {},
+  });
 }
