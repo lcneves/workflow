@@ -19,6 +19,9 @@
   "exports": {
     ".": "./dist/index.js"
   },
+  "bin": {
+    "workflow-nest-build": "./dist/bin/build.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
