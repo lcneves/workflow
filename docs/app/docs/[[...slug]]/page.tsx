@@ -15,6 +15,7 @@ import {
 } from '@/components/geistdocs/docs-page';
 import { EditSource } from '@/components/geistdocs/edit-source';
 import { Feedback } from '@/components/geistdocs/feedback';
+import { PlaygroundLink } from '@/components/geistdocs/playground-link';
 import { getMDXComponents } from '@/components/geistdocs/mdx-components';
 import { OpenInChat } from '@/components/geistdocs/open-in-chat';
 import { ScrollTop } from '@/components/geistdocs/scroll-top';
@@ -44,6 +45,7 @@ const Page = async (props: PageProps<'/docs/[[...slug]]'>) => {
         component: (
           <TableOfContents>
             <EditSource path={page.path} />
+            <PlaygroundLink />
             <ScrollTop />
             <Feedback />
             <CopyPage text={markdown} />
