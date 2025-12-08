@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2025-12-08T20:24:39.035Z",
-  "commit": "058757c476579a7b1bb6a8ba9a3d15f57b30c898",
+  "lastUpdated": "2025-12-08T21:16:53.555Z",
+  "commit": "33c254c82c1c452300d6bff531c33329aa01d4ec",
   "branch": "main",
   "type": "e2e",
   "worlds": {
@@ -14,13 +14,13 @@
       "progress": 97
     },
     "redis": {
-      "status": "partial",
+      "status": "passing",
       "total": 29,
-      "passed": 28,
-      "failed": 1,
+      "passed": 29,
+      "failed": 0,
       "skipped": 0,
       "frameworks": {},
-      "progress": 97
+      "progress": 100
     },
     "starter": {
       "status": "partial",
@@ -42,8 +42,8 @@
     },
     "local": {
       "status": "partial",
-      "total": 650,
-      "passed": 609,
+      "total": 546,
+      "passed": 505,
       "failed": 25,
       "skipped": 16,
       "frameworks": {
@@ -68,13 +68,13 @@
           "failed": 0
         },
         "nextjs-turbopack": {
-          "total": 130,
-          "passed": 130,
+          "total": 78,
+          "passed": 78,
           "failed": 0
         },
         "nextjs-webpack": {
-          "total": 104,
-          "passed": 104,
+          "total": 52,
+          "passed": 52,
           "failed": 0
         },
         "nitro": {
@@ -98,12 +98,12 @@
           "failed": 0
         }
       },
-      "progress": 94
+      "progress": 92
     },
     "postgres": {
       "status": "partial",
-      "total": 312,
-      "passed": 279,
+      "total": 208,
+      "passed": 175,
       "failed": 25,
       "skipped": 8,
       "frameworks": {
@@ -127,16 +127,6 @@
           "passed": 25,
           "failed": 0
         },
-        "nextjs-turbopack": {
-          "total": 52,
-          "passed": 52,
-          "failed": 0
-        },
-        "nextjs-webpack": {
-          "total": 52,
-          "passed": 52,
-          "failed": 0
-        },
         "nitro": {
           "total": 26,
           "passed": 25,
@@ -158,14 +148,14 @@
           "failed": 0
         }
       },
-      "progress": 89
+      "progress": 84
     },
     "vercel": {
       "status": "partial",
-      "total": 286,
-      "passed": 224,
-      "failed": 51,
-      "skipped": 11,
+      "total": 260,
+      "passed": 225,
+      "failed": 25,
+      "skipped": 10,
       "frameworks": {
         "astro": {
           "total": 26,
@@ -187,11 +177,6 @@
           "passed": 25,
           "failed": 0
         },
-        "nextjs-turbopack": {
-          "total": 26,
-          "passed": 0,
-          "failed": 25
-        },
         "nextjs-webpack": {
           "total": 26,
           "passed": 0,
@@ -218,7 +203,7 @@
           "failed": 0
         }
       },
-      "progress": 78
+      "progress": 87
     }
   }
 }
