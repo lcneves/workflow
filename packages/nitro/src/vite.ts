@@ -66,6 +66,6 @@ export function workflow(options?: ModuleOptions): Plugin[] {
     workflowHotUpdatePlugin({
       builder: () => builder,
       enqueue,
-    }),
+    }) as Plugin,
   ];
 }
