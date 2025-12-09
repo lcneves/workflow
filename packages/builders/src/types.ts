@@ -4,7 +4,6 @@ export const validBuildTargets = [
   'next',
   'sveltekit',
   'astro',
-  'tanstack',
 ] as const;
 export type BuildTarget = (typeof validBuildTargets)[number];
 
@@ -82,14 +81,6 @@ export interface AstroConfig extends BaseWorkflowConfig {
   webhookBundlePath: string;
 }
 
-export interface TanStackConfig extends BaseWorkflowConfig {
-  buildTarget: 'tanstack';
-  // TanStack builder computes paths dynamically, so these are not used
-  stepsBundlePath: string;
-  workflowsBundlePath: string;
-  webhookBundlePath: string;
-}
-
 /**
  * Discriminated union of all builder configuration types.
  */
@@ -98,8 +89,7 @@ export type WorkflowConfig =
   | VercelBuildOutputConfig
   | NextConfig
   | SvelteKitConfig
-  | AstroConfig
-  | TanStackConfig;
+  | AstroConfig;
 
 export function isValidBuildTarget(
   target: string | undefined
