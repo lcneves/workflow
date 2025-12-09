@@ -2,6 +2,7 @@ import { DynamicLink } from 'fumadocs-core/dynamic-link';
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXComponents } from 'mdx/types';
+import { components as custom } from '@/geistdocs';
 import {
   Callout,
   CalloutContainer,
@@ -27,7 +28,7 @@ export const getMDXComponents = (
   pre: CodeBlock,
 
   a: ({ href, ...props }) =>
-    typeof href === 'string' && href.startsWith('/') ? (
+    href.startsWith('/') ? (
       <DynamicLink href={`/[lang]${href}`} {...props} />
     ) : (
       <a
@@ -52,4 +53,6 @@ export const getMDXComponents = (
   Mermaid,
 
   Video,
+
+  ...custom,
 });

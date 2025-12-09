@@ -1,3 +1,11 @@
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import type { MDXComponents } from 'mdx/types';
+import { AgentTraces } from '@/components/custom/agent-traces';
+import * as AccordionComponents from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
+import { TSDoc } from '@/lib/tsdoc';
+
 export const Logo = () => (
   <span className="flex items-center gap-1.5 font-semibold text-foreground tracking-tight text-xl">
     <svg
@@ -54,4 +62,15 @@ export const translations = {
   en: {
     displayName: 'English',
   },
+};
+
+export const components: MDXComponents = {
+  AgentTraces,
+  Badge,
+  TSDoc,
+  Step,
+  Steps,
+  ...AccordionComponents,
+  Tabs,
+  Tab,
 };
