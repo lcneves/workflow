@@ -190,58 +190,53 @@ export const Route = createFileRoute("/.well-known/workflow/v1/flow")({
     const webhookDir = join(workflowGeneratedDir, 'webhook');
     await mkdir(webhookDir, { recursive: true });
 
-    // Create webhook route: .well-known/workflow/v1/webhook/$token.ts
+    // Create webhook route: .well-known/workflow/v1/webhook/$token.js
     const webhookRouteFile = join(webhookDir, '$token.ts');
 
-    await this.createWebhookBundle({
-      outfile: webhookRouteFile,
-      bundle: false, // TanStack will handle bundling
-    });
+    const webhookRouteContent = `// @ts-nocheck\nimport { createFileRoute } from "@tanstack/react-router";
+import { resumeWebhook } from "workflow/api";
 
-    let webhookRouteContent = await readFile(webhookRouteFile, 'utf-8');
+async function handler(request, token) {
+  if (!token) {
+    return new Response("Missing token", { status: 400 });
+  }
 
-    // Update handler to extract token from URL path
-    webhookRouteContent = webhookRouteContent.replace(
-      /async function handler\(request\) \{[\s\S]*?const token = decodeURIComponent\(pathParts\[pathParts\.length - 1\]\);/,
-      `async function handler(request, token) {
-  const decodedToken = decodeURIComponent(token);`
-    );
+  try {
+    const response = await resumeWebhook(token, request);
+    return response;
+  } catch (error) {
+    // TODO: differentiate between invalid token and other errors
+    console.error("Error during resumeWebhook", error);
+    return new Response(null, { status: 404 });
+  }
+}
 
-    // Replace the token variable usage with decodedToken
-    webhookRouteContent = webhookRouteContent.replace(
-      /await webhookHandler\(request, token\)/g,
-      'await webhookHandler(request, decodedToken)'
-    );
+async function normalizeRequest(request) {
+  const options = {
+    method: request.method,
+    headers: new Headers(request.headers),
+  };
+  if (
+    !["GET", "HEAD", "OPTIONS", "TRACE", "CONNECT"].includes(request.method)
+  ) {
+    options.body = await request.arrayBuffer();
+  }
+  return new Request(request.url, options);
+}
 
-    // Remove the URL parsing code since we get token from params
-    webhookRouteContent = webhookRouteContent.replace(
-      /const url = new URL\(request\.url\);[\s\S]*?const pathParts = url\.pathname\.split\('\/'\);/g,
-      ''
-    );
-
-    // Replace exports with TanStack Start handlers
-    webhookRouteContent = webhookRouteContent.replace(
-      /export const GET = handler;[\s\S]*?export const OPTIONS = handler;/,
-      `${NORMALIZE_REQUEST_CODE}
-
-const createHandler = () => async ({ request, params }) => {
+const createTanStackHandler = (method) => async ({ request, params }) => {
   const normalRequest = await normalizeRequest(request);
-  return handler(normalRequest, params.token);
+  const response = await handler(normalRequest, params.token);
+  return response;
 };
 
-export const GET = createHandler();
-export const POST = createHandler();
-export const PUT = createHandler();
-export const PATCH = createHandler();
-export const DELETE = createHandler();
-export const HEAD = createHandler();
-export const OPTIONS = createHandler();`
-    );
-
-    // Add TanStack Router route definition
-    webhookRouteContent = `// @ts-nocheck
-${webhookRouteContent}
-import { createFileRoute } from "@tanstack/react-router"
+export const GET = createTanStackHandler("GET");
+export const POST = createTanStackHandler("POST");
+export const PUT = createTanStackHandler("PUT");
+export const PATCH = createTanStackHandler("PATCH");
+export const DELETE = createTanStackHandler("DELETE");
+export const HEAD = createTanStackHandler("HEAD");
+export const OPTIONS = createTanStackHandler("OPTIONS");
 
 export const Route = createFileRoute("/.well-known/workflow/v1/webhook/$token")({
   server: {
@@ -252,9 +247,9 @@ export const Route = createFileRoute("/.well-known/workflow/v1/webhook/$token")(
       PATCH,
       DELETE,
       HEAD,
-      OPTIONS
-    }
-  }
+      OPTIONS,
+    },
+  },
 });
 `;
 
