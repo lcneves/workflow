@@ -1,6 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { json } from '@tanstack/react-start';
 import { getRun, start } from 'workflow/api';
+import {
+  WorkflowRunFailedError,
+  WorkflowRunNotCompletedError,
+} from 'workflow/internal/errors';
 import { hydrateWorkflowArguments } from 'workflow/internal/serialization';
 import { allWorkflows } from '_workflows.js';
 
@@ -125,28 +129,32 @@ export const Route = createFileRoute('/api/trigger')({
 
           return json(returnValue);
         } catch (error) {
-          if (error instanceof Error) {
-            if (error.name === 'WorkflowRunNotCompletedError') {
-              return Response.json(
-                {
-                  ...error,
-                  name: error.name,
-                  message: error.message,
-                },
-                { status: 202 }
-              );
-            }
+          if (WorkflowRunNotCompletedError.is(error)) {
+            return Response.json(
+              {
+                ...error,
+                name: error.name,
+                message: error.message,
+              },
+              { status: 202 }
+            );
+          }
 
-            if (error.name === 'WorkflowRunFailedError') {
-              return Response.json(
-                {
-                  ...error,
-                  name: error.name,
-                  message: error.message,
+          if (WorkflowRunFailedError.is(error)) {
+            const cause = error.cause;
+            return Response.json(
+              {
+                ...error,
+                name: error.name,
+                message: error.message,
+                cause: {
+                  message: cause.message,
+                  stack: cause.stack,
+                  code: cause.code,
                 },
-                { status: 400 }
-              );
-            }
+              },
+              { status: 400 }
+            );
           }
 
           console.error(
