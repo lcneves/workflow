@@ -691,7 +691,8 @@ describe('e2e', () => {
       const isViteBasedFrameworkDevMode =
         (process.env.APP_NAME === 'sveltekit' ||
           process.env.APP_NAME === 'vite' ||
-          process.env.APP_NAME === 'astro') &&
+          process.env.APP_NAME === 'astro' ||
+          process.env.APP_NAME === 'tanstack-start') &&
         isLocalDeployment();
 
       if (!isViteBasedFrameworkDevMode) {
