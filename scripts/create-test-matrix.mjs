@@ -63,12 +63,11 @@ const DEV_TEST_CONFIGS = {
     workflowsDir: 'src/workflows',
   },
   'tanstack-start': {
-    // Bundle files use '-' prefix so TanStack Router ignores them
     generatedStepPath: 'src/routes/[.]well-known/workflow/v1/-step-bundle.ts',
     generatedWorkflowPath:
       'src/routes/[.]well-known/workflow/v1/-flow-bundle.ts',
     apiFilePath: 'src/routes/api/chat.ts',
-    apiFileImportPath: '..',
+    apiFileImportPath: '../../..',
   },
 };
 
