@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "generate:workflows": "node ../scripts/generate-workflows-registry.js ./src/workflows ./src/lib/_workflows.ts",
+    "generate:workflows": "node ../scripts/generate-workflows-registry.js",
     "predev": "pnpm generate:workflows",
     "prebuild": "pnpm generate:workflows",
     "dev": "vite dev",

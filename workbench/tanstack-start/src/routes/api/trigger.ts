@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { json } from '@tanstack/react-start';
 import { getRun, start } from 'workflow/api';
 import { hydrateWorkflowArguments } from 'workflow/internal/serialization';
-import { allWorkflows } from '../../lib/_workflows.js';
+import { allWorkflows } from '_workflows.js';
 
 export const Route = createFileRoute('/api/trigger')({
   server: {

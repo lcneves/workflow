@@ -100,7 +100,7 @@ export class LocalBuilder extends BaseBuilder {
       /export\s*\{\s*stepEntrypoint\s+as\s+POST\s*\}\s*;?$/m,
       `${NORMALIZE_REQUEST_CODE}
 export const POST = async ({ request }) => {
-  const normalRequest = await normalizeRequestConverter(request);
+  const normalRequest = await normalizeRequest(request);
   return stepEntrypoint(normalRequest);
 };`
     );
@@ -150,7 +150,7 @@ export const Route = createFileRoute("/.well-known/workflow/v1/step")({
       /export const POST = workflowEntrypoint\(workflowCode\);?$/m,
       `${NORMALIZE_REQUEST_CODE}
 export const POST = async ({request}) => {
-  const normalRequest = await normalizeRequestConverter(request);
+  const normalRequest = await normalizeRequest(request);
   return workflowEntrypoint(workflowCode)(normalRequest);
 };`
     );
@@ -214,7 +214,7 @@ export const Route = createFileRoute("/.well-known/workflow/v1/flow")({
       `${NORMALIZE_REQUEST_CODE}
 
 const createHandler = () => async ({ request, params }) => {
-  const normalRequest = await normalizeRequestConverter(request);
+  const normalRequest = await normalizeRequest(request);
   return handler(normalRequest, params.token);
 };
 
