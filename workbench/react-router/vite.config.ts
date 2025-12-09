@@ -5,5 +5,10 @@ import { defineConfig } from 'vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-  plugins: [tailwindcss(), reactRouter(), tsconfigPaths(), workflow()],
+  plugins: [
+    tailwindcss(),
+    reactRouter(),
+    tsconfigPaths({ root: import.meta.dirname }),
+    workflow(),
+  ],
 });
