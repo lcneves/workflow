@@ -4,7 +4,7 @@ import viteReact from '@vitejs/plugin-react';
 import { nitro } from 'nitro/vite';
 import { defineConfig } from 'vite';
 import viteTsConfigPaths from 'vite-tsconfig-paths';
-import { workflowPlugin } from 'workflow/tanstack';
+import { workflowPlugin } from 'workflow/tanstack-start';
 
 const config = defineConfig({
   plugins: [

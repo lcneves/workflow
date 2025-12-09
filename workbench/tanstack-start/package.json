@@ -1,5 +1,5 @@
 {
-  "name": "@workflow/example-tanstack",
+  "name": "@workflow/example-tanstack-start",
   "private": true,
   "type": "module",
   "scripts": {

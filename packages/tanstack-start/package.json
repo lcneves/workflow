@@ -1,5 +1,5 @@
 {
-  "name": "@workflow/tanstack",
+  "name": "@workflow/tanstack-start",
   "version": "4.0.0-beta.1",
   "description": "TanStack Start integration for Workflow DevKit",
   "type": "module",
@@ -14,7 +14,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/vercel/workflow.git",
-    "directory": "packages/tanstack"
+    "directory": "packages/tanstack-start"
   },
   "exports": {
     ".": "./dist/index.js"
