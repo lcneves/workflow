@@ -8,8 +8,8 @@
     "prebuild": "pnpm generate:workflows",
     "build": "react-router build",
     "dev": "react-router dev",
-    "prestart": "node scripts/start-pg-world.ts",
-    "start": "react-router-serve ./build/server/index.js ",
+    "prestart": "tsx scripts/start-pg-world.ts",
+    "start": "react-router-serve build/server/index.js",
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
