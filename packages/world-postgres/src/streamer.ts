@@ -1,15 +1,15 @@
-import { EventEmitter } from 'node:events';
-import type { Streamer } from '@workflow/world';
-import { and, eq } from 'drizzle-orm';
-import type { Sql } from 'postgres';
-import { monotonicFactory } from 'ulid';
-import * as z from 'zod';
-import { type Drizzle, Schema } from './drizzle/index.js';
-import { Mutex } from './util.js';
+import { EventEmitter } from "node:events";
+import type { Streamer } from "@workflow/world";
+import { and, eq, like } from "drizzle-orm";
+import type { Sql } from "postgres";
+import { monotonicFactory } from "ulid";
+import * as z from "zod";
+import { type Drizzle, Schema } from "./drizzle/index.js";
+import { Mutex } from "./util.js";
 
 const StreamPublishMessage = z.object({
   streamId: z.string(),
-  chunkId: z.templateLiteral(['chnk_', z.string()]),
+  chunkId: z.templateLiteral(["chnk_", z.string()]),
 });
 
 interface StreamChunkEvent {
@@ -58,7 +58,7 @@ export function createStreamer(postgres: Sql, drizzle: Drizzle): Streamer {
     return mutex.acquire();
   };
 
-  const STREAM_TOPIC = 'workflow_event_chunk';
+  const STREAM_TOPIC = "workflow_event_chunk";
   postgres.listen(STREAM_TOPIC, async (msg) => {
     const parsed = await Promise.resolve(msg)
       .then(JSON.parse)
@@ -77,8 +77,8 @@ export function createStreamer(postgres: Sql, drizzle: Drizzle): Streamer {
         .where(
           and(
             eq(streams.streamId, parsed.streamId),
-            eq(streams.chunkId, parsed.chunkId)
-          )
+            eq(streams.chunkId, parsed.chunkId),
+          ),
         )
         .limit(1);
       if (!value) return;
@@ -91,7 +91,7 @@ export function createStreamer(postgres: Sql, drizzle: Drizzle): Streamer {
     async writeToStream(
       name: string,
       _runId: string | Promise<string>,
-      chunk: string | Uint8Array
+      chunk: string | Uint8Array,
     ) {
       // Await runId if it's a promise to ensure proper flushing
       const runId = await _runId;
@@ -110,13 +110,13 @@ export function createStreamer(postgres: Sql, drizzle: Drizzle): Streamer {
           StreamPublishMessage.encode({
             chunkId,
             streamId: name,
-          })
-        )
+          }),
+        ),
       );
     },
     async closeStream(
       name: string,
-      _runId: string | Promise<string>
+      _runId: string | Promise<string>,
     ): Promise<void> {
       // Await runId if it's a promise to ensure proper flushing
       const runId = await _runId;
@@ -130,18 +130,18 @@ export function createStreamer(postgres: Sql, drizzle: Drizzle): Streamer {
         eof: true,
       });
       postgres.notify(
-        'workflow_event_chunk',
+        "workflow_event_chunk",
         JSON.stringify(
           StreamPublishMessage.encode({
             streamId: name,
             chunkId,
-          })
-        )
+          }),
+        ),
       );
     },
     async readFromStream(
       name: string,
-      startIndex?: number
+      startIndex?: number,
     ): Promise<ReadableStream<Uint8Array>> {
       const cleanups: (() => void)[] = [];
 
@@ -149,7 +149,7 @@ export function createStreamer(postgres: Sql, drizzle: Drizzle): Streamer {
         async start(controller) {
           // an empty string is always < than any string,
           // so `'' < ulid()` and `ulid() < ulid()` (maintaining order)
-          let lastChunkId = '';
+          let lastChunkId = "";
           let offset = startIndex ?? 0;
           let buffer = [] as StreamChunkEvent[] | null;
 

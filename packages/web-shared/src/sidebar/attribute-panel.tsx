@@ -1,20 +1,20 @@
-'use client';
+"use client";
 
-import { parseStepName, parseWorkflowName } from '@workflow/core/parse-name';
-import type { Event, Hook, Step, WorkflowRun } from '@workflow/world';
-import type { ModelMessage } from 'ai';
-import { AlertCircle } from 'lucide-react';
+import { parseStepName, parseWorkflowName } from "@workflow/core/parse-name";
+import type { Event, Hook, Step, WorkflowRun } from "@workflow/world";
+import type { ModelMessage } from "ai";
+import { AlertCircle } from "lucide-react";
 import {
   createContext,
   type ReactNode,
   useContext,
   useMemo,
   useState,
-} from 'react';
-import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
-import { extractConversation, isDoStreamStep } from '../lib/utils';
-import { ConversationView } from './conversation-view';
-import { DetailCard } from './detail-card';
+} from "react";
+import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
+import { extractConversation, isDoStreamStep } from "../lib/utils";
+import { ConversationView } from "./conversation-view";
+import { DetailCard } from "./detail-card";
 
 /**
  * Tabbed view for conversation and raw JSON
@@ -26,53 +26,53 @@ function ConversationWithTabs({
   conversation: ModelMessage[];
   args: unknown[];
 }) {
-  const [activeTab, setActiveTab] = useState<'conversation' | 'json'>(
-    'conversation'
+  const [activeTab, setActiveTab] = useState<"conversation" | "json">(
+    "conversation",
   );
 
   return (
     <DetailCard summary={`Input (${conversation.length} messages)`}>
       <div
         className="rounded-md border"
-        style={{ borderColor: 'var(--ds-gray-300)' }}
+        style={{ borderColor: "var(--ds-gray-300)" }}
       >
         {/* Tab buttons */}
         <div
           className="flex gap-1 border-b"
-          style={{ borderColor: 'var(--ds-gray-300)' }}
+          style={{ borderColor: "var(--ds-gray-300)" }}
         >
           <button
             type="button"
-            onClick={() => setActiveTab('conversation')}
+            onClick={() => setActiveTab("conversation")}
             className="px-3 py-1.5 text-[11px] font-medium transition-colors"
             style={{
               color:
-                activeTab === 'conversation'
-                  ? 'var(--ds-gray-1000)'
-                  : 'var(--ds-gray-600)',
+                activeTab === "conversation"
+                  ? "var(--ds-gray-1000)"
+                  : "var(--ds-gray-600)",
               borderBottom:
-                activeTab === 'conversation'
-                  ? '2px solid var(--ds-blue-600)'
-                  : '2px solid transparent',
-              marginBottom: '-1px',
+                activeTab === "conversation"
+                  ? "2px solid var(--ds-blue-600)"
+                  : "2px solid transparent",
+              marginBottom: "-1px",
             }}
           >
             Conversation
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('json')}
+            onClick={() => setActiveTab("json")}
             className="px-3 py-1.5 text-[11px] font-medium transition-colors"
             style={{
               color:
-                activeTab === 'json'
-                  ? 'var(--ds-gray-1000)'
-                  : 'var(--ds-gray-600)',
+                activeTab === "json"
+                  ? "var(--ds-gray-1000)"
+                  : "var(--ds-gray-600)",
               borderBottom:
-                activeTab === 'json'
-                  ? '2px solid var(--ds-blue-600)'
-                  : '2px solid transparent',
-              marginBottom: '-1px',
+                activeTab === "json"
+                  ? "2px solid var(--ds-blue-600)"
+                  : "2px solid transparent",
+              marginBottom: "-1px",
             }}
           >
             Raw JSON
@@ -80,7 +80,7 @@ function ConversationWithTabs({
         </div>
 
         {/* Tab content */}
-        {activeTab === 'conversation' ? (
+        {activeTab === "conversation" ? (
           <ConversationView messages={conversation} />
         ) : (
           <div className="p-3 max-h-[400px] overflow-y-auto">
@@ -110,7 +110,7 @@ const StreamClickContext = createContext<
  * This is duplicated from @workflow/core/observability to avoid pulling in
  * Node.js dependencies into the client bundle.
  */
-const STREAM_REF_TYPE = '__workflow_stream_ref__';
+const STREAM_REF_TYPE = "__workflow_stream_ref__";
 
 /**
  * A stream reference object that contains the stream ID and can be
@@ -130,11 +130,11 @@ const isStreamRef = (value: unknown): value is StreamRef => {
   // in client-side code because it's a Node.js dependency.
   return (
     value !== null &&
-    typeof value === 'object' &&
-    '__type' in value &&
+    typeof value === "object" &&
+    "__type" in value &&
     value.__type === STREAM_REF_TYPE &&
-    'streamId' in value &&
-    typeof value.streamId === 'string'
+    "streamId" in value &&
+    typeof value.streamId === "string"
   );
 };
 
@@ -156,9 +156,9 @@ const StreamRefDisplay = ({ streamRef }: { streamRef: StreamRef }) => {
       onClick={handleClick}
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer hover:opacity-80 transition-opacity"
       style={{
-        backgroundColor: 'var(--ds-blue-200)',
-        color: 'var(--ds-blue-900)',
-        border: '1px solid var(--ds-blue-400)',
+        backgroundColor: "var(--ds-blue-200)",
+        color: "var(--ds-blue-900)",
+        border: "1px solid var(--ds-blue-400)",
       }}
       title={`Click to view stream: ${streamRef.streamId}`}
     >
@@ -189,7 +189,7 @@ const StreamRefDisplay = ({ streamRef }: { streamRef: StreamRef }) => {
  * with placeholder strings that can be identified and replaced with React elements
  */
 const transformValueForDisplay = (
-  value: unknown
+  value: unknown,
 ): { json: string; streamRefs: Map<string, StreamRef> } => {
   const streamRefs = new Map<string, StreamRef>();
   let counter = 0;
@@ -203,7 +203,7 @@ const transformValueForDisplay = (
     if (Array.isArray(v)) {
       return v.map(transform);
     }
-    if (v !== null && typeof v === 'object') {
+    if (v !== null && typeof v === "object") {
       const result: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(v)) {
         result[key] = transform(val);
@@ -229,9 +229,9 @@ const JsonBlock = (value: unknown) => {
       <pre
         className="text-[11px] overflow-x-auto rounded-md border p-3"
         style={{
-          borderColor: 'var(--ds-gray-300)',
-          backgroundColor: 'var(--ds-gray-100)',
-          color: 'var(--ds-gray-1000)',
+          borderColor: "var(--ds-gray-300)",
+          backgroundColor: "var(--ds-gray-100)",
+          color: "var(--ds-gray-1000)",
         }}
       >
         <code>{json}</code>
@@ -266,9 +266,9 @@ const JsonBlock = (value: unknown) => {
     <pre
       className="text-[11px] overflow-x-auto rounded-md border p-3"
       style={{
-        borderColor: 'var(--ds-gray-300)',
-        backgroundColor: 'var(--ds-gray-100)',
-        color: 'var(--ds-gray-1000)',
+        borderColor: "var(--ds-gray-300)",
+        backgroundColor: "var(--ds-gray-100)",
+        color: "var(--ds-gray-1000)",
       }}
     >
       <code>{parts}</code>
@@ -281,39 +281,39 @@ type AttributeKey =
   | keyof WorkflowRun
   | keyof Hook
   | keyof Event
-  | 'eventData'
-  | 'resumeAt'
-  | 'expiredAt';
+  | "eventData"
+  | "resumeAt"
+  | "expiredAt";
 
 const attributeOrder: AttributeKey[] = [
-  'workflowName',
-  'stepName',
-  'status',
-  'stepId',
-  'hookId',
-  'eventId',
-  'runId',
-  'attempt',
-  'token',
-  'correlationId',
-  'eventType',
-  'deploymentId',
-  'ownerId',
-  'projectId',
-  'environment',
-  'executionContext',
-  'createdAt',
-  'startedAt',
-  'updatedAt',
-  'completedAt',
-  'expiredAt',
-  'retryAfter',
-  'error',
-  'metadata',
-  'eventData',
-  'input',
-  'output',
-  'resumeAt',
+  "workflowName",
+  "stepName",
+  "status",
+  "stepId",
+  "hookId",
+  "eventId",
+  "runId",
+  "attempt",
+  "token",
+  "correlationId",
+  "eventType",
+  "deploymentId",
+  "ownerId",
+  "projectId",
+  "environment",
+  "executionContext",
+  "createdAt",
+  "startedAt",
+  "updatedAt",
+  "completedAt",
+  "expiredAt",
+  "retryAfter",
+  "error",
+  "metadata",
+  "eventData",
+  "input",
+  "output",
+  "resumeAt",
 ];
 
 const sortByAttributeOrder = (a: string, b: string): number => {
@@ -326,9 +326,9 @@ export const localMillisecondTime = (value: unknown): string => {
   let date: Date;
   if (value instanceof Date) {
     date = value;
-  } else if (typeof value === 'number') {
+  } else if (typeof value === "number") {
     date = new Date(value);
-  } else if (typeof value === 'string') {
+  } else if (typeof value === "string") {
     date = new Date(value);
   } else {
     date = new Date(String(value));
@@ -336,12 +336,12 @@ export const localMillisecondTime = (value: unknown): string => {
 
   // e.g. 12/17/2025, 9:08:55.182 AM
   return date.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
     fractionalSecondDigits: 3,
   });
 };
@@ -356,8 +356,8 @@ const attributeToDisplayFn: Record<
 > = {
   // Names that need pretty-printing
   workflowName: (value: unknown) =>
-    parseWorkflowName(String(value))?.shortName ?? '?',
-  stepName: (value: unknown) => parseStepName(String(value))?.shortName ?? '?',
+    parseWorkflowName(String(value))?.shortName ?? "?",
+  stepName: (value: unknown) => parseStepName(String(value))?.shortName ?? "?",
   // IDs
   runId: (value: unknown) => String(value),
   stepId: (value: unknown) => String(value),
@@ -391,7 +391,7 @@ const attributeToDisplayFn: Record<
   metadata: JsonBlock,
   input: (value: unknown, context?: DisplayContext) => {
     // Check if input has args + closure vars structure
-    if (value && typeof value === 'object' && 'args' in value) {
+    if (value && typeof value === "object" && "args" in value) {
       const { args, closureVars } = value as {
         args: unknown[];
         closureVars?: Record<string, unknown>;
@@ -455,7 +455,7 @@ const attributeToDisplayFn: Record<
   },
   error: (value: unknown) => {
     // Handle structured error format
-    if (value && typeof value === 'object' && 'message' in value) {
+    if (value && typeof value === "object" && "message" in value) {
       const error = value as {
         message: string;
         stack?: string;
@@ -470,13 +470,13 @@ const attributeToDisplayFn: Record<
               <div>
                 <span
                   className="text-[11px] font-medium"
-                  style={{ color: 'var(--ds-gray-700)' }}
+                  style={{ color: "var(--ds-gray-700)" }}
                 >
-                  Error Code:{' '}
+                  Error Code:{" "}
                 </span>
                 <code
                   className="text-[11px]"
-                  style={{ color: 'var(--ds-gray-1000)' }}
+                  style={{ color: "var(--ds-gray-1000)" }}
                 >
                   {error.code}
                 </code>
@@ -486,10 +486,10 @@ const attributeToDisplayFn: Record<
             <pre
               className="text-[11px] overflow-x-auto rounded-md border p-3"
               style={{
-                borderColor: 'var(--ds-gray-300)',
-                backgroundColor: 'var(--ds-gray-100)',
-                color: 'var(--ds-gray-1000)',
-                whiteSpace: 'pre-wrap',
+                borderColor: "var(--ds-gray-300)",
+                backgroundColor: "var(--ds-gray-100)",
+                color: "var(--ds-gray-1000)",
+                whiteSpace: "pre-wrap",
               }}
             >
               <code>{error.stack || error.message}</code>
@@ -505,10 +505,10 @@ const attributeToDisplayFn: Record<
         <pre
           className="text-[11px] overflow-x-auto rounded-md border p-3"
           style={{
-            borderColor: 'var(--ds-gray-300)',
-            backgroundColor: 'var(--ds-gray-100)',
-            color: 'var(--ds-gray-1000)',
-            whiteSpace: 'pre-wrap',
+            borderColor: "var(--ds-gray-300)",
+            backgroundColor: "var(--ds-gray-100)",
+            color: "var(--ds-gray-1000)",
+            whiteSpace: "pre-wrap",
           }}
         >
           <code>{String(value)}</code>
@@ -522,20 +522,20 @@ const attributeToDisplayFn: Record<
 };
 
 const resolvableAttributes = [
-  'input',
-  'output',
-  'error',
-  'metadata',
-  'eventData',
+  "input",
+  "output",
+  "error",
+  "metadata",
+  "eventData",
 ];
 
 const ExpiredDataMessage = () => (
   <div
     className="text-copy-12 rounded-md border p-4 my-2"
     style={{
-      borderColor: 'var(--ds-gray-300)',
-      backgroundColor: 'var(--ds-gray-100)',
-      color: 'var(--ds-gray-700)',
+      borderColor: "var(--ds-gray-300)",
+      backgroundColor: "var(--ds-gray-100)",
+      color: "var(--ds-gray-700)",
     }}
   >
     <span>The data for this run has expired and is no longer available.</span>
@@ -570,11 +570,11 @@ export const AttributeBlock = ({
       <div className="flex items-center gap-1.5">
         <span
           className="text-[11px] font-medium"
-          style={{ color: 'var(--ds-gray-500)' }}
+          style={{ color: "var(--ds-gray-500)" }}
         >
           {attribute}
         </span>
-        <span className="text-[11px]" style={{ color: 'var(--ds-gray-1000)' }}>
+        <span className="text-[11px]" style={{ color: "var(--ds-gray-1000)" }}>
           {displayValue}
         </span>
       </div>
@@ -583,22 +583,22 @@ export const AttributeBlock = ({
 
   return (
     <div className="relative">
-      {typeof isLoading === 'boolean' && isLoading && (
+      {typeof isLoading === "boolean" && isLoading && (
         <div className="absolute top-9 right-4">
           <div
             className="animate-spin rounded-full h-4 w-4 border-b-2"
-            style={{ borderColor: 'var(--ds-gray-900)' }}
+            style={{ borderColor: "var(--ds-gray-900)" }}
           />
         </div>
       )}
       <div key={attribute} className="flex flex-col gap-0 my-2">
         <span
           className="text-xs font-medium"
-          style={{ color: 'var(--ds-gray-500)' }}
+          style={{ color: "var(--ds-gray-500)" }}
         >
           {attribute}
         </span>
-        <span className="text-xs" style={{ color: 'var(--ds-gray-1000)' }}>
+        <span className="text-xs" style={{ color: "var(--ds-gray-1000)" }}>
           {displayValue}
         </span>
       </div>
@@ -635,7 +635,7 @@ export const AttributePanel = ({
       attributeToDisplayFn[attribute as keyof typeof attributeToDisplayFn];
     if (!displayFn) return false;
     const displayValue = displayFn(
-      displayData[attribute as keyof typeof displayData]
+      displayData[attribute as keyof typeof displayData],
     );
     return displayValue !== null;
   });
@@ -645,7 +645,7 @@ export const AttributePanel = ({
     () => ({
       stepName: displayData.stepName as string | undefined,
     }),
-    [displayData.stepName]
+    [displayData.stepName],
   );
 
   return (
@@ -656,8 +656,8 @@ export const AttributePanel = ({
           <div
             className="flex flex-col divide-y rounded-lg border mb-3 overflow-hidden"
             style={{
-              borderColor: 'var(--ds-gray-300)',
-              backgroundColor: 'var(--ds-gray-100)',
+              borderColor: "var(--ds-gray-300)",
+              backgroundColor: "var(--ds-gray-100)",
             }}
           >
             {visibleBasicAttributes.map((attribute) => (
@@ -665,18 +665,18 @@ export const AttributePanel = ({
                 key={attribute}
                 className="flex items-center justify-between px-3 py-1.5"
                 style={{
-                  borderColor: 'var(--ds-gray-300)',
+                  borderColor: "var(--ds-gray-300)",
                 }}
               >
                 <span
                   className="text-[11px] font-medium"
-                  style={{ color: 'var(--ds-gray-500)' }}
+                  style={{ color: "var(--ds-gray-500)" }}
                 >
                   {attribute}
                 </span>
                 <span
                   className="text-[11px] font-mono"
-                  style={{ color: 'var(--ds-gray-1000)' }}
+                  style={{ color: "var(--ds-gray-1000)" }}
                 >
                   {attributeToDisplayFn[
                     attribute as keyof typeof attributeToDisplayFn

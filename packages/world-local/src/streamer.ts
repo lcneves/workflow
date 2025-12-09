@@ -1,9 +1,9 @@
-import { EventEmitter } from 'node:events';
-import path from 'node:path';
-import type { Streamer } from '@workflow/world';
-import { monotonicFactory } from 'ulid';
-import { z } from 'zod';
-import { listJSONFiles, readBuffer, readJSON, write, writeJSON } from './fs.js';
+import { EventEmitter } from "node:events";
+import path from "node:path";
+import type { Streamer } from "@workflow/world";
+import { monotonicFactory } from "ulid";
+import { z } from "zod";
+import { listJSONFiles, readBuffer, readJSON, write, writeJSON } from "./fs.js";
 
 // Create a monotonic ULID factory that ensures ULIDs are always increasing
 // even when generated within the same millisecond
@@ -60,7 +60,7 @@ export function createStreamer(basedir: string): Streamer {
   // Helper to record the runId <> streamId association
   async function registerStreamForRun(
     runId: string,
-    streamName: string
+    streamName: string,
   ): Promise<void> {
     const cacheKey = `${runId}:${streamName}`;
     if (registeredStreams.has(cacheKey)) {
@@ -69,9 +69,9 @@ export function createStreamer(basedir: string): Streamer {
 
     const runStreamsPath = path.join(
       basedir,
-      'streams',
-      'runs',
-      `${runId}.json`
+      "streams",
+      "runs",
+      `${runId}.json`,
     );
 
     // Read existing streams for this run
@@ -91,7 +91,7 @@ export function createStreamer(basedir: string): Streamer {
     async writeToStream(
       name: string,
       _runId: string | Promise<string>,
-      chunk: string | Uint8Array
+      chunk: string | Uint8Array,
     ) {
       // Await runId if it's a promise to ensure proper flushing
       const runId = await _runId;
@@ -103,7 +103,7 @@ export function createStreamer(basedir: string): Streamer {
 
       // Convert chunk to buffer for serialization
       let chunkBuffer: Buffer;
-      if (typeof chunk === 'string') {
+      if (typeof chunk === "string") {
         chunkBuffer = Buffer.from(new TextEncoder().encode(chunk));
       } else if (chunk instanceof Buffer) {
         chunkBuffer = chunk;
@@ -118,9 +118,9 @@ export function createStreamer(basedir: string): Streamer {
 
       const chunkPath = path.join(
         basedir,
-        'streams',
-        'chunks',
-        `${name}-${chunkId}.json`
+        "streams",
+        "chunks",
+        `${name}-${chunkId}.json`,
       );
 
       await write(chunkPath, serialized);
@@ -145,14 +145,14 @@ export function createStreamer(basedir: string): Streamer {
       const chunkId = `chnk_${monotonicUlid()}`;
       const chunkPath = path.join(
         basedir,
-        'streams',
-        'chunks',
-        `${name}-${chunkId}.json`
+        "streams",
+        "chunks",
+        `${name}-${chunkId}.json`,
       );
 
       await write(
         chunkPath,
-        serializeChunk({ chunk: Buffer.from([]), eof: true })
+        serializeChunk({ chunk: Buffer.from([]), eof: true }),
       );
 
       streamEmitter.emit(`close:${name}` as const, { streamName: name });
@@ -161,9 +161,9 @@ export function createStreamer(basedir: string): Streamer {
     async listStreamsByRunId(runId: string) {
       const runStreamsPath = path.join(
         basedir,
-        'streams',
-        'runs',
-        `${runId}.json`
+        "streams",
+        "runs",
+        `${runId}.json`,
       );
 
       const data = await readJSON(runStreamsPath, RunStreamsSchema);
@@ -171,7 +171,7 @@ export function createStreamer(basedir: string): Streamer {
     },
 
     async readFromStream(name: string, startIndex = 0) {
-      const chunksDir = path.join(basedir, 'streams', 'chunks');
+      const chunksDir = path.join(basedir, "streams", "chunks");
       let removeListeners = () => {};
 
       return new ReadableStream<Uint8Array>({
@@ -247,7 +247,7 @@ export function createStreamer(basedir: string): Streamer {
             }
 
             const chunk = deserializeChunk(
-              await readBuffer(path.join(chunksDir, `${file}.json`))
+              await readBuffer(path.join(chunksDir, `${file}.json`)),
             );
             if (chunk?.eof === true) {
               isComplete = true;
@@ -264,7 +264,7 @@ export function createStreamer(basedir: string): Streamer {
 
           // Sort buffered chunks by ULID (chronological order)
           bufferedEventChunks.sort((a, b) =>
-            a.chunkId.localeCompare(b.chunkId)
+            a.chunkId.localeCompare(b.chunkId),
           );
           for (const buffered of bufferedEventChunks) {
             // Create a copy for defense in depth (already copied at storage, but be extra safe)

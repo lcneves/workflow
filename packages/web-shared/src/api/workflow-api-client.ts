@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { VERCEL_403_ERROR_MESSAGE } from '@workflow/errors';
+import { VERCEL_403_ERROR_MESSAGE } from "@workflow/errors";
 import type {
   Event,
   Hook,
   Step,
   WorkflowRun,
   WorkflowRunStatus,
-} from '@workflow/world';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { getPaginationDisplay } from '../lib/utils';
-import type { EnvMap, ServerActionError } from './workflow-server-actions';
+} from "@workflow/world";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getPaginationDisplay } from "../lib/utils";
+import type { EnvMap, ServerActionError } from "./workflow-server-actions";
 import {
   cancelRun as cancelRunServerAction,
   fetchEvents,
@@ -28,7 +28,7 @@ import {
   type StopSleepOptions,
   type StopSleepResult,
   wakeUpRun as wakeUpRunServerAction,
-} from './workflow-server-actions';
+} from "./workflow-server-actions";
 
 const MAX_ITEMS = 1000;
 const LIVE_POLL_LIMIT = 10;
@@ -39,7 +39,7 @@ const LIVE_UPDATE_INTERVAL_MS = 5000;
  * Helper to convert ServerActionError to WorkflowWebAPIError
  */
 function createWorkflowAPIError(
-  serverError: ServerActionError
+  serverError: ServerActionError,
 ): WorkflowWebAPIError {
   return new WorkflowWebAPIError(serverError.message, {
     cause: serverError.cause,
@@ -53,7 +53,7 @@ function createWorkflowAPIError(
  * Handles both WorkflowWebAPIError and regular Error instances.
  */
 export const getErrorMessage = (error: Error | WorkflowWebAPIError): string => {
-  if ('layer' in error && error.layer) {
+  if ("layer" in error && error.layer) {
     if (error instanceof WorkflowWebAPIError) {
       if (error.request?.status === 403) {
         return VERCEL_403_ERROR_MESSAGE;
@@ -64,7 +64,7 @@ export const getErrorMessage = (error: Error | WorkflowWebAPIError): string => {
     return error.message;
   }
 
-  return error instanceof Error ? error.message : 'An error occurred';
+  return error instanceof Error ? error.message : "An error occurred";
 };
 
 /**
@@ -75,7 +75,7 @@ export async function unwrapServerActionResult<T>(
     success: boolean;
     data?: T;
     error?: ServerActionError;
-  }>
+  }>,
 ): Promise<
   { error: WorkflowWebAPIError; result: null } | { error: null; result: T }
 > {
@@ -89,11 +89,11 @@ export async function unwrapServerActionResult<T>(
     };
   }
   if (!result.success) {
-    console.error('[web-api-client] error', result.error);
+    console.error("[web-api-client] error", result.error);
     if (!result.error) {
       return {
-        error: new WorkflowWebAPIError('Unknown error occurred', {
-          layer: 'client',
+        error: new WorkflowWebAPIError("Unknown error occurred", {
+          layer: "client",
         }),
         result: null,
       };
@@ -122,17 +122,17 @@ export async function unwrapServerActionResult<T>(
  */
 export class WorkflowWebAPIError extends Error {
   request?: any;
-  layer?: 'client' | 'server' | 'API';
+  layer?: "client" | "server" | "API";
   constructor(
     message: string,
     options?: {
       cause?: unknown;
       request?: any;
-      layer?: 'client' | 'server' | 'API';
-    }
+      layer?: "client" | "server" | "API";
+    },
   ) {
     super(message, { cause: options?.cause });
-    this.name = 'WorkflowWebAPIError';
+    this.name = "WorkflowWebAPIError";
     this.request = options?.request;
     this.layer = options?.layer;
     if (options?.cause instanceof Error) {
@@ -171,10 +171,10 @@ export function useWorkflowRuns(
     workflowName?: string;
     status?: WorkflowRunStatus;
     limit?: number;
-    sortOrder?: 'asc' | 'desc';
-  }
+    sortOrder?: "asc" | "desc";
+  },
 ): PaginatedList<WorkflowRun> {
-  const { workflowName, status, limit = 10, sortOrder = 'desc' } = params;
+  const { workflowName, status, limit = 10, sortOrder = "desc" } = params;
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -202,7 +202,7 @@ export function useWorkflowRuns(
 
   const fetchPage = useCallback(
     async (pageIndex: number, pageCursor?: string, force: boolean = false) => {
-      const cacheKey = pageCursor ?? 'initial';
+      const cacheKey = pageCursor ?? "initial";
 
       // Set loading state for this page
       setAllPageResults((prev) => {
@@ -241,7 +241,7 @@ export function useWorkflowRuns(
           limit: limit,
           workflowName,
           status,
-        })
+        }),
       );
 
       if (error) {
@@ -276,7 +276,7 @@ export function useWorkflowRuns(
       setCursor(result.cursor);
       setHasMore(result.hasMore);
     },
-    [env, workflowName, limit, sortOrder, status]
+    [env, workflowName, limit, sortOrder, status],
   );
 
   // Initial load
@@ -320,7 +320,7 @@ export function useWorkflowRuns(
     // Clear cache and results
     pageCache.current.clear();
     setAllPageResults(
-      new Map([[0, { data: null, isLoading: true, error: null }]])
+      new Map([[0, { data: null, isLoading: true, error: null }]]),
     );
     // Reset to first page
     setCurrentPage(0);
@@ -342,7 +342,7 @@ export function useWorkflowRuns(
 
   // Compute global loading (any page is loading)
   const globalLoading = Array.from(allPageResults.values()).some(
-    (p) => p.isLoading
+    (p) => p.isLoading,
   );
 
   const totalPages = hasMore ? currentPage + 2 : currentPage + 1;
@@ -354,7 +354,7 @@ export function useWorkflowRuns(
   const pageInfo = getPaginationDisplay(
     currentPageNumber,
     maxPagesVisited,
-    showPlus
+    showPlus,
   );
 
   return {
@@ -381,10 +381,10 @@ export function useWorkflowHooks(
   params: {
     runId?: string;
     limit?: number;
-    sortOrder?: 'asc' | 'desc';
-  }
+    sortOrder?: "asc" | "desc";
+  },
 ): PaginatedList<Hook> {
-  const { runId, limit = 10, sortOrder = 'desc' } = params;
+  const { runId, limit = 10, sortOrder = "desc" } = params;
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -412,7 +412,7 @@ export function useWorkflowHooks(
 
   const fetchPage = useCallback(
     async (pageIndex: number, pageCursor?: string, force: boolean = false) => {
-      const cacheKey = pageCursor ?? 'initial';
+      const cacheKey = pageCursor ?? "initial";
 
       // Set loading state for this page
       setAllPageResults((prev) => {
@@ -450,7 +450,7 @@ export function useWorkflowHooks(
           cursor: pageCursor,
           sortOrder,
           limit: limit,
-        })
+        }),
       );
 
       if (error) {
@@ -485,7 +485,7 @@ export function useWorkflowHooks(
       setCursor(result.cursor);
       setHasMore(result.hasMore);
     },
-    [env, runId, limit, sortOrder]
+    [env, runId, limit, sortOrder],
   );
 
   // Initial load
@@ -528,7 +528,7 @@ export function useWorkflowHooks(
     // Clear cache and results
     pageCache.current.clear();
     setAllPageResults(
-      new Map([[0, { data: null, isLoading: true, error: null }]])
+      new Map([[0, { data: null, isLoading: true, error: null }]]),
     );
     // Reset to first page
     setCurrentPage(0);
@@ -550,7 +550,7 @@ export function useWorkflowHooks(
 
   // Compute global loading (any page is loading)
   const globalLoading = Array.from(allPageResults.values()).some(
-    (p) => p.isLoading
+    (p) => p.isLoading,
   );
 
   const totalPages = hasMore ? currentPage + 2 : currentPage + 1;
@@ -562,7 +562,7 @@ export function useWorkflowHooks(
   const pageInfo = getPaginationDisplay(
     currentPageNumber,
     maxPagesVisited,
-    showPlus
+    showPlus,
   );
 
   return {
@@ -584,7 +584,7 @@ export function useWorkflowHooks(
 // Helper function to exhaustively fetch steps
 async function fetchAllSteps(
   env: EnvMap,
-  runId: string
+  runId: string,
 ): Promise<{ data: Step[]; cursor?: string }> {
   let stepsData: Step[] = [];
   let stepsCursor: string | undefined;
@@ -592,9 +592,9 @@ async function fetchAllSteps(
     const { error, result } = await unwrapServerActionResult(
       fetchSteps(env, runId, {
         cursor: stepsCursor,
-        sortOrder: 'asc',
+        sortOrder: "asc",
         limit: 100,
-      })
+      }),
     );
     // TODO: We're not handling errors well for infinite fetches
     if (error) {
@@ -614,7 +614,7 @@ async function fetchAllSteps(
 // Helper function to exhaustively fetch hooks
 async function fetchAllHooks(
   env: EnvMap,
-  runId: string
+  runId: string,
 ): Promise<{ data: Hook[]; cursor?: string }> {
   let hooksData: Hook[] = [];
   let hooksCursor: string | undefined;
@@ -623,9 +623,9 @@ async function fetchAllHooks(
       fetchHooks(env, {
         runId,
         cursor: hooksCursor,
-        sortOrder: 'asc',
+        sortOrder: "asc",
         limit: 100,
-      })
+      }),
     );
     if (error) {
       break;
@@ -644,7 +644,7 @@ async function fetchAllHooks(
 // Helper function to exhaustively fetch events
 async function fetchAllEvents(
   env: EnvMap,
-  runId: string
+  runId: string,
 ): Promise<{ data: Event[]; cursor?: string }> {
   let eventsData: Event[] = [];
   let eventsCursor: string | undefined;
@@ -652,9 +652,9 @@ async function fetchAllEvents(
     const { error, result } = await unwrapServerActionResult(
       fetchEvents(env, runId, {
         cursor: eventsCursor,
-        sortOrder: 'asc',
+        sortOrder: "asc",
         limit: 1000,
-      })
+      }),
     );
 
     if (error) {
@@ -678,7 +678,7 @@ async function fetchAllEvents(
 export function useWorkflowTraceViewerData(
   env: EnvMap,
   runId: string,
-  options: { live?: boolean } = {}
+  options: { live?: boolean } = {},
 ) {
   const { live = false } = options;
 
@@ -717,7 +717,7 @@ export function useWorkflowTraceViewerData(
           }
           setRun(result);
           return result;
-        }
+        },
       ),
       fetchAllSteps(env, runId).then((result) => {
         setSteps(result.data);
@@ -739,7 +739,7 @@ export function useWorkflowTraceViewerData(
     setInitialLoadCompleted(true);
     isFetchingRef.current = false;
     // Just doing the first error, but would be nice to show multiple
-    const error = results.find((result) => result.status === 'rejected')
+    const error = results.find((result) => result.status === "rejected")
       ?.reason as Error;
     if (error) {
       setError(error);
@@ -768,7 +768,7 @@ export function useWorkflowTraceViewerData(
       const uniqueById = new Map(combined.map((e) => [(e as any).eventId, e]));
       return Array.from(uniqueById.values());
     },
-    []
+    [],
   );
 
   const pollRun = useCallback(async (): Promise<boolean> => {
@@ -776,7 +776,7 @@ export function useWorkflowTraceViewerData(
       return false;
     }
     const { error, result } = await unwrapServerActionResult(
-      fetchRun(env, runId)
+      fetchRun(env, runId),
     );
     if (error) {
       setError(error);
@@ -791,9 +791,9 @@ export function useWorkflowTraceViewerData(
     const { error, result } = await unwrapServerActionResult(
       fetchSteps(env, runId, {
         cursor: stepsCursor,
-        sortOrder: 'asc',
+        sortOrder: "asc",
         limit: LIVE_POLL_LIMIT,
-      })
+      }),
     );
     if (error) {
       setError(error);
@@ -819,9 +819,9 @@ export function useWorkflowTraceViewerData(
       fetchHooks(env, {
         runId,
         cursor: hooksCursor,
-        sortOrder: 'asc',
+        sortOrder: "asc",
         limit: LIVE_POLL_LIMIT,
-      })
+      }),
     );
     if (error) {
       setError(error);
@@ -843,9 +843,9 @@ export function useWorkflowTraceViewerData(
     const { error, result } = await unwrapServerActionResult(
       fetchEvents(env, runId, {
         cursor: eventsCursor,
-        sortOrder: 'asc',
+        sortOrder: "asc",
         limit: LIVE_POLL_LIMIT,
-      })
+      }),
     );
     if (error) {
       setError(error);
@@ -881,12 +881,12 @@ export function useWorkflowTraceViewerData(
           ]);
         foundNewItems = stepsUpdated || hooksUpdated || eventsUpdated;
       } catch (err) {
-        console.error('Update error:', err);
+        console.error("Update error:", err);
       }
 
       return { foundNewItems };
     },
-    [pollSteps, pollHooks, pollEvents, initialLoadCompleted, pollRun]
+    [pollSteps, pollHooks, pollEvents, initialLoadCompleted, pollRun],
   );
 
   // Initial load
@@ -928,44 +928,44 @@ export function useWorkflowTraceViewerData(
 // Helper function to fetch resource and get correlation ID
 async function fetchResourceWithCorrelationId(
   env: EnvMap,
-  resource: 'run' | 'step' | 'hook',
+  resource: "run" | "step" | "hook",
   resourceId: string,
-  options: { runId?: string; resolveData?: 'none' | 'all' } = {}
+  options: { runId?: string; resolveData?: "none" | "all" } = {},
 ): Promise<{
   data: WorkflowRun | Step | Hook;
   correlationId: string;
 }> {
   let resourceData: WorkflowRun | Step | Hook;
   let correlationId: string;
-  const resolveData = options.resolveData ?? 'all';
+  const resolveData = options.resolveData ?? "all";
 
-  if (resource === 'run') {
+  if (resource === "run") {
     const { error, result } = await unwrapServerActionResult(
-      fetchRun(env, resourceId, resolveData)
+      fetchRun(env, resourceId, resolveData),
     );
     if (error) {
       throw error;
     }
     resourceData = result;
     correlationId = (resourceData as WorkflowRun).runId;
-  } else if (resource === 'step') {
+  } else if (resource === "step") {
     const { runId } = options;
     if (!runId) {
-      throw new WorkflowWebAPIError('runId is required for step resource', {
-        layer: 'client',
+      throw new WorkflowWebAPIError("runId is required for step resource", {
+        layer: "client",
       });
     }
     const { error, result } = await unwrapServerActionResult(
-      fetchStep(env, runId, resourceId, resolveData)
+      fetchStep(env, runId, resourceId, resolveData),
     );
     if (error) {
       throw error;
     }
     resourceData = result;
     correlationId = (resourceData as Step).stepId;
-  } else if (resource === 'hook') {
+  } else if (resource === "hook") {
     const { error, result } = await unwrapServerActionResult(
-      fetchHook(env, resourceId, resolveData)
+      fetchHook(env, resourceId, resolveData),
     );
     if (error) {
       throw error;
@@ -974,7 +974,7 @@ async function fetchResourceWithCorrelationId(
     correlationId = (resourceData as Hook).hookId;
   } else {
     throw new WorkflowWebAPIError(`Unknown resource type: ${resource}`, {
-      layer: 'client',
+      layer: "client",
     });
   }
 
@@ -987,14 +987,14 @@ async function fetchResourceWithCorrelationId(
  */
 export function useWorkflowResourceData(
   env: EnvMap,
-  resource: 'run' | 'step' | 'hook' | 'sleep',
+  resource: "run" | "step" | "hook" | "sleep",
   resourceId: string,
-  options: { refreshInterval?: number; runId?: string } = {}
+  options: { refreshInterval?: number; runId?: string } = {},
 ) {
   const { refreshInterval = 0, runId } = options;
 
   const [data, setData] = useState<WorkflowRun | Step | Hook | Event | null>(
-    null
+    null,
   );
   // const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1004,13 +1004,13 @@ export function useWorkflowResourceData(
     setLoading(true);
     setData(null);
     setError(null);
-    if (resource === 'sleep') {
+    if (resource === "sleep") {
       const { error, result } = await unwrapServerActionResult(
         fetchEventsByCorrelationId(env, resourceId, {
-          sortOrder: 'asc',
+          sortOrder: "asc",
           limit: 100,
           withData: true,
-        })
+        }),
       );
       if (error) {
         setError(error);
@@ -1018,7 +1018,7 @@ export function useWorkflowResourceData(
       }
       const eventsData = result;
       const waitStartEvent = eventsData.data.find(
-        (event) => event.eventType === 'wait_created'
+        (event) => event.eventType === "wait_created",
       );
       if (waitStartEvent) {
         setData({
@@ -1038,7 +1038,7 @@ export function useWorkflowResourceData(
         resourceId,
         {
           runId,
-        }
+        },
       );
       setData(resourceData);
     } catch (error: unknown) {
@@ -1089,7 +1089,7 @@ export function useWorkflowResourceData(
  */
 export async function cancelRun(env: EnvMap, runId: string): Promise<void> {
   const { error } = await unwrapServerActionResult(
-    cancelRunServerAction(env, runId)
+    cancelRunServerAction(env, runId),
   );
   if (error) {
     throw error;
@@ -1101,7 +1101,7 @@ export async function cancelRun(env: EnvMap, runId: string): Promise<void> {
  */
 export async function recreateRun(env: EnvMap, runId: string): Promise<string> {
   const { error, result: resultData } = await unwrapServerActionResult(
-    recreateRunServerAction(env, runId)
+    recreateRunServerAction(env, runId),
   );
   if (error) {
     throw error;
@@ -1114,7 +1114,7 @@ export async function recreateRun(env: EnvMap, runId: string): Promise<string> {
  */
 export async function reenqueueRun(env: EnvMap, runId: string): Promise<void> {
   const { error } = await unwrapServerActionResult(
-    reenqueueRunServerAction(env, runId)
+    reenqueueRunServerAction(env, runId),
   );
   if (error) {
     throw error;
@@ -1127,10 +1127,10 @@ export async function reenqueueRun(env: EnvMap, runId: string): Promise<void> {
 export async function wakeUpRun(
   env: EnvMap,
   runId: string,
-  options?: StopSleepOptions
+  options?: StopSleepOptions,
 ): Promise<StopSleepResult> {
   const { error, result: resultData } = await unwrapServerActionResult(
-    wakeUpRunServerAction(env, runId, options)
+    wakeUpRunServerAction(env, runId, options),
   );
   if (error) {
     throw error;
@@ -1140,30 +1140,30 @@ export async function wakeUpRun(
 
 function isServerActionError(value: unknown): value is ServerActionError {
   return (
-    typeof value === 'object' &&
+    typeof value === "object" &&
     value !== null &&
-    'message' in value &&
-    'layer' in value &&
-    'cause' in value &&
-    'request' in value
+    "message" in value &&
+    "layer" in value &&
+    "cause" in value &&
+    "request" in value
   );
 }
 
 export async function readStream(
   env: EnvMap,
   streamId: string,
-  startIndex?: number
+  startIndex?: number,
 ): Promise<ReadableStream<unknown>> {
   try {
     const stream = await readStreamServerAction(env, streamId, startIndex);
     if (!stream) {
-      throw new WorkflowWebAPIError('Failed to read stream', {
-        layer: 'client',
+      throw new WorkflowWebAPIError("Failed to read stream", {
+        layer: "client",
       });
     }
     if (isServerActionError(stream)) {
       throw new WorkflowWebAPIError(stream.message, {
-        layer: 'client',
+        layer: "client",
         cause: stream.cause,
         request: stream.request,
       });
@@ -1173,8 +1173,8 @@ export async function readStream(
     if (error instanceof WorkflowWebAPIError) {
       throw error;
     }
-    throw new WorkflowWebAPIError('Failed to read stream', {
-      layer: 'client',
+    throw new WorkflowWebAPIError("Failed to read stream", {
+      layer: "client",
       cause: error,
     });
   }
@@ -1185,10 +1185,10 @@ export async function readStream(
  */
 export async function listStreams(
   env: EnvMap,
-  runId: string
+  runId: string,
 ): Promise<string[]> {
   const { error, result } = await unwrapServerActionResult(
-    fetchStreams(env, runId)
+    fetchStreams(env, runId),
   );
   if (error) {
     throw error;
@@ -1204,7 +1204,7 @@ const STREAMS_REFRESH_INTERVAL_MS = 10000;
 export function useWorkflowStreams(
   env: EnvMap,
   runId: string,
-  refreshInterval: number = STREAMS_REFRESH_INTERVAL_MS
+  refreshInterval: number = STREAMS_REFRESH_INTERVAL_MS,
 ) {
   const [streams, setStreams] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);

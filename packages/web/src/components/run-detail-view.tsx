@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { parseWorkflowName } from '@workflow/core/parse-name';
+import { parseWorkflowName } from "@workflow/core/parse-name";
 import {
   cancelRun,
   recreateRun,
@@ -9,13 +9,13 @@ import {
   useWorkflowTraceViewerData,
   type WorkflowRun,
   WorkflowTraceViewer,
-} from '@workflow/web-shared';
-import { AlertCircle, HelpCircle, List, Loader2 } from 'lucide-react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+} from "@workflow/web-shared";
+import { AlertCircle, HelpCircle, List, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,7 +25,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -33,21 +33,21 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "@/components/ui/breadcrumb";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { buildUrlWithConfig, worldConfigToEnvMap } from '@/lib/config';
-import type { WorldConfig } from '@/lib/config-world';
-import { CopyableText } from './display-utils/copyable-text';
-import { LiveStatus } from './display-utils/live-status';
-import { RelativeTime } from './display-utils/relative-time';
-import { StatusBadge } from './display-utils/status-badge';
-import { RunActionsButtons } from './run-actions';
-import { Skeleton } from './ui/skeleton';
+} from "@/components/ui/tooltip";
+import { buildUrlWithConfig, worldConfigToEnvMap } from "@/lib/config";
+import type { WorldConfig } from "@/lib/config-world";
+import { CopyableText } from "./display-utils/copyable-text";
+import { LiveStatus } from "./display-utils/live-status";
+import { RelativeTime } from "./display-utils/relative-time";
+import { StatusBadge } from "./display-utils/status-badge";
+import { RunActionsButtons } from "./run-actions";
+import { Skeleton } from "./ui/skeleton";
 
 interface RunDetailViewProps {
   config: WorldConfig;
@@ -70,9 +70,9 @@ export function RunDetailView({
   const env = useMemo(() => worldConfigToEnvMap(config), [config]);
 
   // Read tab and streamId from URL search params
-  const activeTab = (searchParams.get('tab') as 'trace' | 'streams') || 'trace';
-  const selectedStreamId = searchParams.get('streamId');
-  const showDebugActions = searchParams.get('debug') === '1';
+  const activeTab = (searchParams.get("tab") as "trace" | "streams") || "trace";
+  const selectedStreamId = searchParams.get("streamId");
+  const showDebugActions = searchParams.get("debug") === "1";
 
   // Helper to update URL search params
   const updateSearchParams = useCallback(
@@ -87,34 +87,34 @@ export function RunDetailView({
       }
       router.push(`?${params.toString()}`, { scroll: false });
     },
-    [router, searchParams]
+    [router, searchParams],
   );
 
   const setActiveTab = useCallback(
-    (tab: 'trace' | 'streams') => {
+    (tab: "trace" | "streams") => {
       // When switching to trace tab, clear streamId
-      if (tab === 'trace') {
+      if (tab === "trace") {
         updateSearchParams({ tab, streamId: null });
       } else {
         updateSearchParams({ tab });
       }
     },
-    [updateSearchParams]
+    [updateSearchParams],
   );
 
   const setSelectedStreamId = useCallback(
     (streamId: string | null) => {
       updateSearchParams({ streamId });
     },
-    [updateSearchParams]
+    [updateSearchParams],
   );
 
   // Handler for clicking on stream refs in the trace viewer
   const handleStreamClick = useCallback(
     (streamId: string) => {
-      updateSearchParams({ tab: 'streams', streamId });
+      updateSearchParams({ tab: "streams", streamId });
     },
-    [updateSearchParams]
+    [updateSearchParams],
   );
 
   // Fetch workflow graph manifest
@@ -179,12 +179,12 @@ export function RunDetailView({
       await cancelRun(env, runId);
       // Trigger a refresh of the data
       await update();
-      toast.success('Run cancelled successfully');
+      toast.success("Run cancelled successfully");
     } catch (err) {
-      console.error('Failed to cancel run:', err);
-      toast.error('Failed to cancel run', {
+      console.error("Failed to cancel run:", err);
+      toast.error("Failed to cancel run", {
         description:
-          err instanceof Error ? err.message : 'An unknown error occurred',
+          err instanceof Error ? err.message : "An unknown error occurred",
       });
     } finally {
       setCancelling(false);
@@ -203,16 +203,16 @@ export function RunDetailView({
       setShowRerunDialog(false);
       // Start a new run with the same workflow and input arguments
       const newRunId = await recreateRun(env, run.runId);
-      toast.success('New run started successfully', {
+      toast.success("New run started successfully", {
         description: `Run ID: ${newRunId}`,
       });
       // Navigate to the new run
       router.push(buildUrlWithConfig(`/run/${newRunId}`, config));
     } catch (err) {
-      console.error('Failed to re-run workflow:', err);
-      toast.error('Failed to start new run', {
+      console.error("Failed to re-run workflow:", err);
+      toast.error("Failed to start new run", {
         description:
-          err instanceof Error ? err.message : 'An unknown error occurred',
+          err instanceof Error ? err.message : "An unknown error occurred",
       });
     } finally {
       setRerunning(false);
@@ -235,7 +235,7 @@ export function RunDetailView({
   // At this point, we've already returned if there was an error
   // So hasError is always false here
   const hasError = false;
-  const errorMessage = '';
+  const errorMessage = "";
 
   return (
     <>
@@ -287,7 +287,7 @@ export function RunDetailView({
             <BreadcrumbList>
               <BreadcrumbItem>
                 <BreadcrumbLink asChild>
-                  <Link href={buildUrlWithConfig('/', config)}>Runs</Link>
+                  <Link href={buildUrlWithConfig("/", config)}>Runs</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
@@ -367,7 +367,7 @@ export function RunDetailView({
                           : `${hours}h`;
                       })()
                     ) : (
-                      '-'
+                      "-"
                     )
                   ) : (
                     <Skeleton className="w-[60px] h-[20px]" />
@@ -401,7 +401,7 @@ export function RunDetailView({
                     run.startedAt ? (
                       <RelativeTime date={run.startedAt} />
                     ) : (
-                      '-'
+                      "-"
                     )
                   ) : (
                     <Skeleton className="w-[110px] h-[20px]" />
@@ -415,7 +415,7 @@ export function RunDetailView({
                     run.completedAt ? (
                       <RelativeTime date={run.completedAt} />
                     ) : (
-                      '-'
+                      "-"
                     )
                   ) : (
                     <Skeleton className="w-[110px] h-[20px]" />
@@ -450,7 +450,7 @@ export function RunDetailView({
         <div className="mt-4 flex-1 flex flex-col min-h-0">
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as 'trace' | 'streams')}
+            onValueChange={(v) => setActiveTab(v as "trace" | "streams")}
             className="flex-1 flex flex-col min-h-0"
           >
             <TabsList className="mb-4 flex-none">
@@ -489,15 +489,15 @@ export function RunDetailView({
                 <div
                   className="w-64 flex-shrink-0 border rounded-lg overflow-hidden"
                   style={{
-                    borderColor: 'var(--ds-gray-300)',
-                    backgroundColor: 'var(--ds-background-100)',
+                    borderColor: "var(--ds-gray-300)",
+                    backgroundColor: "var(--ds-background-100)",
                   }}
                 >
                   <div
                     className="px-3 py-2 border-b text-xs font-medium"
                     style={{
-                      borderColor: 'var(--ds-gray-300)',
-                      color: 'var(--ds-gray-900)',
+                      borderColor: "var(--ds-gray-300)",
+                      color: "var(--ds-gray-900)",
                     }}
                   >
                     Streams ({streams.length})
@@ -514,7 +514,7 @@ export function RunDetailView({
                     ) : streams.length === 0 ? (
                       <div
                         className="p-4 text-xs"
-                        style={{ color: 'var(--ds-gray-600)' }}
+                        style={{ color: "var(--ds-gray-600)" }}
                       >
                         No streams found for this run
                       </div>
@@ -528,9 +528,9 @@ export function RunDetailView({
                           style={{
                             backgroundColor:
                               selectedStreamId === streamId
-                                ? 'var(--ds-gray-200)'
-                                : 'transparent',
-                            color: 'var(--ds-gray-1000)',
+                                ? "var(--ds-gray-200)"
+                                : "transparent",
+                            color: "var(--ds-gray-1000)",
                           }}
                           title={streamId}
                         >
@@ -549,17 +549,17 @@ export function RunDetailView({
                     <div
                       className="h-full flex items-center justify-center rounded-lg border"
                       style={{
-                        borderColor: 'var(--ds-gray-300)',
-                        backgroundColor: 'var(--ds-gray-100)',
+                        borderColor: "var(--ds-gray-300)",
+                        backgroundColor: "var(--ds-gray-100)",
                       }}
                     >
                       <div
                         className="text-sm"
-                        style={{ color: 'var(--ds-gray-600)' }}
+                        style={{ color: "var(--ds-gray-600)" }}
                       >
                         {streams.length > 0
-                          ? 'Select a stream to view its data'
-                          : 'No streams available'}
+                          ? "Select a stream to view its data"
+                          : "No streams available"}
                       </div>
                     </div>
                   )}
