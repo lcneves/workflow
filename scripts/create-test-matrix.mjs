@@ -144,7 +144,7 @@ matrix.app.push({
 });
 
 matrix.app.push({
-  name: 'elysia',
+  name: 'elysiajs',
   project: 'workbench-elysia-workflow',
   ...DEV_TEST_CONFIGS.elysiajs,
 });
