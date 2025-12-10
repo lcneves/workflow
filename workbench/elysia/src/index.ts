@@ -8,6 +8,10 @@ import {
 } from 'workflow/internal/errors';
 
 const app = new Elysia()
+  .get('/', async () => {
+    return 'Hello from Elysia!';
+  })
+
   .post('/api/hook', async ({ body }) => {
     const { token, data } = JSON.parse(body as string);
 
