@@ -20,6 +20,7 @@
     "workflow": "workspace:*"
   },
   "devDependencies": {
+    "bun": "latest",
     "bun-types": "latest",
     "rollup": "^4.53.3",
     "ai": "catalog:",
