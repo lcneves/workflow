@@ -1,15 +1,26 @@
-# Elysia with Bun runtime
+# Workflows with ElysiaJS (Nitro v3)
 
-## Getting Started
-To get started with this template, simply paste this command into your terminal:
-```bash
-bun create elysia ./elysia-example
+- Learn more about ElysiaJS: https://elysiajs.com/
+- Learn more about Nitro: https://v3.nitro.build/
+
+## Commands
+
+**Local development:**
+
+```sh
+npm run dev
 ```
 
-## Development
-To start the development server run:
-```bash
-bun run dev
+**Production build (Vercel):**
+
+```sh
+NITRO_PRESET=vercel npm run build
+npx vercel --prebuilt
 ```
 
-Open http://localhost:3000/ with your browser to see the result.
+**Production build (Bun):**
+
+```sh
+npm run build
+bun run .output/server/index.mjs
+```
