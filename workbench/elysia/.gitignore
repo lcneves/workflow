@@ -44,3 +44,7 @@ package-lock.json
 # workflow
 .workflow-data
 _workflow.ts
+
+# nitro
+.outpu
+t

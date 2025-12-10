@@ -10,13 +10,19 @@
     "start": "node .output/server/index.mjs"
   },
   "dependencies": {
+    "@workflow/world-postgres": "workspace:*",
     "elysia": "latest",
     "nitro": "catalog:",
     "workflow": "workspace:*"
   },
   "devDependencies": {
     "bun-types": "latest",
-    "rollup": "^4.53.3"
+    "rollup": "^4.53.3",
+    "ai": "catalog:",
+    "lodash.chunk": "^4.2.0",
+    "openai": "^6.1.0",
+    "workflow": "workspace:*",
+    "zod": "catalog:"
   },
   "module": "src/index.js"
 }
