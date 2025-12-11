@@ -20,6 +20,6 @@
     "@workflow/example-vite",
     "@workflow/example-sveltekit",
     "@workflow/example-astro",
-    "@workflow/example-elysiajs"
+    "@workflow/example-elysiajs-node"
   ]
 }

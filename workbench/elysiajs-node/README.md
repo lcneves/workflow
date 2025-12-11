@@ -1,4 +1,4 @@
-# Workflows with ElysiaJS (Nitro v3)
+# Workflows with ElysiaJS Node (Nitro v3)
 
 - Learn more about ElysiaJS: https://elysiajs.com/
 - Learn more about Nitro: https://v3.nitro.build/

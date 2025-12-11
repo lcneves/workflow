@@ -1259,7 +1259,7 @@ importers:
         specifier: 'catalog:'
         version: 4.1.11
 
-  workbench/elysiajs:
+  workbench/elysiajs-node:
     dependencies:
       '@workflow/world-postgres':
         specifier: workspace:*

@@ -62,7 +62,7 @@ const DEV_TEST_CONFIGS = {
     apiFileImportPath: '../..',
     workflowsDir: 'src/workflows',
   },
-  elysiajs: {
+  'elysiajs-node': {
     generatedStepPath: 'node_modules/.nitro/workflow/steps.mjs',
     generatedWorkflowPath: 'node_modules/.nitro/workflow/workflows.mjs',
     apiFilePath: './src/index.ts',
@@ -144,7 +144,7 @@ matrix.app.push({
 });
 
 matrix.app.push({
-  name: 'elysiajs',
+  name: 'elysiajs-node',
   project: 'workbench-elysia-workflow',
   ...DEV_TEST_CONFIGS.elysiajs,
 });
