@@ -24,3 +24,7 @@ npx vercel --prebuilt
 npm run build
 bun run .output/server/index.mjs
 ```
+
+## Limitations
+
+Currently, Nitro does not support passing `idleTimeout` to the underlying Bun server that ElysiaJS uses. By default, Bun sets `idleTimeout = 10` seconds, which means workflow suspensions over 10 seconds will fail.
