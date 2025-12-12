@@ -63,34 +63,17 @@ export default async function StepDetailPage({ params }: StepPageProps) {
     defaultColor: false,
   });
 
-  // Step data configuration
-  const environmentVariables = [
-    {
-      name: 'SLACK_BOT_TOKEN',
-      description: 'Your Slack Bot User OAuth Token',
-      required: true,
-    },
-  ];
-
-  const dependencies = [
+  // Use step data or fallback to defaults
+  const environmentVariables = step.environmentVariables || [];
+  const dependencies = step.dependencies || [
     {
       name: '@vercel/workflow',
       url: '/docs/getting-started',
     },
   ];
-
-  const relatedLinks = [
-    {
-      title: 'AI Slackbot Agent',
-      href: '#',
-      icon: 'document' as const,
-    },
-    {
-      title: 'AI Content Generation Pipeline',
-      href: '#',
-      icon: 'lightning' as const,
-    },
-  ];
+  const tags = step.tags || [];
+  const integration = step.integration;
+  const longDescription = step.longDescription || step.description;
 
   return (
     <div className="min-h-screen bg-background">
@@ -108,20 +91,17 @@ export default async function StepDetailPage({ params }: StepPageProps) {
             description={step.description}
             category={step.category}
             type={step.type}
-            tags={['slack', 'messaging', 'notifications']}
+            tags={tags}
           />
 
           <Separator />
 
-          {/* Description */}
-          <div>
-            <p className="text-muted-foreground">
-              This step integrates with Slack to send a message to a slack
-              channel or user using the slack api. It provides a clean,
-              type-safe interface for working with the Slack API within your
-              Vercel Workflow.
-            </p>
-          </div>
+          {/* Long Description */}
+          {longDescription && (
+            <div>
+              <p className="text-muted-foreground">{longDescription}</p>
+            </div>
+          )}
 
           <CodeExample codeHtml={codeHtml} stepId={id} />
 
@@ -135,13 +115,10 @@ export default async function StepDetailPage({ params }: StepPageProps) {
         {/* Sidebar */}
         <StepSidebar
           category={step.category}
-          integration={{
-            name: 'Slack',
-            icon: 'S',
-          }}
+          integration={integration}
           author={step.author || 'Workflow Elements'}
           dependenciesCount={dependencies.length}
-          relatedLinks={relatedLinks}
+          // relatedLinks={relatedLinks}
         />
       </div>
     </div>

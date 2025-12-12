@@ -27,7 +27,9 @@ export function StepSidebar({
   return (
     <aside className="space-y-6">
       <div>
-        <h3 className="mb-4 text-sm font-semibold">Details</h3>
+        <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Details
+        </h3>
         <div className="space-y-4 text-sm">
           <div>
             <div className="text-muted-foreground">Category</div>
@@ -59,7 +61,9 @@ export function StepSidebar({
         <>
           <Separator />
           <div>
-            <h3 className="mb-4 text-sm font-semibold">Related</h3>
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Related
+            </h3>
             <div className="space-y-2 text-sm">
               {relatedLinks.map((link) => (
                 <Link

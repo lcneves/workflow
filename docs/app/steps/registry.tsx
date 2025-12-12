@@ -189,11 +189,11 @@ function StepCard({ step }: { step: (typeof stepsData)[0] }) {
       </div>
 
       {/* Icon/Logo Placeholder */}
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
+      {/* <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
         <span className="text-2xl font-bold text-muted-foreground">
           {step.name.charAt(0)}
         </span>
-      </div>
+      </div> */}
 
       {/* Content */}
       <div className="flex-1">
@@ -208,9 +208,9 @@ function StepCard({ step }: { step: (typeof stepsData)[0] }) {
       {/* Footer */}
       <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
         <span>{step.author}</span>
-        {step.downloads && (
+        {/* {step.downloads && (
           <span>{(step.downloads / 1000).toFixed(1)}k downloads</span>
-        )}
+        )} */}
       </div>
     </Link>
   );
