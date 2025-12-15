@@ -23,8 +23,10 @@ export class StandaloneBuilder extends BaseBuilder {
     await this.buildWebhookFunction();
 
     // Build unified manifest from workflow bundle
-    const workflowBundlePath = this.resolvePath('.swc/workflows.js');
-    const manifestDir = this.resolvePath('.swc');
+    const workflowBundlePath = this.resolvePath(
+      this.config.workflowsBundlePath
+    );
+    const manifestDir = this.resolvePath('.well-known/workflow/v1');
     await this.createManifest({
       workflowBundlePath,
       manifestDir,

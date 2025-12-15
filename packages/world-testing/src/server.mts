@@ -5,7 +5,7 @@ import { getHookByToken, getRun, resumeHook, start } from 'workflow/api';
 import { getWorld } from 'workflow/runtime';
 import * as z from 'zod';
 import flow from '../.well-known/workflow/v1/flow.js';
-import manifest from '../.well-known/workflow/v1/manifest.debug.json' with {
+import manifest from '../.well-known/workflow/v1/manifest.json' with {
   type: 'json',
 };
 import step from '../.well-known/workflow/v1/step.js';
@@ -22,15 +22,18 @@ type Workflows<F extends Files> = keyof (typeof manifest.workflows)[F];
 
 const Invoke = z
   .object({
-    file: z.literal(Object.keys(manifest.workflows) as Files[]),
+    file: z.enum(Object.keys(manifest.workflows) as [Files, ...Files[]]),
     workflow: z.string(),
     args: z.unknown().array().default([]),
   })
   .transform((obj) => {
     const file = obj.file as keyof typeof manifest.workflows;
     const workflow = z
-      .literal(
-        Object.keys(manifest.workflows[file]) as Workflows<typeof file>[]
+      .enum(
+        Object.keys(manifest.workflows[file]) as [
+          Workflows<typeof file>,
+          ...Workflows<typeof file>[],
+        ]
       )
       .parse(obj.workflow);
     return {
@@ -82,7 +85,9 @@ serve(
     process.env.PORT = info.port.toString();
 
     for (const [filename, workflows] of Object.entries(manifest.workflows)) {
-      for (const workflowName of Object.keys(workflows)) {
+      for (const workflowName of Object.keys(
+        workflows as Record<string, unknown>
+      )) {
         console.log(
           `$ curl -X POST http://localhost:${info.port}/invoke -d '${JSON.stringify(
             {
