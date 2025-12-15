@@ -61,13 +61,7 @@ const possibleManifestPaths = [
 ];
 
 async function findWorkflowDataDir(cwd: string) {
-  const paths = [
-    ...possibleWorkflowDataPaths,
-    // This will be the case for testing CLI/Web from the CLI/Web
-    // package folders directly
-    '../../workbench/nextjs-turbopack/.next/workflow-data',
-  ];
-  for (const path of paths) {
+  for (const path of possibleWorkflowDataPaths) {
     const fullPath = join(cwd, path);
     if (
       await access(fullPath)
@@ -82,13 +76,7 @@ async function findWorkflowDataDir(cwd: string) {
 }
 
 async function findManifestPath(cwd: string) {
-  const paths = [
-    ...possibleManifestPaths,
-    // This will be the case for testing CLI/Web from the CLI/Web
-    // package folders directly
-    '../../workbench/nextjs-turbopack/app/.well-known/workflow/v1/manifest.json',
-  ];
-  for (const path of paths) {
+  for (const path of possibleManifestPaths) {
     const fullPath = join(cwd, path);
     if (
       await access(fullPath)
