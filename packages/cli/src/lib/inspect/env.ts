@@ -44,6 +44,7 @@ export const getEnvVars = (): Record<string, string> => {
     WORKFLOW_LOCAL_UI: env.WORKFLOW_LOCAL_UI || '',
     PORT: env.PORT || '',
     WORKFLOW_LOCAL_DATA_DIR: env.WORKFLOW_LOCAL_DATA_DIR || '',
+    WORKFLOW_MANIFEST_PATH: env.WORKFLOW_MANIFEST_PATH || '',
   };
 };
 
@@ -51,6 +52,12 @@ const possibleWorkflowDataPaths = [
   '.next/workflow-data',
   '.workflow-data',
   'workflow-data',
+];
+
+const possibleManifestPaths = [
+  'app/.well-known/workflow/v1/manifest.json',
+  'src/app/.well-known/workflow/v1/manifest.json',
+  '.well-known/workflow/v1/manifest.json',
 ];
 
 async function findWorkflowDataDir(cwd: string) {
@@ -74,12 +81,36 @@ async function findWorkflowDataDir(cwd: string) {
   }
 }
 
+async function findManifestPath(cwd: string) {
+  const paths = [
+    ...possibleManifestPaths,
+    // This will be the case for testing CLI/Web from the CLI/Web
+    // package folders directly
+    '../../workbench/nextjs-turbopack/app/.well-known/workflow/v1/manifest.json',
+  ];
+  for (const path of paths) {
+    const fullPath = join(cwd, path);
+    if (
+      await access(fullPath)
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      const absolutePath = resolve(fullPath);
+      logger.debug('Found workflow manifest:', absolutePath);
+      return absolutePath;
+    }
+  }
+}
+
 /**
  * Overwrites process.env variables related to local world configuration,
  * if relevant environment variables aren't set already.
  */
 export const inferLocalWorldEnvVars = async () => {
   const envVars = getEnvVars();
+  const cwd = getWorkflowConfig().workingDir;
+  let repoRoot: string | undefined;
+
   if (!envVars.PORT) {
     logger.warn(
       'PORT environment variable is not set, using default port 3000'
@@ -88,35 +119,63 @@ export const inferLocalWorldEnvVars = async () => {
     writeEnvVars(envVars);
   }
 
-  // Paths to check, in order of preference
+  // Infer workflow data directory
   if (!envVars.WORKFLOW_LOCAL_DATA_DIR) {
-    const cwd = getWorkflowConfig().workingDir;
-
     const localPath = await findWorkflowDataDir(cwd);
     if (localPath) {
       envVars.WORKFLOW_LOCAL_DATA_DIR = localPath;
       writeEnvVars(envVars);
-      return;
-    }
+    } else {
+      // As a fallback, find the repo root, and try to infer the data dir from there
+      repoRoot = await findRepoRoot(cwd, cwd);
+      if (repoRoot) {
+        const repoPath = await findWorkflowDataDir(repoRoot);
+        if (repoPath) {
+          envVars.WORKFLOW_LOCAL_DATA_DIR = repoPath;
+          writeEnvVars(envVars);
+        }
+      }
 
-    // As a fallback, find the repo root, and try to infer the data dir from there
-    const repoRoot = await findRepoRoot(cwd, cwd);
-    if (repoRoot) {
-      const repoPath = await findWorkflowDataDir(repoRoot);
-      if (repoPath) {
-        envVars.WORKFLOW_LOCAL_DATA_DIR = repoPath;
-        writeEnvVars(envVars);
-        return;
+      if (!envVars.WORKFLOW_LOCAL_DATA_DIR) {
+        logger.error(
+          'No workflow data directory found. Have you run any workflows yet?'
+        );
+        logger.warn(
+          `\nCheck whether your data is in any of:\n${possibleWorkflowDataPaths.map((p) => `  ${cwd}/${p}${repoRoot && repoRoot !== cwd ? `\n  ${repoRoot}/${p}` : ''}`).join('\n')}\n`
+        );
+        throw new Error('No workflow data directory found');
       }
     }
+  }
 
-    logger.error(
-      'No workflow data directory found. Have you run any workflows yet?'
-    );
-    logger.warn(
-      `\nCheck whether your data is in any of:\n${possibleWorkflowDataPaths.map((p) => `  ${cwd}/${p}${repoRoot && repoRoot !== cwd ? `\n  ${repoRoot}/${p}` : ''}`).join('\n')}\n`
-    );
-    throw new Error('No workflow data directory found');
+  // Infer workflow manifest path (for Graph tab in web UI)
+  if (!envVars.WORKFLOW_MANIFEST_PATH) {
+    const localManifest = await findManifestPath(cwd);
+    if (localManifest) {
+      envVars.WORKFLOW_MANIFEST_PATH = localManifest;
+      writeEnvVars(envVars);
+      logger.debug(`Found workflow manifest at: ${localManifest}`);
+    } else {
+      // As a fallback, find the repo root, and try to infer the manifest from there
+      if (!repoRoot) {
+        repoRoot = await findRepoRoot(cwd, cwd);
+      }
+      if (repoRoot) {
+        const repoManifest = await findManifestPath(repoRoot);
+        if (repoManifest) {
+          envVars.WORKFLOW_MANIFEST_PATH = repoManifest;
+          writeEnvVars(envVars);
+          logger.debug(`Found workflow manifest at: ${repoManifest}`);
+        }
+      }
+
+      // It's okay if manifest is not found - the web UI will just show empty workflows
+      if (!envVars.WORKFLOW_MANIFEST_PATH) {
+        logger.debug(
+          'No workflow manifest found. Workflows tab will be empty.'
+        );
+      }
+    }
   }
 };
 
