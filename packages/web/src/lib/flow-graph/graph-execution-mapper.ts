@@ -18,6 +18,7 @@ const PRIMITIVE_LABELS = {
   sleep: 'sleep',
   createHook: 'createHook',
   createWebhook: 'createWebhook',
+  awaitWebhook: 'awaitWebhook',
 } as const;
 
 /**
@@ -613,6 +614,77 @@ function processPrimitiveEvents(
     };
 
     // Append or set executions
+    const existing = nodeExecutions.get(graphNode.id) || [];
+    nodeExecutions.set(graphNode.id, [...existing, execution]);
+
+    if (!executionPath.includes(graphNode.id)) {
+      executionPath.push(graphNode.id);
+    }
+  }
+
+  // Process awaitWebhook nodes - they wait for hook_received events
+  const awaitWebhookNodes =
+    primitivesByLabel.get(PRIMITIVE_LABELS.awaitWebhook) || [];
+
+  // Track which hook correlations have been received
+  const receivedHookCorrelations = new Set<string>();
+  for (const event of events) {
+    if (event.eventType === 'hook_received' && event.correlationId) {
+      receivedHookCorrelations.add(event.correlationId);
+    }
+  }
+
+  // Match awaitWebhook nodes with their corresponding hook events
+  let awaitWebhookIndex = 0;
+  for (const correlationId of sortedHookCorrelations) {
+    const graphNode =
+      awaitWebhookNodes.length === 1
+        ? awaitWebhookNodes[0]
+        : awaitWebhookNodes[awaitWebhookIndex];
+    awaitWebhookIndex++;
+
+    if (!graphNode) continue;
+
+    const correlationEvents = eventsByCorrelation.get(correlationId) || [];
+    const createdEvent = correlationEvents.find(
+      (e) => e.eventType === 'hook_created'
+    );
+    const receivedEvent = correlationEvents.find(
+      (e) => e.eventType === 'hook_received'
+    );
+
+    // Determine status based on whether hook was received
+    let status: StepExecution['status'];
+    let startedAt: string | undefined;
+    let completedAt: string | undefined;
+    let duration = 0;
+
+    if (receivedEvent) {
+      status = 'completed';
+      startedAt = createdEvent
+        ? new Date(createdEvent.createdAt).toISOString()
+        : new Date(receivedEvent.createdAt).toISOString();
+      completedAt = new Date(receivedEvent.createdAt).toISOString();
+      duration =
+        new Date(completedAt).getTime() - new Date(startedAt).getTime();
+    } else if (createdEvent) {
+      // Hook created but not yet received - running/waiting
+      status = 'running';
+      startedAt = new Date(createdEvent.createdAt).toISOString();
+    } else {
+      // No events yet - pending
+      status = 'pending';
+    }
+
+    const execution: StepExecution = {
+      nodeId: graphNode.id,
+      attemptNumber: 1,
+      status,
+      startedAt,
+      completedAt,
+      duration,
+    };
+
     const existing = nodeExecutions.get(graphNode.id) || [];
     nodeExecutions.set(graphNode.id, [...existing, execution]);
 

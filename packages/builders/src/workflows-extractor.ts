@@ -43,6 +43,8 @@ interface AnalysisContext {
   nodeCounter: number;
   inLoop: string | null;
   inConditional: string | null;
+  /** Tracks variables assigned from createWebhook() or createHook() */
+  webhookVariables: Set<string>;
 }
 
 interface AnalysisResult {
@@ -232,6 +234,76 @@ function extractStepDeclarations(
   }
 
   return stepDeclarations;
+}
+
+/**
+ * Extract inline step declarations from within a function body.
+ * These are steps defined as variable declarations inside a workflow function.
+ * Pattern: var/const varName = globalThis[Symbol.for("WORKFLOW_USE_STEP")]("stepId")
+ */
+function extractInlineStepDeclarations(
+  stmts: Statement[]
+): Map<string, { stepId: string }> {
+  const inlineSteps = new Map<string, { stepId: string }>();
+
+  for (const stmt of stmts) {
+    if (stmt.type === 'VariableDeclaration') {
+      const varDecl = stmt as VariableDeclaration;
+      for (const decl of varDecl.declarations) {
+        if (
+          decl.id.type === 'Identifier' &&
+          decl.init?.type === 'CallExpression'
+        ) {
+          const callExpr = decl.init as CallExpression;
+          // Check for globalThis[Symbol.for("WORKFLOW_USE_STEP")]("stepId") pattern
+          if (callExpr.callee.type === 'MemberExpression') {
+            const member = callExpr.callee as MemberExpression;
+            // Check if object is globalThis
+            if (
+              member.object.type === 'Identifier' &&
+              (member.object as Identifier).value === 'globalThis' &&
+              member.property.type === 'Computed'
+            ) {
+              // For computed member access globalThis[Symbol.for(...)],
+              // the property is a Computed type containing the expression
+              const computedExpr = (member.property as any).expression;
+              if (computedExpr?.type === 'CallExpression') {
+                const symbolCall = computedExpr as CallExpression;
+                // Check if it's Symbol.for("WORKFLOW_USE_STEP")
+                if (symbolCall.callee.type === 'MemberExpression') {
+                  const symbolMember = symbolCall.callee as MemberExpression;
+                  if (
+                    symbolMember.object.type === 'Identifier' &&
+                    (symbolMember.object as Identifier).value === 'Symbol' &&
+                    symbolMember.property.type === 'Identifier' &&
+                    (symbolMember.property as Identifier).value === 'for' &&
+                    symbolCall.arguments.length > 0 &&
+                    symbolCall.arguments[0].expression.type ===
+                      'StringLiteral' &&
+                    (symbolCall.arguments[0].expression as any).value ===
+                      'WORKFLOW_USE_STEP'
+                  ) {
+                    // Extract the stepId from the outer call arguments
+                    if (
+                      callExpr.arguments.length > 0 &&
+                      callExpr.arguments[0].expression.type === 'StringLiteral'
+                    ) {
+                      const stepId = (callExpr.arguments[0].expression as any)
+                        .value;
+                      const varName = (decl.id as Identifier).value;
+                      inlineSteps.set(varName, { stepId });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return inlineSteps;
 }
 
 /**
@@ -432,15 +504,26 @@ function analyzeWorkflowFunction(
     nodeCounter: 0,
     inLoop: null,
     inConditional: null,
+    webhookVariables: new Set(),
   };
 
   let prevExitIds = ['start'];
 
   if (func.body?.stmts) {
+    // Extract inline step declarations from the workflow body
+    // These are steps defined as variables inside the workflow function
+    const inlineSteps = extractInlineStepDeclarations(func.body.stmts);
+
+    // Merge inline steps with global step declarations
+    const mergedStepDeclarations = new Map(stepDeclarations);
+    for (const [name, info] of inlineSteps) {
+      mergedStepDeclarations.set(name, info);
+    }
+
     for (const stmt of func.body.stmts) {
       const result = analyzeStatement(
         stmt,
-        stepDeclarations,
+        mergedStepDeclarations,
         context,
         functionMap,
         variableMap
@@ -516,6 +599,19 @@ function analyzeStatement(
     const varDecl = stmt as VariableDeclaration;
     for (const decl of varDecl.declarations) {
       if (decl.init) {
+        // Track webhook/hook variable assignments: const webhook = createWebhook()
+        if (
+          decl.id.type === 'Identifier' &&
+          decl.init.type === 'CallExpression' &&
+          (decl.init as CallExpression).callee.type === 'Identifier'
+        ) {
+          const funcName = ((decl.init as CallExpression).callee as Identifier)
+            .value;
+          if (funcName === 'createWebhook' || funcName === 'createHook') {
+            context.webhookVariables.add((decl.id as Identifier).value);
+          }
+        }
+
         const result = analyzeExpression(
           decl.init,
           stepDeclarations,
@@ -1074,6 +1170,36 @@ function analyzeExpression(
           entryNodeIds.push(...refResult.entryNodeIds);
           exitNodeIds.push(...refResult.exitNodeIds);
         }
+      }
+    }
+
+    // Handle await on a webhook/hook variable: await webhook
+    if (awaitedExpr.type === 'Identifier') {
+      const varName = (awaitedExpr as Identifier).value;
+      if (context.webhookVariables.has(varName)) {
+        const nodeId = `node_${context.nodeCounter++}`;
+        const metadata: NodeMetadata = {};
+
+        if (context.inLoop) {
+          metadata.loopId = context.inLoop;
+        }
+        if (context.inConditional) {
+          metadata.conditionalId = context.inConditional;
+        }
+
+        const node: ManifestNode = {
+          id: nodeId,
+          type: 'primitive',
+          data: {
+            label: 'awaitWebhook',
+            nodeKind: 'primitive',
+          },
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        };
+
+        nodes.push(node);
+        entryNodeIds.push(nodeId);
+        exitNodeIds.push(nodeId);
       }
     }
   }
