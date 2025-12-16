@@ -224,7 +224,7 @@ Add this to your `nuxt.config.ts`:
 export default defineNuxtConfig({
   modules: ["workflow/nuxt"],
   runtimeConfig: {
-    // Server-only (recommended): this is internal queue traffic, not browser config.
+    // Server-only runtime config: this is internal queue traffic, not for the browser.
     workflow: {
       // Full origin (recommended)
       baseUrl: "https://local.example.com:4443",
