@@ -2,11 +2,17 @@
 
 import {
   Background,
+  BaseEdge,
   Controls,
   type Edge,
+  EdgeLabelRenderer,
+  type EdgeProps,
+  Handle,
   MarkerType,
   type Node,
+  type NodeProps,
   Panel,
+  Position,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -24,8 +30,129 @@ interface WorkflowGraphViewerProps {
   workflow: WorkflowGraph;
 }
 
+// Custom Loop Node component with left-side handles for self-loop edge
+function LoopNodeComponent({ data, selected }: NodeProps) {
+  const nodeData = data as {
+    label: React.ReactNode;
+    nodeKind: string;
+    isLoopNode?: boolean;
+    isAwaitLoop?: boolean;
+    nodeStyle?: React.CSSProperties;
+  };
+
+  return (
+    <div
+      className="relative"
+      style={{
+        borderWidth: 1,
+        borderRadius: 8,
+        padding: 12,
+        width: 220,
+        borderStyle: 'solid',
+        ...nodeData.nodeStyle,
+        boxShadow: selected ? '0 0 0 2px rgba(168, 85, 247, 0.5)' : undefined,
+      }}
+    >
+      {/* Node content */}
+      {nodeData.label}
+
+      {/* Main flow handles (top/bottom) */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="!bg-purple-500"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!bg-purple-500"
+      />
+
+      {/* Left-side handles for self-loop edge */}
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="loop-out"
+        className="!bg-purple-500 !-left-1"
+        style={{ top: '30%' }}
+      />
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="loop-in"
+        className="!bg-purple-500 !-left-1"
+        style={{ top: '70%' }}
+      />
+    </div>
+  );
+}
+
 // Custom node components
-const nodeTypes = {};
+const nodeTypes = {
+  loopNode: LoopNodeComponent,
+};
+
+// Custom self-loop edge that curves to the left of the node
+function SelfLoopEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  label,
+  markerEnd,
+}: EdgeProps) {
+  // Calculate the loop path that goes to the left of the node
+  const loopOffset = 50; // How far left the loop extends
+  const verticalGap = targetY - sourceY;
+
+  // Create a path that exits left, curves around, and enters left
+  const path = `
+    M ${sourceX} ${sourceY}
+    C ${sourceX - loopOffset} ${sourceY},
+      ${sourceX - loopOffset} ${targetY},
+      ${targetX} ${targetY}
+  `;
+
+  // Label position (center-left of the loop)
+  const labelX = sourceX - loopOffset - 10;
+  const labelY = sourceY + verticalGap / 2;
+
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={markerEnd}
+        style={{
+          stroke: '#a855f7',
+          strokeWidth: 2,
+        }}
+      />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-100%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: 'all',
+            }}
+            className="nodrag nopan"
+          >
+            <span className="px-1.5 py-0.5 text-[9px] font-bold bg-purple-200 dark:bg-purple-900/50 text-purple-700 dark:text-purple-200 rounded border border-purple-400 dark:border-purple-600 whitespace-nowrap">
+              {label}
+            </span>
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+// Custom edge types
+const edgeTypes = {
+  selfLoop: SelfLoopEdge,
+};
 
 // Get node styling based on node kind - uses theme-aware colors
 function getNodeStyle(nodeKind: string) {
@@ -96,6 +223,8 @@ function calculateEnhancedLayout(workflow: WorkflowGraph): {
     target: string;
     type: string;
     label?: string;
+    sourceHandle?: string;
+    targetHandle?: string;
   }>;
 } {
   // Clone nodes (positions are always provided by the manifest adapter)
@@ -113,6 +242,8 @@ function calculateEnhancedLayout(workflow: WorkflowGraph): {
     target: string;
     type: string;
     label?: string;
+    sourceHandle?: string;
+    targetHandle?: string;
   }> = [];
 
   // Group nodes by their control flow context
@@ -233,19 +364,9 @@ function calculateEnhancedLayout(workflow: WorkflowGraph): {
     }
   }
 
-  // Create visual containers for loops and add loop-back edges
+  // Create visual containers for loops
   for (const [loopId, loopNodeList] of loopNodes) {
     if (loopNodeList.length > 0) {
-      // Find first and last nodes in the loop by sorting by node ID
-      loopNodeList.sort((a, b) => {
-        const aNum = parseInt(a.id.replace('node_', '')) || 0;
-        const bNum = parseInt(b.id.replace('node_', '')) || 0;
-        return aNum - bNum;
-      });
-
-      const firstNode = loopNodeList[0];
-      const lastNode = loopNodeList[loopNodeList.length - 1];
-
       // Calculate bounding box for all loop nodes
       const minX = Math.min(...loopNodeList.map((n) => n.position.x));
       const maxX = Math.max(...loopNodeList.map((n) => n.position.x));
@@ -279,14 +400,18 @@ function calculateEnhancedLayout(workflow: WorkflowGraph): {
         data: { label: loopLabel },
       });
 
-      // Add a back edge from the last node to first node
-      additionalEdges.push({
-        id: `loop_back_${loopId}`,
-        source: lastNode.id,
-        target: firstNode.id,
-        type: 'loop',
-        label: '↺ loop',
-      });
+      // Add self-loop edges for each node in the loop (using left-side handles)
+      for (const loopNode of loopNodeList) {
+        additionalEdges.push({
+          id: `self_loop_${loopNode.id}`,
+          source: loopNode.id,
+          target: loopNode.id,
+          sourceHandle: 'loop-out',
+          targetHandle: 'loop-in',
+          type: 'selfLoop',
+          label: isAwaitLoop ? '⟳ await' : '⟳ loop',
+        });
+      }
     }
   }
 
@@ -300,6 +425,8 @@ type ConsolidatedEdge = {
   target: string;
   type?: string;
   label?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
   isConsolidated?: boolean;
   isOriginal?: boolean;
 };
@@ -473,29 +600,22 @@ function convertToReactFlowNodes(workflow: WorkflowGraph): Node[] {
   // Add regular nodes
   nodes.forEach((node) => {
     const styles = getNodeStyle(node.data.nodeKind);
+    const metadata = node.metadata;
+    const isLoopNode = !!metadata?.loopId;
+    const isAwaitLoop = !!metadata?.loopIsAwait;
 
-    // Determine node type based on its role in the workflow
-    let nodeType: 'input' | 'output' | 'default' = 'default';
+    // Determine node type - use custom loopNode for nodes in loops
+    let nodeType: 'input' | 'output' | 'default' | 'loopNode' = isLoopNode
+      ? 'loopNode'
+      : 'default';
     if (node.type === 'workflowStart') {
       nodeType = 'input'; // Only source handle (outputs edges)
     } else if (node.type === 'workflowEnd') {
       nodeType = 'output'; // Only target handle (receives edges)
     }
 
-    // Add CFG metadata badges
-    const metadata = node.metadata;
+    // Add CFG metadata badges (loop badge removed - now using visual notch)
     const badges: React.ReactNode[] = [];
-
-    if (metadata?.loopId) {
-      badges.push(
-        <span
-          key="loop"
-          className="px-1.5 py-0.5 text-[10px] font-bold bg-purple-200 dark:bg-purple-900/30 !text-gray-950 dark:!text-white rounded border border-purple-400 dark:border-purple-700"
-        >
-          {metadata.loopIsAwait ? '⟳ await loop' : '⟳ loop'}
-        </span>
-      );
-    }
 
     if (metadata?.conditionalId) {
       badges.push(
@@ -542,39 +662,61 @@ function convertToReactFlowNodes(workflow: WorkflowGraph): Node[] {
       }
     }
 
-    reactFlowNodes.push({
-      id: node.id,
-      type: nodeType,
-      position,
-      parentId: parentId,
-      extent: parentId ? 'parent' : undefined,
-      expandParent: true,
-      data: {
-        ...node.data,
-        label: (
-          <div className="flex flex-col gap-1.5 w-full overflow-hidden">
-            <div className="flex items-start gap-2 w-full overflow-hidden">
-              <div className="flex-shrink-0">
-                {getNodeIcon(node.data.nodeKind)}
-              </div>
-              <span className="text-sm font-medium break-words whitespace-normal leading-tight flex-1 min-w-0">
-                {node.data.label}
-              </span>
-            </div>
-            {badges.length > 0 && (
-              <div className="flex flex-wrap gap-1">{badges}</div>
-            )}
-          </div>
-        ),
-      },
-      style: {
-        borderWidth: 1,
-        borderRadius: 8,
-        padding: 12,
-        width: 220,
-        ...styles,
-      },
-    });
+    const nodeLabel = (
+      <div
+        key={`label-${node.id}`}
+        className="flex flex-col gap-1.5 w-full overflow-hidden"
+      >
+        <div className="flex items-start gap-2 w-full overflow-hidden">
+          <div className="flex-shrink-0">{getNodeIcon(node.data.nodeKind)}</div>
+          <span className="text-sm font-medium break-words whitespace-normal leading-tight flex-1 min-w-0">
+            {node.data.label}
+          </span>
+        </div>
+        {badges.length > 0 && (
+          <div className="flex flex-wrap gap-1">{badges}</div>
+        )}
+      </div>
+    );
+
+    // For loop nodes, pass style through data for custom component
+    if (isLoopNode) {
+      reactFlowNodes.push({
+        id: node.id,
+        type: nodeType,
+        position,
+        parentId: parentId,
+        extent: parentId ? 'parent' : undefined,
+        expandParent: true,
+        data: {
+          ...node.data,
+          label: nodeLabel,
+          isLoopNode: true,
+          isAwaitLoop,
+          nodeStyle: styles,
+        },
+      });
+    } else {
+      reactFlowNodes.push({
+        id: node.id,
+        type: nodeType,
+        position,
+        parentId: parentId,
+        extent: parentId ? 'parent' : undefined,
+        expandParent: true,
+        data: {
+          ...node.data,
+          label: nodeLabel,
+        },
+        style: {
+          borderWidth: 1,
+          borderRadius: 8,
+          padding: 12,
+          width: 220,
+          ...styles,
+        },
+      });
+    }
   });
 
   return reactFlowNodes;
@@ -607,6 +749,25 @@ function convertToReactFlowEdges(workflow: WorkflowGraph): Edge[] {
   const allEdges = consolidateEdges(rawEdges, workflow.nodes);
 
   return allEdges.map((edge) => {
+    // Handle self-loop edges specially (they use custom edge type and handles)
+    if (edge.type === 'selfLoop') {
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+        type: 'selfLoop',
+        label: edge.label,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 12,
+          height: 12,
+          color: '#a855f7',
+        },
+      };
+    }
+
     // Check if this is a loop-back edge
     const isLoopBackEdge = edge.id.startsWith('loop_back_');
 
@@ -707,6 +868,7 @@ export function WorkflowGraphViewer({ workflow }: WorkflowGraphViewerProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         minZoom={0.1}
         maxZoom={2}
