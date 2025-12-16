@@ -1,6 +1,7 @@
 'use client';
 
 import type { WorldConfig } from '@/lib/config-world';
+import { resolveToAbsolutePath } from '@/lib/data-dir';
 
 const STORAGE_KEY = 'workflow-recent-configs';
 const MAX_RECENT_CONFIGS = 10;
@@ -101,21 +102,93 @@ export function getRecentConfigs(): RecentConfig[] {
 }
 
 /**
- * Save a config to recent history
+ * Migrate existing recent configs to ensure all dataDirs are absolute paths.
+ * This runs once on page load to fix any legacy relative paths.
  */
-export function saveRecentConfig(config: WorldConfig): RecentConfig {
+export async function migrateRecentConfigs(): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  const configs = getRecentConfigs();
+  if (configs.length === 0) return;
+
+  let hasChanges = false;
+  const migratedConfigs = await Promise.all(
+    configs.map(async (recentConfig) => {
+      const { config } = recentConfig;
+      if (!config.dataDir || config.dataDir.startsWith('/')) {
+        return recentConfig;
+      }
+
+      // Relative path found - resolve it
+      try {
+        const absolutePath = await resolveToAbsolutePath(config.dataDir);
+        if (absolutePath !== config.dataDir) {
+          hasChanges = true;
+          const updatedConfig = { ...config, dataDir: absolutePath };
+          return {
+            ...recentConfig,
+            id: generateConfigId(updatedConfig),
+            name: generateConfigName(updatedConfig),
+            config: updatedConfig,
+          };
+        }
+      } catch {
+        // Keep original if resolution fails
+      }
+      return recentConfig;
+    })
+  );
+
+  if (hasChanges) {
+    // Deduplicate by ID (in case migration creates duplicates)
+    const seen = new Set<string>();
+    const deduped = migratedConfigs.filter((config) => {
+      if (seen.has(config.id)) return false;
+      seen.add(config.id);
+      return true;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(deduped));
+  }
+}
+
+/**
+ * Normalize a config by ensuring dataDir is an absolute path
+ */
+async function normalizeConfig(config: WorldConfig): Promise<WorldConfig> {
+  if (!config.dataDir) return config;
+
+  try {
+    const absolutePath = await resolveToAbsolutePath(config.dataDir);
+    if (absolutePath !== config.dataDir) {
+      return { ...config, dataDir: absolutePath };
+    }
+  } catch {
+    // If resolution fails, keep original path
+  }
+  return config;
+}
+
+/**
+ * Save a config to recent history (async version that normalizes paths)
+ */
+export async function saveRecentConfig(
+  config: WorldConfig
+): Promise<RecentConfig> {
+  // Normalize config to ensure absolute paths
+  const normalizedConfig = await normalizeConfig(config);
+
   if (typeof window === 'undefined') {
     return {
-      id: generateConfigId(config),
-      name: generateConfigName(config),
-      config,
+      id: generateConfigId(normalizedConfig),
+      name: generateConfigName(normalizedConfig),
+      config: normalizedConfig,
       lastUsed: Date.now(),
       createdAt: Date.now(),
     };
   }
 
-  const id = generateConfigId(config);
-  const name = generateConfigName(config);
+  const id = generateConfigId(normalizedConfig);
+  const name = generateConfigName(normalizedConfig);
   const now = Date.now();
 
   try {
@@ -128,7 +201,7 @@ export function saveRecentConfig(config: WorldConfig): RecentConfig {
       // Update existing entry
       entry = {
         ...recent[existingIndex],
-        config, // Update with latest config
+        config: normalizedConfig, // Update with latest config
         name, // Regenerate name in case it changed
         lastUsed: now,
       };
@@ -138,7 +211,7 @@ export function saveRecentConfig(config: WorldConfig): RecentConfig {
       entry = {
         id,
         name,
-        config,
+        config: normalizedConfig,
         lastUsed: now,
         createdAt: now,
       };
@@ -156,7 +229,7 @@ export function saveRecentConfig(config: WorldConfig): RecentConfig {
     return {
       id,
       name,
-      config,
+      config: normalizedConfig,
       lastUsed: now,
       createdAt: now,
     };

@@ -91,8 +91,11 @@ function LayoutContent({ children }: LayoutClientProps) {
     }
 
     // Config is valid - save to recent configs and mark as checked
-    saveRecentConfig(config);
     hasCheckedConfigRef.current = true;
+    // Save async (fire and forget - no need to await)
+    saveRecentConfig(config).catch(() => {
+      // Ignore save errors
+    });
   }, [pathname, needsConfig, configHealth, isCheckingConfig, config, router]);
 
   // If initialized with a resource/id or direct ID params, we navigate to the appropriate page

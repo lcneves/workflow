@@ -25,6 +25,7 @@ import { useWorldsAvailability } from '@/lib/hooks';
 import {
   getBackendType,
   getRecentConfigs,
+  migrateRecentConfigs,
   type RecentConfig,
   removeRecentConfig,
   saveRecentConfig,
@@ -91,7 +92,7 @@ function RecentProjectCard({
   return (
     <a
       className={cn(
-        'w-full text-left p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors group cursor-pointer',
+        'block w-full text-left p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors group cursor-pointer',
         'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
       )}
       href={url}
@@ -101,7 +102,7 @@ function RecentProjectCard({
       }}
     >
       <div className="flex items-start gap-3">
-        <div className="p-2 rounded-md bg-muted text-muted-foreground">
+        <div className="p-2 rounded-md bg-muted text-muted-foreground shrink-0">
           {getBackendIcon(recent.config)}
         </div>
         <div className="flex-1 min-w-0">
@@ -127,7 +128,7 @@ function RecentProjectCard({
             e.preventDefault();
             onRemove();
           }}
-          className="p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 transition-opacity"
+          className="p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 transition-opacity shrink-0"
           title="Remove from history"
         >
           <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
@@ -147,9 +148,15 @@ function SetupContent() {
   const { data: worldsAvailability = [], isLoading: isLoadingWorlds } =
     useWorldsAvailability();
 
-  // Load recent configs on mount
+  // Load recent configs on mount (and migrate any with relative paths)
   useEffect(() => {
-    setRecentConfigs(getRecentConfigs());
+    const loadConfigs = async () => {
+      // First migrate any configs with relative paths to absolute
+      await migrateRecentConfigs();
+      // Then load the (potentially updated) configs
+      setRecentConfigs(getRecentConfigs());
+    };
+    loadConfigs();
   }, []);
 
   // Get the original destination from query params
@@ -163,18 +170,18 @@ function SetupContent() {
     return buildUrlWithConfig(redirectTo, config);
   };
 
-  const handleApply = (newConfig: WorldConfig) => {
-    // Save to recent configs
-    saveRecentConfig(newConfig);
+  const handleApply = async (newConfig: WorldConfig) => {
+    // Save to recent configs (normalizes paths)
+    await saveRecentConfig(newConfig);
     setRecentConfigs(getRecentConfigs());
 
     // Navigate to the intended destination with the new config in URL
     router.push(buildConfigUrl(newConfig));
   };
 
-  const handleSelectRecent = (recent: RecentConfig) => {
+  const handleSelectRecent = async (recent: RecentConfig) => {
     // Update last used time
-    saveRecentConfig(recent.config);
+    await saveRecentConfig(recent.config);
     setRecentConfigs(getRecentConfigs());
 
     // Navigate to the intended destination with the selected config in URL
