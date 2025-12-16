@@ -15,6 +15,17 @@ import type {
 import { parseSync } from '@swc/core';
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Workflow primitives that should be shown as nodes in the graph.
+ * These are built-in workflow functions that represent meaningful
+ * pauses or wait points in the workflow execution.
+ */
+const WORKFLOW_PRIMITIVES = new Set(['sleep', 'createHook', 'createWebhook']);
+
+// ============================================================================
 // Internal Types (used during extraction only)
 // ============================================================================
 
@@ -297,9 +308,12 @@ function extractWorkflows(
       const workflowId = findWorkflowId(ast, workflowName);
       if (!workflowId) continue;
 
-      // Extract file path from workflowId: "workflow//path/to/file.ts//functionName"
+      // Extract file path and actual workflow name from workflowId: "workflow//path/to/file.ts//functionName"
+      // The bundler may rename functions to avoid collisions (e.g. addTenWorkflow -> addTenWorkflow2),
+      // but the workflowId contains the original TypeScript function name.
       const parts = workflowId.split('//');
       const filePath = parts.length > 1 ? parts[1] : 'unknown';
+      const actualWorkflowName = parts.length > 2 ? parts[2] : workflowName;
 
       const graph = analyzeWorkflowFunction(
         func,
@@ -312,7 +326,7 @@ function extractWorkflows(
         result[filePath] = {};
       }
 
-      result[filePath][workflowName] = {
+      result[filePath][actualWorkflowName] = {
         workflowId,
         graph,
       };
@@ -742,6 +756,20 @@ function analyzeStatement(
     context.inLoop = savedLoop;
   }
 
+  // Handle plain BlockStatement (bare blocks like { ... })
+  if (stmt.type === 'BlockStatement') {
+    const blockResult = analyzeBlock(
+      (stmt as BlockStatement).stmts,
+      stepDeclarations,
+      context,
+      functionMap
+    );
+    nodes.push(...blockResult.nodes);
+    edges.push(...blockResult.edges);
+    entryNodeIds = blockResult.entryNodeIds;
+    exitNodeIds = blockResult.exitNodeIds;
+  }
+
   if (stmt.type === 'ReturnStatement' && (stmt as any).argument) {
     const result = analyzeExpression(
       (stmt as any).argument,
@@ -834,7 +862,7 @@ function analyzeExpression(
     if (awaitedExpr.type === 'CallExpression') {
       const callExpr = awaitedExpr as CallExpression;
 
-      // Check for Promise.all/race/allSettled
+      // Check for Promise.all/race/allSettled/any
       if (callExpr.callee.type === 'MemberExpression') {
         const member = callExpr.callee as MemberExpression;
         if (
@@ -843,7 +871,7 @@ function analyzeExpression(
           member.property.type === 'Identifier'
         ) {
           const method = (member.property as Identifier).value;
-          if (['all', 'race', 'allSettled'].includes(method)) {
+          if (['all', 'race', 'allSettled', 'any'].includes(method)) {
             const parallelId = `parallel_${context.parallelCounter++}`;
 
             if (callExpr.arguments.length > 0) {
@@ -874,6 +902,29 @@ function analyzeExpression(
                     exitNodeIds.push(...elemResult.exitNodeIds);
                   }
                 }
+              } else {
+                // Handle non-array arguments like array.map(stepFn)
+                const argResult = analyzeExpression(
+                  arg,
+                  stepDeclarations,
+                  context,
+                  functionMap,
+                  visitedFunctions
+                );
+
+                for (const node of argResult.nodes) {
+                  if (!node.metadata) node.metadata = {};
+                  node.metadata.parallelGroupId = parallelId;
+                  node.metadata.parallelMethod = method;
+                  if (context.inLoop) {
+                    node.metadata.loopId = context.inLoop;
+                  }
+                }
+
+                nodes.push(...argResult.nodes);
+                edges.push(...argResult.edges);
+                entryNodeIds.push(...argResult.entryNodeIds);
+                exitNodeIds.push(...argResult.exitNodeIds);
               }
             }
 
@@ -882,7 +933,7 @@ function analyzeExpression(
         }
       }
 
-      // Regular call - check if it's a step or a helper function
+      // Regular call - check if it's a step, workflow primitive, or helper function
       if (callExpr.callee.type === 'Identifier') {
         const funcName = (callExpr.callee as Identifier).value;
         const stepInfo = stepDeclarations.get(funcName);
@@ -912,6 +963,31 @@ function analyzeExpression(
           nodes.push(node);
           entryNodeIds.push(nodeId);
           exitNodeIds.push(nodeId);
+        } else if (WORKFLOW_PRIMITIVES.has(funcName)) {
+          // Handle workflow primitives like sleep
+          const nodeId = `node_${context.nodeCounter++}`;
+          const metadata: NodeMetadata = {};
+
+          if (context.inLoop) {
+            metadata.loopId = context.inLoop;
+          }
+          if (context.inConditional) {
+            metadata.conditionalId = context.inConditional;
+          }
+
+          const node: ManifestNode = {
+            id: nodeId,
+            type: 'primitive',
+            data: {
+              label: funcName,
+              nodeKind: 'primitive',
+            },
+            metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+          };
+
+          nodes.push(node);
+          entryNodeIds.push(nodeId);
+          exitNodeIds.push(nodeId);
         } else {
           const transitiveResult = analyzeTransitiveCall(
             funcName,
@@ -924,6 +1000,22 @@ function analyzeExpression(
           edges.push(...transitiveResult.edges);
           entryNodeIds.push(...transitiveResult.entryNodeIds);
           exitNodeIds.push(...transitiveResult.exitNodeIds);
+        }
+      }
+
+      // Also analyze the arguments of awaited calls for step references in objects
+      for (const arg of callExpr.arguments) {
+        if (arg.expression?.type === 'ObjectExpression') {
+          const refResult = analyzeObjectForStepReferences(
+            arg.expression,
+            stepDeclarations,
+            context,
+            ''
+          );
+          nodes.push(...refResult.nodes);
+          edges.push(...refResult.edges);
+          entryNodeIds.push(...refResult.entryNodeIds);
+          exitNodeIds.push(...refResult.exitNodeIds);
         }
       }
     }
@@ -961,6 +1053,31 @@ function analyzeExpression(
         nodes.push(node);
         entryNodeIds.push(nodeId);
         exitNodeIds.push(nodeId);
+      } else if (WORKFLOW_PRIMITIVES.has(funcName)) {
+        // Handle non-awaited workflow primitives like createHook, createWebhook
+        const nodeId = `node_${context.nodeCounter++}`;
+        const metadata: NodeMetadata = {};
+
+        if (context.inLoop) {
+          metadata.loopId = context.inLoop;
+        }
+        if (context.inConditional) {
+          metadata.conditionalId = context.inConditional;
+        }
+
+        const node: ManifestNode = {
+          id: nodeId,
+          type: 'primitive',
+          data: {
+            label: funcName,
+            nodeKind: 'primitive',
+          },
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        };
+
+        nodes.push(node);
+        entryNodeIds.push(nodeId);
+        exitNodeIds.push(nodeId);
       } else {
         const transitiveResult = analyzeTransitiveCall(
           funcName,
@@ -991,7 +1108,7 @@ function analyzeExpression(
     exitNodeIds.push(...refResult.exitNodeIds);
   }
 
-  // Check for step references in function call arguments
+  // Check for step references and step calls in function call arguments
   if (expr.type === 'CallExpression') {
     const callExpr = expr as CallExpression;
     for (const arg of callExpr.arguments) {
@@ -1017,6 +1134,38 @@ function analyzeExpression(
             nodes.push(node);
             entryNodeIds.push(nodeId);
             exitNodeIds.push(nodeId);
+          }
+        }
+        // Handle step calls passed as arguments (e.g., map.set(key, stepCall()))
+        if (arg.expression.type === 'CallExpression') {
+          const argCallExpr = arg.expression as CallExpression;
+          if (argCallExpr.callee.type === 'Identifier') {
+            const funcName = (argCallExpr.callee as Identifier).value;
+            const stepInfo = stepDeclarations.get(funcName);
+            if (stepInfo) {
+              const nodeId = `node_${context.nodeCounter++}`;
+              const metadata: NodeMetadata = {};
+              if (context.inLoop) {
+                metadata.loopId = context.inLoop;
+              }
+              if (context.inConditional) {
+                metadata.conditionalId = context.inConditional;
+              }
+              const node: ManifestNode = {
+                id: nodeId,
+                type: 'step',
+                data: {
+                  label: funcName,
+                  nodeKind: 'step',
+                  stepId: stepInfo.stepId,
+                },
+                metadata:
+                  Object.keys(metadata).length > 0 ? metadata : undefined,
+              };
+              nodes.push(node);
+              entryNodeIds.push(nodeId);
+              exitNodeIds.push(nodeId);
+            }
           }
         }
         if (arg.expression.type === 'ObjectExpression') {
@@ -1051,6 +1200,79 @@ function analyzeExpression(
           edges.push(...refResult.edges);
           entryNodeIds.push(...refResult.entryNodeIds);
           exitNodeIds.push(...refResult.exitNodeIds);
+        }
+      }
+    }
+  }
+
+  // Handle AssignmentExpression - analyze the right-hand side
+  if (expr.type === 'AssignmentExpression') {
+    const assignExpr = expr as any;
+    if (assignExpr.right) {
+      const rightResult = analyzeExpression(
+        assignExpr.right,
+        stepDeclarations,
+        context,
+        functionMap,
+        visitedFunctions
+      );
+      nodes.push(...rightResult.nodes);
+      edges.push(...rightResult.edges);
+      entryNodeIds.push(...rightResult.entryNodeIds);
+      exitNodeIds.push(...rightResult.exitNodeIds);
+    }
+  }
+
+  // Handle MemberExpression calls like array.map(stepFn) where step is passed as callback
+  if (expr.type === 'CallExpression') {
+    const callExpr = expr as CallExpression;
+    if (callExpr.callee.type === 'MemberExpression') {
+      const member = callExpr.callee as MemberExpression;
+      // Check if this is a method call like .map(), .forEach(), .filter() etc.
+      if (member.property.type === 'Identifier') {
+        const methodName = (member.property as Identifier).value;
+        if (
+          [
+            'map',
+            'forEach',
+            'filter',
+            'find',
+            'some',
+            'every',
+            'flatMap',
+          ].includes(methodName)
+        ) {
+          // Check if any argument is a step function reference
+          for (const arg of callExpr.arguments) {
+            if (arg.expression?.type === 'Identifier') {
+              const argName = (arg.expression as Identifier).value;
+              const stepInfo = stepDeclarations.get(argName);
+              if (stepInfo) {
+                const nodeId = `node_${context.nodeCounter++}`;
+                const metadata: NodeMetadata = {};
+                if (context.inLoop) {
+                  metadata.loopId = context.inLoop;
+                }
+                if (context.inConditional) {
+                  metadata.conditionalId = context.inConditional;
+                }
+                const node: ManifestNode = {
+                  id: nodeId,
+                  type: 'step',
+                  data: {
+                    label: argName,
+                    nodeKind: 'step',
+                    stepId: stepInfo.stepId,
+                  },
+                  metadata:
+                    Object.keys(metadata).length > 0 ? metadata : undefined,
+                };
+                nodes.push(node);
+                entryNodeIds.push(nodeId);
+                exitNodeIds.push(nodeId);
+              }
+            }
+          }
         }
       }
     }

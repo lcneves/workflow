@@ -122,32 +122,122 @@ function buildNodeIndex(nodes: GraphNode[]): {
 }
 
 /**
- * Calculate edge traversals based on execution path
+ * Calculate edge traversals based on execution path and graph structure
+ * Handles parallel operations (Promise.all, Promise.race, etc.) correctly
  */
 function calculateEdgeTraversals(
   executionPath: string[],
-  graph: WorkflowGraph
+  graph: WorkflowGraph,
+  nodeExecutions: Map<string, StepExecution[]>
 ): Map<string, EdgeTraversal> {
   const edgeTraversals = new Map<string, EdgeTraversal>();
 
-  for (let i = 0; i < executionPath.length - 1; i++) {
-    const sourceNodeId = executionPath[i];
-    const targetNodeId = executionPath[i + 1];
+  // Build a set for quick lookup
+  const executedNodes = new Set(executionPath);
 
-    const edge = graph.edges.find(
-      (e) => e.source === sourceNodeId && e.target === targetNodeId
-    );
+  // Group nodes by parallelGroupId to understand parallel structure
+  const parallelGroups = new Map<
+    string,
+    { nodes: typeof graph.nodes; method?: string }
+  >();
+  for (const node of graph.nodes) {
+    const groupId = node.metadata?.parallelGroupId;
+    if (groupId) {
+      const existing = parallelGroups.get(groupId) || { nodes: [] };
+      existing.nodes.push(node);
+      existing.method = node.metadata?.parallelMethod;
+      parallelGroups.set(groupId, existing);
+    }
+  }
 
-    if (edge) {
-      const existing = edgeTraversals.get(edge.id);
-      if (existing) {
-        existing.traversalCount++;
-      } else {
-        edgeTraversals.set(edge.id, {
-          edgeId: edge.id,
-          traversalCount: 1,
-          timings: [],
+  // Find the winner for each Promise.race group
+  const raceWinners = new Map<string, string>(); // parallelGroupId -> winning nodeId
+  for (const [groupId, group] of parallelGroups) {
+    if (group.method === 'race') {
+      let winnerNodeId: string | undefined;
+      let earliestCompletion: Date | undefined;
+
+      for (const node of group.nodes) {
+        const executions = nodeExecutions.get(node.id);
+        if (executions) {
+          for (const exec of executions) {
+            if (exec.status === 'completed' && exec.completedAt) {
+              const completedAt = new Date(exec.completedAt);
+              if (!earliestCompletion || completedAt < earliestCompletion) {
+                earliestCompletion = completedAt;
+                winnerNodeId = node.id;
+              }
+            }
+          }
+        }
+      }
+
+      if (winnerNodeId) {
+        raceWinners.set(groupId, winnerNodeId);
+        console.log('[Edge Traversals] Promise.race winner:', {
+          groupId,
+          winnerNodeId,
+          earliestCompletion: earliestCompletion?.toISOString(),
+          allNodes: group.nodes.map((n) => n.id),
         });
+      }
+    }
+  }
+
+  // Mark edge as traversed helper
+  const markEdgeTraversed = (edge: (typeof graph.edges)[0]) => {
+    const existing = edgeTraversals.get(edge.id);
+    if (existing) {
+      existing.traversalCount++;
+    } else {
+      edgeTraversals.set(edge.id, {
+        edgeId: edge.id,
+        traversalCount: 1,
+        timings: [],
+      });
+    }
+  };
+
+  // Process all edges
+  for (const edge of graph.edges) {
+    const sourceNode = graph.nodes.find((n) => n.id === edge.source);
+    const targetNode = graph.nodes.find((n) => n.id === edge.target);
+
+    if (!sourceNode || !targetNode) continue;
+
+    const sourceExecuted = executedNodes.has(edge.source);
+    const targetExecuted = executedNodes.has(edge.target);
+
+    // If neither node was executed, skip
+    if (!sourceExecuted && !targetExecuted) continue;
+
+    // Check if source is part of a Promise.race group
+    const sourceGroupId = sourceNode.metadata?.parallelGroupId;
+    const sourceMethod = sourceNode.metadata?.parallelMethod;
+
+    if (sourceGroupId && sourceMethod === 'race') {
+      // For Promise.race: only mark edge from the winner as traversed
+      const winner = raceWinners.get(sourceGroupId);
+      const isWinner = winner === edge.source;
+      console.log('[Edge Traversals] Race edge:', {
+        edgeId: edge.id,
+        source: edge.source,
+        winner,
+        isWinner,
+        willMark: isWinner && targetExecuted,
+      });
+      if (isWinner && targetExecuted) {
+        markEdgeTraversed(edge);
+      }
+      // Don't mark edges from non-winners even if both nodes executed
+    } else if (sourceExecuted && targetExecuted) {
+      // For Promise.all/allSettled or regular edges: mark as traversed
+      markEdgeTraversed(edge);
+    } else if (sourceExecuted && edge.type === 'parallel') {
+      // For edges going INTO parallel nodes, mark if source executed
+      // and target is in the execution path
+      if (targetExecuted) {
+        markEdgeTraversed(edge);
       }
     }
   }
@@ -427,8 +517,12 @@ export function mapRunToExecution(
   // Add end node based on workflow status
   addEndNodeExecution(run, graph, executionPath, nodeExecutions);
 
-  // Calculate edge traversals based on execution path
-  const edgeTraversals = calculateEdgeTraversals(executionPath, graph);
+  // Calculate edge traversals based on execution path and node executions
+  const edgeTraversals = calculateEdgeTraversals(
+    executionPath,
+    graph,
+    nodeExecutions
+  );
 
   const result: WorkflowRunExecution = {
     runId: run.runId,
