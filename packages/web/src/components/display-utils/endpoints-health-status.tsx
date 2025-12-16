@@ -22,6 +22,8 @@ interface HealthCheckResult {
 }
 
 const HEALTH_CHECK_SESSION_KEY = 'workflow-endpoints-health-check';
+const HEALTH_CHECK_NOT_SUPPORTED_MESSAGE =
+  'Health checks not supported for this backend';
 
 function getSessionHealthCheck(configKey: string): HealthCheckResult | null {
   try {
@@ -149,8 +151,8 @@ export function EndpointsHealthStatus({ config }: EndpointsHealthStatusProps) {
       const result: HealthCheckResult = {
         flow: 'error',
         step: 'error',
-        flowMessage: 'Health checks not supported for this backend',
-        stepMessage: 'Health checks not supported for this backend',
+        flowMessage: HEALTH_CHECK_NOT_SUPPORTED_MESSAGE,
+        stepMessage: HEALTH_CHECK_NOT_SUPPORTED_MESSAGE,
         checkedAt: new Date().toISOString(),
       };
       setHealthCheck(result);
