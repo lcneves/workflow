@@ -166,27 +166,36 @@ export function EndpointsHealthStatus({ config }: EndpointsHealthStatusProps) {
     const performHealthCheck = async () => {
       setIsChecking(true);
 
-      const [flowResult, stepResult] = await Promise.all([
-        checkEndpointHealth(baseUrl, 'flow', abortController.signal),
-        checkEndpointHealth(baseUrl, 'step', abortController.signal),
-      ]);
+      try {
+        const [flowResult, stepResult] = await Promise.all([
+          checkEndpointHealth(baseUrl, 'flow', abortController.signal),
+          checkEndpointHealth(baseUrl, 'step', abortController.signal),
+        ]);
 
-      // Check if request was aborted (component unmounted)
-      if (abortController.signal.aborted) {
-        return;
+        // Check if request was aborted (component unmounted)
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        const result: HealthCheckResult = {
+          flow: flowResult.success ? 'success' : 'error',
+          step: stepResult.success ? 'success' : 'error',
+          flowMessage: flowResult.message,
+          stepMessage: stepResult.message,
+          checkedAt: new Date().toISOString(),
+        };
+
+        setHealthCheck(result);
+        setSessionHealthCheck(configKey, result);
+        setIsChecking(false);
+      } catch (error) {
+        // If aborted, don't update state (component unmounted)
+        if (abortController.signal.aborted) {
+          return;
+        }
+        // Otherwise, log unexpected error
+        console.error('Unexpected error during health check:', error);
       }
-
-      const result: HealthCheckResult = {
-        flow: flowResult.success ? 'success' : 'error',
-        step: stepResult.success ? 'success' : 'error',
-        flowMessage: flowResult.message,
-        stepMessage: stepResult.message,
-        checkedAt: new Date().toISOString(),
-      };
-
-      setHealthCheck(result);
-      setSessionHealthCheck(configKey, result);
-      setIsChecking(false);
     };
 
     performHealthCheck();
