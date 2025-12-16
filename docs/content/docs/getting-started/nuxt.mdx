@@ -214,31 +214,6 @@ npx workflow inspect runs
 
 </Steps>
 
-## Custom domains / ports (Nuxt runtime config)
-
-If you're running Nuxt behind a reverse proxy, tunnel, custom hostname, or non-standard port, configure the local world queue origin using Nuxt `runtimeConfig`.
-
-Add this to your `nuxt.config.ts`:
-
-```typescript title="nuxt.config.ts" lineNumbers
-export default defineNuxtConfig({
-  modules: ["workflow/nuxt"],
-  runtimeConfig: {
-    // Server-only runtime config: this is internal queue traffic, not for the browser.
-    workflow: {
-      // Full origin (recommended)
-      baseUrl: "https://local.example.com:4443",
-      // Or build it from parts:
-      // protocol: "https",
-      // host: "local.example.com",
-      // port: 4443,
-    },
-  },
-});
-```
-
-This works because Nuxt exposes runtime config via `useRuntimeConfig()` on the server, and the `workflow/nitro` integration uses it to set `WORKFLOW_LOCAL_BASE_URL` for local queue traffic. See Nuxt docs: `https://nuxt.com/docs/4.x/guide/going-further/runtime-config`.
-
 ## Deploying to production
 
 Workflow DevKit apps currently work best when deployed to [Vercel](https://vercel.com/home) and needs no special configuration.

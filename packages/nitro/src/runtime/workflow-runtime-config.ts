@@ -20,11 +20,9 @@ import { useRuntimeConfig } from 'nitro/runtime-config';
 export default defineNitroPlugin(() => {
   if (process.env.WORKFLOW_LOCAL_BASE_URL) return;
 
-  const runtimeConfig = useRuntimeConfig() as any;
+  const runtimeConfig = useRuntimeConfig();
   const workflow =
-    runtimeConfig?.workflow ??
-    runtimeConfig?.public?.workflow ??
-    (undefined as any);
+    runtimeConfig?.workflow ?? runtimeConfig?.public?.workflow ?? undefined;
 
   if (!workflow) return;
 
