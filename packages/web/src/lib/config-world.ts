@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, resolve, isAbsolute } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 import { KNOWN_WORLDS, type KnownWorld } from './known-worlds';
 
 const require = createRequire(join(process.cwd(), 'index.js'));
@@ -88,11 +88,19 @@ export async function validateWorldConfig(
   if (backend === 'local') {
     // Check if data directory exists
     if (config.dataDir) {
-      const resolvedPath = resolve(config.dataDir);
-      if (!existsSync(resolvedPath)) {
+      // Server actions cannot reliably resolve relative paths because they
+      // execute in the server's working directory, not the user's.
+      // Require absolute paths or use the CLI which provides absolute paths.
+      if (!isAbsolute(config.dataDir)) {
         errors.push({
           field: 'dataDir',
-          message: `Data directory does not exist: ${resolvedPath}`,
+          message:
+            'Data directory path must be absolute. Use the CLI to set the data directory, or provide the full path starting with "/"',
+        });
+      } else if (!existsSync(config.dataDir)) {
+        errors.push({
+          field: 'dataDir',
+          message: `Data directory does not exist: ${config.dataDir}`,
         });
       }
     }
@@ -185,22 +193,30 @@ export async function checkConfigHealth(
       };
     }
 
-    const resolvedPath = isAbsolute(dataDir)
-      ? dataDir
-      : resolve(process.cwd(), dataDir);
-
-    if (!existsSync(resolvedPath)) {
+    // Server actions cannot reliably resolve relative paths because they
+    // execute in the server's working directory, not the user's.
+    // Only accept absolute paths.
+    if (!isAbsolute(dataDir)) {
       return {
         valid: false,
-        reason: `Data directory does not exist: ${resolvedPath}`,
+        reason:
+          'Data directory path must be absolute. Use the CLI to set the data directory, or provide the full path starting with "/"',
         backend,
       };
     }
 
-    if (!isWorkflowDataDir(resolvedPath)) {
+    if (!existsSync(dataDir)) {
       return {
         valid: false,
-        reason: `Directory does not contain workflow data: ${resolvedPath}`,
+        reason: `Data directory does not exist: ${dataDir}`,
+        backend,
+      };
+    }
+
+    if (!isWorkflowDataDir(dataDir)) {
+      return {
+        valid: false,
+        reason: `Directory does not contain workflow data: ${dataDir}`,
         backend,
       };
     }

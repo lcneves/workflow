@@ -203,7 +203,17 @@ function LayoutContent({ children }: LayoutClientProps) {
   }
 
   const isSetupPage = pathname === '/setup';
-  const isConnected = configHealth?.valid ?? false;
+  // Consider connected if:
+  // 1. Config health check passed (valid === true), OR
+  // 2. Still loading but we have config params that suggest a valid config
+  //    (this prevents "Not connected" flash while checking)
+  const hasConfigParams = !!(
+    (config.backend === 'vercel' && config.project && config.authToken) ||
+    (config.backend === 'local' && config.dataDir) ||
+    (config.backend === 'postgres' && config.postgresUrl)
+  );
+  const isConnected =
+    configHealth?.valid ?? (isCheckingConfig && hasConfigParams);
 
   // Build URLs for navigation
   const setupUrl = buildUrlWithConfig('/setup', config, {

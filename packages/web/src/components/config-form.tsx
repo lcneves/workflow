@@ -188,7 +188,8 @@ export function ConfigForm({
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Path to the workflow data directory. Can be relative or absolute.
+              Absolute path to the workflow data directory (e.g.,
+              /path/to/.workflow-data). Use the CLI to automatically set this.
             </p>
           </div>
         </>
