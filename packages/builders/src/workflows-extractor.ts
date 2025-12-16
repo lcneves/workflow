@@ -416,11 +416,11 @@ function analyzeWorkflowFunction(
           const edgeId = `e_${prevId}_${entryId}`;
           if (!edges.find((e) => e.id === edgeId)) {
             const targetNode = result.nodes.find((n) => n.id === entryId);
+            // Only use 'parallel' type for parallel group connections
+            // Sequential connections (including to/from loops) should be 'default'
             const edgeType = targetNode?.metadata?.parallelGroupId
               ? 'parallel'
-              : targetNode?.metadata?.loopId
-                ? 'loop'
-                : 'default';
+              : 'default';
             edges.push({
               id: edgeId,
               source: prevId,

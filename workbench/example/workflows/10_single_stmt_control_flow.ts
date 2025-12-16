@@ -37,10 +37,11 @@ export async function single_statement_if() {
 export async function single_statement_while() {
   'use workflow';
 
-  const counter = 0;
+  let counter = 0;
 
   // Single-statement while (no braces) - should be extracted with loop metadata
-  while (counter < 1) await singleStmtStepA();
+  // Note: This loop runs 5 times since counter starts at 0 and we check < 5
+  while (counter++ < 5) await singleStmtStepA();
 
   return 'done';
 }

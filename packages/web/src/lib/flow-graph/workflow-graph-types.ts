@@ -20,7 +20,7 @@ export interface NodeMetadata {
 
 export interface NodeData {
   label: string;
-  nodeKind: 'workflow_start' | 'workflow_end' | 'step';
+  nodeKind: 'workflow_start' | 'workflow_end' | 'step' | 'primitive';
   stepId?: string;
 }
 

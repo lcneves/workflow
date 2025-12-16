@@ -15,12 +15,13 @@ import type {
 
 /**
  * Layout constants for auto-positioning nodes
+ * Increased spacing for better readability and reduced edge crossings
  */
 const LAYOUT = {
   NODE_WIDTH: 220,
-  NODE_HEIGHT: 80,
-  HORIZONTAL_SPACING: 300,
-  VERTICAL_SPACING: 120,
+  NODE_HEIGHT: 100,
+  HORIZONTAL_SPACING: 280,
+  VERTICAL_SPACING: 320, // Increased to prevent loop container overlap
   START_X: 250,
   START_Y: 50,
 };
@@ -61,7 +62,8 @@ function calculateNodePositions(
         nodeKind: node.data.nodeKind as
           | 'workflow_start'
           | 'workflow_end'
-          | 'step',
+          | 'step'
+          | 'primitive',
         stepId: node.data.stepId,
       },
       metadata: node.metadata,
@@ -149,7 +151,8 @@ function calculateNodePositions(
         nodeKind: node.data.nodeKind as
           | 'workflow_start'
           | 'workflow_end'
-          | 'step',
+          | 'step'
+          | 'primitive',
         stepId: node.data.stepId,
       },
       metadata: node.metadata,

@@ -12,6 +12,15 @@ import type {
 } from './workflow-graph-types';
 
 /**
+ * Primitive node labels that correspond to event types
+ */
+const PRIMITIVE_LABELS = {
+  sleep: 'sleep',
+  createHook: 'createHook',
+  createWebhook: 'createWebhook',
+} as const;
+
+/**
  * Normalize step/workflow names by removing path traversal patterns
  * Graph has: "step//../example/workflows/1_simple.ts//add"
  * Runtime has: "step//example/workflows/1_simple.ts//add"
@@ -97,9 +106,11 @@ function extractFunctionName(stepId: string): string | null {
 function buildNodeIndex(nodes: GraphNode[]): {
   byStepId: Map<string, GraphNode[]>;
   byFunctionName: Map<string, GraphNode[]>;
+  primitivesByLabel: Map<string, GraphNode[]>;
 } {
   const byStepId = new Map<string, GraphNode[]>();
   const byFunctionName = new Map<string, GraphNode[]>();
+  const primitivesByLabel = new Map<string, GraphNode[]>();
 
   for (const node of nodes) {
     if (node.data.stepId) {
@@ -117,8 +128,16 @@ function buildNodeIndex(nodes: GraphNode[]): {
         byFunctionName.set(functionName, existingByName);
       }
     }
+
+    // Index primitive nodes by their label
+    if (node.data.nodeKind === 'primitive') {
+      const label = node.data.label;
+      const existing = primitivesByLabel.get(label) || [];
+      existing.push(node);
+      primitivesByLabel.set(label, existing);
+    }
   }
-  return { byStepId, byFunctionName };
+  return { byStepId, byFunctionName, primitivesByLabel };
 }
 
 /**
@@ -395,12 +414,190 @@ function processStepGroup(
 }
 
 /**
+ * Process primitive events (sleep, hooks) and map them to graph nodes
+ */
+function processPrimitiveEvents(
+  events: Event[],
+  primitivesByLabel: Map<string, GraphNode[]>,
+  nodeExecutions: Map<string, StepExecution[]>,
+  executionPath: string[]
+): string | undefined {
+  // Track occurrence counts for each primitive type
+  const occurrenceCount = new Map<string, number>();
+
+  // Group events by correlationId to pair created/completed events
+  const eventsByCorrelation = new Map<string, Event[]>();
+  for (const event of events) {
+    if (!event.correlationId) continue;
+    const existing = eventsByCorrelation.get(event.correlationId) || [];
+    existing.push(event);
+    eventsByCorrelation.set(event.correlationId, existing);
+  }
+
+  let currentNode: string | undefined;
+
+  // Process sleep events (wait_created/wait_completed)
+  const sleepNodes = primitivesByLabel.get(PRIMITIVE_LABELS.sleep) || [];
+  const sleepCorrelations = new Set<string>();
+
+  for (const event of events) {
+    if (event.eventType === 'wait_created' && event.correlationId) {
+      sleepCorrelations.add(event.correlationId);
+    }
+  }
+
+  // Sort correlations by event creation time
+  const sortedSleepCorrelations = Array.from(sleepCorrelations).sort((a, b) => {
+    const eventsA = eventsByCorrelation.get(a) || [];
+    const eventsB = eventsByCorrelation.get(b) || [];
+    const timeA = eventsA.find(
+      (e) => e.eventType === 'wait_created'
+    )?.createdAt;
+    const timeB = eventsB.find(
+      (e) => e.eventType === 'wait_created'
+    )?.createdAt;
+    if (!timeA || !timeB) return 0;
+    return new Date(timeA).getTime() - new Date(timeB).getTime();
+  });
+
+  for (const correlationId of sortedSleepCorrelations) {
+    const correlationEvents = eventsByCorrelation.get(correlationId) || [];
+    const createdEvent = correlationEvents.find(
+      (e) => e.eventType === 'wait_created'
+    );
+    const completedEvent = correlationEvents.find(
+      (e) => e.eventType === 'wait_completed'
+    );
+
+    if (!createdEvent) continue;
+
+    // Find the corresponding node
+    const occurrenceIndex = occurrenceCount.get(PRIMITIVE_LABELS.sleep) || 0;
+    occurrenceCount.set(PRIMITIVE_LABELS.sleep, occurrenceIndex + 1);
+
+    const graphNode =
+      sleepNodes.length === 1 ? sleepNodes[0] : sleepNodes[occurrenceIndex];
+
+    if (!graphNode) continue;
+
+    // Determine status
+    let status: StepExecution['status'] = 'running';
+    if (completedEvent) {
+      status = 'completed';
+    }
+
+    const startedAt = new Date(createdEvent.createdAt).toISOString();
+    const completedAt = completedEvent
+      ? new Date(completedEvent.createdAt).toISOString()
+      : undefined;
+    const duration = completedEvent
+      ? new Date(completedEvent.createdAt).getTime() -
+        new Date(createdEvent.createdAt).getTime()
+      : undefined;
+
+    const execution: StepExecution = {
+      nodeId: graphNode.id,
+      attemptNumber: 1,
+      status,
+      startedAt,
+      completedAt,
+      duration,
+    };
+
+    // Append or set executions
+    const existing = nodeExecutions.get(graphNode.id) || [];
+    nodeExecutions.set(graphNode.id, [...existing, execution]);
+
+    if (!executionPath.includes(graphNode.id)) {
+      executionPath.push(graphNode.id);
+    }
+
+    if (status === 'running') {
+      currentNode = graphNode.id;
+    }
+  }
+
+  // Process hook events (hook_created/hook_received)
+  // createHook and createWebhook both use hook_created/hook_received events
+  const hookNodes = [
+    ...(primitivesByLabel.get(PRIMITIVE_LABELS.createHook) || []),
+    ...(primitivesByLabel.get(PRIMITIVE_LABELS.createWebhook) || []),
+  ];
+  const hookCorrelations = new Set<string>();
+
+  for (const event of events) {
+    if (event.eventType === 'hook_created' && event.correlationId) {
+      hookCorrelations.add(event.correlationId);
+    }
+  }
+
+  // Sort correlations by event creation time
+  const sortedHookCorrelations = Array.from(hookCorrelations).sort((a, b) => {
+    const eventsA = eventsByCorrelation.get(a) || [];
+    const eventsB = eventsByCorrelation.get(b) || [];
+    const timeA = eventsA.find(
+      (e) => e.eventType === 'hook_created'
+    )?.createdAt;
+    const timeB = eventsB.find(
+      (e) => e.eventType === 'hook_created'
+    )?.createdAt;
+    if (!timeA || !timeB) return 0;
+    return new Date(timeA).getTime() - new Date(timeB).getTime();
+  });
+
+  // Track hook occurrence separately from sleep
+  let hookOccurrenceIndex = 0;
+
+  for (const correlationId of sortedHookCorrelations) {
+    const correlationEvents = eventsByCorrelation.get(correlationId) || [];
+    const createdEvent = correlationEvents.find(
+      (e) => e.eventType === 'hook_created'
+    );
+
+    if (!createdEvent) continue;
+
+    // Find the corresponding node
+    const graphNode =
+      hookNodes.length === 1 ? hookNodes[0] : hookNodes[hookOccurrenceIndex];
+    hookOccurrenceIndex++;
+
+    if (!graphNode) continue;
+
+    // Determine status - hooks are "completed" once created (the await is for received)
+    // For the node visualization, we show it as completed when created
+    const status: StepExecution['status'] = 'completed';
+
+    const startedAt = new Date(createdEvent.createdAt).toISOString();
+    const completedAt = new Date(createdEvent.createdAt).toISOString();
+
+    const execution: StepExecution = {
+      nodeId: graphNode.id,
+      attemptNumber: 1,
+      status,
+      startedAt,
+      completedAt,
+      duration: 0,
+    };
+
+    // Append or set executions
+    const existing = nodeExecutions.get(graphNode.id) || [];
+    nodeExecutions.set(graphNode.id, [...existing, execution]);
+
+    if (!executionPath.includes(graphNode.id)) {
+      executionPath.push(graphNode.id);
+    }
+  }
+
+  return currentNode;
+}
+
+/**
  * Maps a workflow run and its steps/events to an execution overlay for the graph
  */
 export function mapRunToExecution(
   run: WorkflowRun,
   steps: Step[],
-  _events: Event[],
+  events: Event[],
   graph: WorkflowGraph
 ): WorkflowRunExecution {
   const nodeExecutions = new Map<string, StepExecution[]>();
@@ -434,9 +631,12 @@ export function mapRunToExecution(
     }))
   );
 
-  // Build an index of graph nodes by normalized stepId and function name for quick lookup
-  const { byStepId: nodesByStepId, byFunctionName: nodesByFunctionName } =
-    buildNodeIndex(graph.nodes);
+  // Build an index of graph nodes by normalized stepId, function name, and primitive label for quick lookup
+  const {
+    byStepId: nodesByStepId,
+    byFunctionName: nodesByFunctionName,
+    primitivesByLabel,
+  } = buildNodeIndex(graph.nodes);
 
   console.log('[Graph Mapper] Graph nodes by stepId:', {
     allGraphNodes: graph.nodes.map((n) => ({
@@ -498,6 +698,17 @@ export function mapRunToExecution(
       // Add to current group (this is a retry: same stepId)
       currentStepGroup.push(step);
     }
+  }
+
+  // Process primitive events (sleep, createHook, createWebhook)
+  const primitiveCurrentNode = processPrimitiveEvents(
+    events,
+    primitivesByLabel,
+    nodeExecutions,
+    executionPath
+  );
+  if (primitiveCurrentNode) {
+    currentNode = primitiveCurrentNode;
   }
 
   // Add end node based on workflow status

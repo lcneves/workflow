@@ -293,13 +293,11 @@ export abstract class BaseBuilder {
   }> {
     // These need to handle watching for dev to scan for
     // new entries and changes to existing ones
-    const { discoveredSteps: stepFiles } = await this.discoverEntries(
-      inputFiles,
-      dirname(outfile)
-    );
+    const { discoveredSteps: stepFiles, discoveredWorkflows: workflowFiles } =
+      await this.discoverEntries(inputFiles, dirname(outfile));
 
     // log the step files for debugging
-    await this.writeDebugFile(outfile, { stepFiles });
+    await this.writeDebugFile(outfile, { stepFiles, workflowFiles });
 
     const stepsBundleStart = Date.now();
     const workflowManifest: WorkflowManifest = {};
@@ -321,7 +319,10 @@ export abstract class BaseBuilder {
 
     // Create a virtual entry that imports all files. All step definitions
     // will get registered thanks to the swc transform.
-    const imports = stepFiles
+    // We also import workflow files so their metadata is collected by the SWC plugin,
+    // even though they'll be externalized from the final bundle.
+    const filesToProcess = [...stepFiles, ...workflowFiles];
+    const imports = filesToProcess
       .map((file) => {
         // Normalize both paths to forward slashes before calling relative()
         // This is critical on Windows where relative() can produce unexpected results with mixed path formats
@@ -386,9 +387,14 @@ export abstract class BaseBuilder {
       plugins: [
         createSwcPlugin({
           mode: 'step',
+          // Include both step and workflow files so the SWC plugin processes them
+          // and collects metadata. Workflow files need to be included so their
+          // workflow metadata is collected, even though the workflow function
+          // bodies are left untouched in step mode.
           entriesToBundle: externalizeNonSteps
             ? [
                 ...stepFiles,
+                ...workflowFiles,
                 ...(resolvedBuiltInSteps ? [resolvedBuiltInSteps] : []),
               ]
             : undefined,
