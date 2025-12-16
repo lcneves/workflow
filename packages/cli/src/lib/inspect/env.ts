@@ -110,13 +110,14 @@ export const inferLocalWorldEnvVars = async () => {
       }
     }
 
-    logger.error(
+    logger.warn(
       'No workflow data directory found. Have you run any workflows yet?'
     );
     logger.warn(
       `\nCheck whether your data is in any of:\n${possibleWorkflowDataPaths.map((p) => `  ${cwd}/${p}${repoRoot && repoRoot !== cwd ? `\n  ${repoRoot}/${p}` : ''}`).join('\n')}\n`
     );
-    throw new Error('No workflow data directory found');
+    // Don't throw - allow web UI to open for configuration
+    // throw new Error('No workflow data directory found');
   }
 };
 

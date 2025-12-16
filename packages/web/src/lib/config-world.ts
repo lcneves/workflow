@@ -1,8 +1,8 @@
 'use server';
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, resolve } from 'node:path';
+import { join, resolve, isAbsolute } from 'node:path';
 import { KNOWN_WORLDS, type KnownWorld } from './known-worlds';
 
 const require = createRequire(join(process.cwd(), 'index.js'));
@@ -131,4 +131,129 @@ export async function validateWorldConfig(
   }
 
   return errors;
+}
+
+/**
+ * Files/directories that indicate a valid workflow data directory
+ */
+const WORKFLOW_DATA_INDICATORS = ['runs', 'hooks', 'streams'];
+
+/**
+ * Check if a directory looks like a workflow data directory
+ */
+function isWorkflowDataDir(dirPath: string): boolean {
+  if (!existsSync(dirPath)) {
+    return false;
+  }
+
+  try {
+    const entries = readdirSync(dirPath);
+    return WORKFLOW_DATA_INDICATORS.some((indicator) =>
+      entries.includes(indicator)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export interface ConfigCheckResult {
+  /** Whether the config is valid and ready to use */
+  valid: boolean;
+  /** Reason why config is invalid, if applicable */
+  reason?: string;
+  /** The backend being checked */
+  backend: string;
+}
+
+/**
+ * Check if the current config can successfully connect to/access the backend.
+ * This is a quick health check used to decide whether to show the setup screen.
+ */
+export async function checkConfigHealth(
+  config: WorldConfig
+): Promise<ConfigCheckResult> {
+  const backend = config.backend || 'local';
+
+  if (backend === 'local') {
+    // For local backend, check if data directory exists and looks valid
+    const dataDir = config.dataDir;
+    if (!dataDir) {
+      return {
+        valid: false,
+        reason: 'No data directory configured',
+        backend,
+      };
+    }
+
+    const resolvedPath = isAbsolute(dataDir)
+      ? dataDir
+      : resolve(process.cwd(), dataDir);
+
+    if (!existsSync(resolvedPath)) {
+      return {
+        valid: false,
+        reason: `Data directory does not exist: ${resolvedPath}`,
+        backend,
+      };
+    }
+
+    if (!isWorkflowDataDir(resolvedPath)) {
+      return {
+        valid: false,
+        reason: `Directory does not contain workflow data: ${resolvedPath}`,
+        backend,
+      };
+    }
+
+    return { valid: true, backend };
+  }
+
+  if (backend === 'postgres') {
+    // For postgres, just check if connection URL is provided
+    // (actual connection test would be too slow for initial check)
+    if (!config.postgresUrl) {
+      return {
+        valid: false,
+        reason: 'No PostgreSQL connection URL configured',
+        backend,
+      };
+    }
+
+    if (
+      !config.postgresUrl.startsWith('postgres://') &&
+      !config.postgresUrl.startsWith('postgresql://')
+    ) {
+      return {
+        valid: false,
+        reason: 'Invalid PostgreSQL connection URL format',
+        backend,
+      };
+    }
+
+    return { valid: true, backend };
+  }
+
+  if (backend === 'vercel') {
+    // For vercel, check required fields
+    if (!config.authToken) {
+      return {
+        valid: false,
+        reason: 'No Vercel auth token configured',
+        backend,
+      };
+    }
+
+    if (!config.project) {
+      return {
+        valid: false,
+        reason: 'No Vercel project configured',
+        backend,
+      };
+    }
+
+    return { valid: true, backend };
+  }
+
+  // Unknown backend - assume valid for now
+  return { valid: true, backend };
 }

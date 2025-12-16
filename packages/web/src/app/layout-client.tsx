@@ -9,6 +9,7 @@ import { ConnectionStatus } from '@/components/display-utils/connection-status';
 import { SettingsDropdown } from '@/components/settings-dropdown';
 import { Toaster } from '@/components/ui/sonner';
 import { buildUrlWithConfig, useQueryParamConfig } from '@/lib/config';
+import { useConfigHealth } from '@/lib/hooks';
 import { Logo } from '../icons/logo';
 
 interface LayoutClientProps {
@@ -28,9 +29,15 @@ function LayoutContent({ children }: LayoutClientProps) {
   const hookId = searchParams.get('hookId');
   const resource = searchParams.get('resource');
   const themeParam = searchParams.get('theme');
+  const needsConfig = searchParams.get('needsConfig');
 
   // Track if we've already handled the initial navigation
   const hasNavigatedRef = useRef(false);
+  const hasCheckedConfigRef = useRef(false);
+
+  // Check config health
+  const { data: configHealth, isLoading: isCheckingConfig } =
+    useConfigHealth(config);
 
   // Sync theme from URL param to next-themes (one-time or when explicitly changed)
   useEffect(() => {
@@ -44,11 +51,58 @@ function LayoutContent({ children }: LayoutClientProps) {
     }
   }, [themeParam, setTheme]);
 
+  // Redirect to setup page if config is invalid
+  // (Skip if already on setup page)
+  useEffect(() => {
+    if (pathname === '/setup') {
+      return;
+    }
+
+    // Skip if we've already checked config
+    if (hasCheckedConfigRef.current) {
+      return;
+    }
+
+    // If CLI indicated config is needed, redirect immediately
+    if (needsConfig === '1') {
+      hasCheckedConfigRef.current = true;
+      const setupUrl = buildUrlWithConfig('/setup', config, {
+        needsConfig: '1',
+        redirectTo: pathname,
+      });
+      router.replace(setupUrl);
+      return;
+    }
+
+    // Wait for config health check to complete
+    if (isCheckingConfig || !configHealth) {
+      return;
+    }
+
+    // If config is invalid, redirect to setup
+    if (!configHealth.valid) {
+      hasCheckedConfigRef.current = true;
+      const setupUrl = buildUrlWithConfig('/setup', config, {
+        redirectTo: pathname,
+      });
+      router.replace(setupUrl);
+      return;
+    }
+
+    // Config is valid - mark as checked
+    hasCheckedConfigRef.current = true;
+  }, [pathname, needsConfig, configHealth, isCheckingConfig, config, router]);
+
   // If initialized with a resource/id or direct ID params, we navigate to the appropriate page
   // Only run this logic once on mount or when we're on the root path with special params
   useEffect(() => {
     // Skip if we're not on the root path and we've already navigated
     if (pathname !== '/' && hasNavigatedRef.current) {
+      return;
+    }
+
+    // Skip if we're on setup page
+    if (pathname === '/setup') {
       return;
     }
 
@@ -129,6 +183,29 @@ function LayoutContent({ children }: LayoutClientProps) {
     hasNavigatedRef.current = true;
     router.push(targetUrl);
   }, [resource, id, runId, stepId, hookId, router, config, pathname]);
+
+  // Show loading state while checking config (but not for setup page)
+  if (
+    pathname !== '/setup' &&
+    !hasCheckedConfigRef.current &&
+    isCheckingConfig
+  ) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  // Setup page renders without the main app header/chrome
+  if (pathname === '/setup') {
+    return (
+      <TooltipProvider delayDuration={0}>
+        {children}
+        <Toaster />
+      </TooltipProvider>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
