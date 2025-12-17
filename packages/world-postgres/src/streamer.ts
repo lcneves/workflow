@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Streamer } from '@workflow/world';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Sql } from 'postgres';
 import { monotonicFactory } from 'ulid';
 import * as z from 'zod';
