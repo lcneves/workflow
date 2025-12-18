@@ -130,7 +130,9 @@ export async function withRetry<T>(
       } catch (error) {
         // If the error is not retryable, bail immediately
         if (!isRetryableError(error)) {
-          return bail(error as Error);
+          bail(error as Error);
+          // This throw is never reached, but TypeScript requires it
+          throw error;
         }
         // Otherwise, throw to trigger a retry
         throw error;
