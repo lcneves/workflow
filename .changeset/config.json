@@ -1,9 +1,6 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
-  "changelog": [
-    "@changesets/changelog-github",
-    { "repo": "vercel/workflow" }
-  ],
+  "changelog": ["@changesets/changelog-github", { "repo": "vercel/workflow" }],
   "commit": false,
   "fixed": [],
   "linked": [],
@@ -14,6 +11,7 @@
     "docs",
     "nextjs-turbopack",
     "nextjs-webpack",
+    "@workflow/example-nextjs-pages-router",
     "@workflow/example-app",
     "@workflow/example-hono",
     "@workflow/example-express",
