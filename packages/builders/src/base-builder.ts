@@ -789,7 +789,7 @@ export const OPTIONS = handler;`;
       absWorkingDir: this.config.workingDir,
       bundle: true,
       jsx: 'preserve',
-      format: 'esm',
+      format: 'cjs',
       platform: 'node',
       conditions: ['import', 'module', 'node', 'default'],
       target: 'es2022',
@@ -809,44 +809,8 @@ export const OPTIONS = handler;`;
       ],
       sourcemap: false,
       mainFields: ['module', 'main'],
-      // Externalize Node.js built-ins with node: prefix so bundlers
-      // (webpack/turbopack) know they're server-only and won't try
-      // to bundle them for the browser
-      external: [
-        'node:fs',
-        'node:path',
-        'node:os',
-        'node:crypto',
-        'node:stream',
-        'node:buffer',
-        'node:util',
-        'node:events',
-        'node:http',
-        'node:https',
-        'node:url',
-        'node:querystring',
-        'node:zlib',
-        'node:async_hooks',
-        'node:module',
-      ],
-      // Rewrite bare Node.js imports to use node: prefix
-      alias: {
-        fs: 'node:fs',
-        path: 'node:path',
-        os: 'node:os',
-        crypto: 'node:crypto',
-        stream: 'node:stream',
-        buffer: 'node:buffer',
-        util: 'node:util',
-        events: 'node:events',
-        http: 'node:http',
-        https: 'node:https',
-        url: 'node:url',
-        querystring: 'node:querystring',
-        zlib: 'node:zlib',
-        async_hooks: 'node:async_hooks',
-        module: 'node:module',
-      },
+      // Don't externalize anything - bundle everything including workflow packages
+      external: [],
     });
 
     this.logEsbuildMessages(result, 'webhook bundle creation');
