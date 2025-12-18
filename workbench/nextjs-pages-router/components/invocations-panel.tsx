@@ -1,0 +1,1 @@
+../../nextjs-turbopack/components/invocations-panel.tsx
