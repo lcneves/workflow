@@ -3,6 +3,17 @@ import { access, mkdir, stat, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import Watchpack from 'watchpack';
 
+/**
+ * Router detection result indicating which Next.js routers are available
+ * in the project and their directory locations.
+ */
+interface RouterConfig {
+  hasAppRouter: boolean;
+  appRouterDir: string | null;
+  hasPagesRouter: boolean;
+  pagesRouterDir: string | null;
+}
+
 let CachedNextBuilder: any;
 
 // Create the NextBuilder class dynamically by extending the ESM BaseBuilder
@@ -24,31 +35,54 @@ export async function getNextBuilder() {
 
   class NextBuilder extends BaseBuilderClass {
     async build() {
-      const outputDir = await this.findAppDirectory();
-      const workflowGeneratedDir = join(outputDir, '.well-known/workflow/v1');
+      const routers = await this.detectRouters();
 
-      // Ensure output directories exist
-      await mkdir(workflowGeneratedDir, { recursive: true });
-      // ignore the generated assets
-
-      await writeFile(join(workflowGeneratedDir, '.gitignore'), '*');
+      if (!routers.hasAppRouter && !routers.hasPagesRouter) {
+        throw new Error(
+          'Could not find Next.js router. Expected either "app", "src/app", "pages", or "src/pages" to exist.'
+        );
+      }
 
       const inputFiles = await this.getInputFiles();
       const tsConfig = await this.getTsConfigOptions();
 
-      const options = {
-        inputFiles,
-        workflowGeneratedDir,
-        tsBaseUrl: tsConfig.baseUrl,
-        tsPaths: tsConfig.paths,
-      };
+      // Build for App Router if present
+      let appRouterBuildResult:
+        | {
+            stepsBuildContext: import('esbuild').BuildContext | undefined;
+            workflowsBundle:
+              | void
+              | {
+                  interimBundleCtx: import('esbuild').BuildContext;
+                  bundleFinal: (interimBundleResult: string) => Promise<void>;
+                }
+              | undefined;
+            workflowGeneratedDir: string;
+          }
+        | undefined;
 
-      const stepsBuildContext = await this.buildStepsFunction(options);
-      const workflowsBundle = await this.buildWorkflowsFunction(options);
-      await this.buildWebhookRoute({ workflowGeneratedDir });
-      await this.writeFunctionsConfig(outputDir);
+      if (routers.hasAppRouter && routers.appRouterDir) {
+        appRouterBuildResult = await this.buildForAppRouter(
+          routers.appRouterDir,
+          inputFiles,
+          tsConfig
+        );
+      }
 
-      if (this.config.watch) {
+      // Build for Pages Router if present
+      if (routers.hasPagesRouter && routers.pagesRouterDir) {
+        await this.buildForPagesRouter(
+          routers.pagesRouterDir,
+          inputFiles,
+          tsConfig
+        );
+      }
+
+      // Watch mode only supported for App Router currently
+      // (Pages Router generates static files that don't need rebuild context)
+      if (this.config.watch && appRouterBuildResult) {
+        const { stepsBuildContext, workflowsBundle, workflowGeneratedDir } =
+          appRouterBuildResult;
         if (!stepsBuildContext) {
           throw new Error(
             'Invariant: expected steps build context in watch mode'
@@ -60,6 +94,14 @@ export async function getNextBuilder() {
 
         let stepsCtx = stepsBuildContext;
         let workflowsCtx = workflowsBundle;
+
+        // Options object for rebuild functions
+        const options = {
+          inputFiles,
+          workflowGeneratedDir,
+          tsBaseUrl: tsConfig.baseUrl,
+          tsPaths: tsConfig.paths,
+        };
 
         const normalizePath = (pathname: string) =>
           pathname.replace(/\\/g, '/');
@@ -340,11 +382,12 @@ export async function getNextBuilder() {
 
     protected async getInputFiles(): Promise<string[]> {
       const inputFiles = await super.getInputFiles();
-      return inputFiles.filter((item) =>
-        // non-exact pattern match to try to narrow
-        // down to just app route entrypoints, this will
-        // not be valid when pages router support is added
-        item.match(/[/\\](route|page|layout)\./)
+      return inputFiles.filter(
+        (item) =>
+          // App Router: route.ts, page.ts, layout.ts
+          item.match(/[/\\](route|page|layout)\./) ||
+          // Pages Router: any file in pages/
+          item.match(/[/\\]pages[/\\]/)
       );
     }
 
@@ -441,31 +484,305 @@ export async function getNextBuilder() {
       });
     }
 
-    private async findAppDirectory(): Promise<string> {
-      const appDir = resolve(this.config.workingDir, 'app');
-      const srcAppDir = resolve(this.config.workingDir, 'src/app');
-
-      try {
-        await access(appDir, constants.F_OK);
-        const appStats = await stat(appDir);
-        if (!appStats.isDirectory()) {
-          throw new Error(`Path exists but is not a directory: ${appDir}`);
-        }
-        return appDir;
-      } catch {
-        try {
-          await access(srcAppDir, constants.F_OK);
-          const srcAppStats = await stat(srcAppDir);
-          if (!srcAppStats.isDirectory()) {
-            throw new Error(`Path exists but is not a directory: ${srcAppDir}`);
+    /**
+     * Builds workflow routes for App Router.
+     * Generates routes in app/.well-known/workflow/v1/
+     */
+    private async buildForAppRouter(
+      appDir: string,
+      inputFiles: string[],
+      tsConfig: { baseUrl?: string; paths?: Record<string, string[]> }
+    ): Promise<{
+      stepsBuildContext: import('esbuild').BuildContext | undefined;
+      workflowsBundle:
+        | void
+        | {
+            interimBundleCtx: import('esbuild').BuildContext;
+            bundleFinal: (interimBundleResult: string) => Promise<void>;
           }
-          return srcAppDir;
-        } catch {
-          throw new Error(
-            'Could not find Next.js app directory. Expected either "app" or "src/app" to exist.'
-          );
+        | undefined;
+      workflowGeneratedDir: string;
+    }> {
+      const workflowGeneratedDir = join(appDir, '.well-known/workflow/v1');
+
+      // Ensure output directories exist
+      await mkdir(workflowGeneratedDir, { recursive: true });
+      await writeFile(join(workflowGeneratedDir, '.gitignore'), '*');
+
+      const options = {
+        inputFiles,
+        workflowGeneratedDir,
+        tsBaseUrl: tsConfig.baseUrl,
+        tsPaths: tsConfig.paths,
+      };
+
+      const stepsBuildContext = await this.buildStepsFunction(options);
+      const workflowsBundle = await this.buildWorkflowsFunction(options);
+      await this.buildWebhookRoute({ workflowGeneratedDir });
+      await this.writeFunctionsConfig(appDir);
+
+      return {
+        stepsBuildContext,
+        workflowsBundle,
+        workflowGeneratedDir,
+      };
+    }
+
+    /**
+     * Builds workflow routes for Pages Router.
+     * Generates routes in pages/.well-known/workflow/v1/
+     */
+    private async buildForPagesRouter(
+      pagesDir: string,
+      inputFiles: string[],
+      tsConfig: { baseUrl?: string; paths?: Record<string, string[]> }
+    ): Promise<void> {
+      const workflowGeneratedDir = join(pagesDir, '.well-known/workflow/v1');
+
+      // Ensure output directories exist
+      await mkdir(workflowGeneratedDir, { recursive: true });
+      await writeFile(join(workflowGeneratedDir, '.gitignore'), '*');
+
+      // Build steps route for Pages Router
+      await this.buildStepsFunctionPages({
+        inputFiles,
+        workflowGeneratedDir,
+        tsBaseUrl: tsConfig.baseUrl,
+        tsPaths: tsConfig.paths,
+      });
+
+      // Build workflows route for Pages Router
+      await this.buildWorkflowsFunctionPages({
+        inputFiles,
+        workflowGeneratedDir,
+        tsBaseUrl: tsConfig.baseUrl,
+        tsPaths: tsConfig.paths,
+      });
+
+      // Build webhook route for Pages Router
+      await this.buildWebhookRoutePages({ workflowGeneratedDir });
+
+      // Write config.json
+      await this.writeFunctionsConfig(pagesDir);
+    }
+
+    /**
+     * Builds the steps function route for Pages Router.
+     * Generates pages/api/.well-known/workflow/v1/step.js
+     */
+    private async buildStepsFunctionPages({
+      inputFiles,
+      workflowGeneratedDir,
+      tsPaths,
+      tsBaseUrl,
+    }: {
+      inputFiles: string[];
+      workflowGeneratedDir: string;
+      tsBaseUrl?: string;
+      tsPaths?: Record<string, string[]>;
+    }): Promise<void> {
+      // Create steps bundle with Pages Router wrapper
+      const stepsRouteFile = join(workflowGeneratedDir, 'step.js');
+
+      // First, build the steps bundle to a temporary location
+      const tempStepsFile = join(workflowGeneratedDir, '_temp_steps.js');
+      await this.createStepsBundle({
+        format: 'esm',
+        inputFiles,
+        outfile: tempStepsFile,
+        externalizeNonSteps: true,
+        tsBaseUrl,
+        tsPaths,
+      });
+
+      // Read the generated bundle
+      const { readFile: readFileFs } = await import('node:fs/promises');
+      const stepsBundle = await readFileFs(tempStepsFile, 'utf-8');
+
+      // Extract the POST handler and wrap it for Pages Router
+      // The generated bundle exports `POST` which is the stepEntrypoint
+      const pagesRouterWrapper = `// biome-ignore-all lint: generated file
+/* eslint-disable */
+import { convertPagesRequest, sendPagesResponse } from '@workflow/next/pages-adapter';
+
+${stepsBundle.replace('export { stepEntrypoint as POST }', 'const POST = stepEntrypoint;')}
+
+export default async function handler(req, res) {
+  const webRequest = await convertPagesRequest(req);
+  const webResponse = await POST(webRequest);
+  await sendPagesResponse(res, webResponse);
+}
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+`;
+
+      await writeFile(stepsRouteFile, pagesRouterWrapper);
+
+      // Clean up temp file
+      const { unlink } = await import('node:fs/promises');
+      await unlink(tempStepsFile).catch(() => {});
+    }
+
+    /**
+     * Builds the workflows function route for Pages Router.
+     * Generates pages/api/.well-known/workflow/v1/flow.js
+     */
+    private async buildWorkflowsFunctionPages({
+      inputFiles,
+      workflowGeneratedDir,
+      tsPaths,
+      tsBaseUrl,
+    }: {
+      inputFiles: string[];
+      workflowGeneratedDir: string;
+      tsBaseUrl?: string;
+      tsPaths?: Record<string, string[]>;
+    }): Promise<void> {
+      // Create workflows bundle with Pages Router wrapper
+      const workflowsRouteFile = join(workflowGeneratedDir, 'flow.js');
+
+      // First, build the workflows bundle to a temporary location
+      const tempWorkflowsFile = join(workflowGeneratedDir, '_temp_flow.js');
+      await this.createWorkflowsBundle({
+        format: 'esm',
+        outfile: tempWorkflowsFile,
+        bundleFinalOutput: false,
+        inputFiles,
+        tsBaseUrl,
+        tsPaths,
+      });
+
+      // Read the generated bundle
+      const { readFile: readFileFs } = await import('node:fs/promises');
+      const workflowsBundle = await readFileFs(tempWorkflowsFile, 'utf-8');
+
+      // Wrap for Pages Router
+      const pagesRouterWrapper = `// biome-ignore-all lint: generated file
+/* eslint-disable */
+import { convertPagesRequest, sendPagesResponse } from '@workflow/next/pages-adapter';
+
+${workflowsBundle.replace('export const POST =', 'const POST =')}
+
+export default async function handler(req, res) {
+  const webRequest = await convertPagesRequest(req);
+  const webResponse = await POST(webRequest);
+  await sendPagesResponse(res, webResponse);
+}
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+`;
+
+      await writeFile(workflowsRouteFile, pagesRouterWrapper);
+
+      // Clean up temp file
+      const { unlink } = await import('node:fs/promises');
+      await unlink(tempWorkflowsFile).catch(() => {});
+    }
+
+    /**
+     * Builds the webhook route for Pages Router.
+     * Generates pages/api/.well-known/workflow/v1/webhook/[token].js
+     */
+    private async buildWebhookRoutePages({
+      workflowGeneratedDir,
+    }: {
+      workflowGeneratedDir: string;
+    }): Promise<void> {
+      const webhookDir = join(workflowGeneratedDir, 'webhook');
+      await mkdir(webhookDir, { recursive: true });
+
+      const webhookRouteFile = join(webhookDir, '[token].js');
+
+      // Create Pages Router webhook handler
+      const routeContent = `// biome-ignore-all lint: generated file
+/* eslint-disable */
+import { resumeWebhook } from 'workflow/api';
+import { convertPagesRequest, sendPagesResponse } from '@workflow/next/pages-adapter';
+
+export default async function handler(req, res) {
+  const webRequest = await convertPagesRequest(req);
+  const { token } = req.query;
+
+  if (!token || typeof token !== 'string') {
+    res.status(400).send('Missing token');
+    return;
+  }
+
+  try {
+    const response = await resumeWebhook(decodeURIComponent(token), webRequest);
+    await sendPagesResponse(res, response);
+  } catch (error) {
+    console.error('Error during resumeWebhook', error);
+    res.status(404).end();
+  }
+}
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+`;
+
+      await writeFile(webhookRouteFile, routeContent);
+    }
+
+    /**
+     * Helper to check if a directory exists.
+     */
+    private async directoryExists(dirPath: string): Promise<boolean> {
+      try {
+        await access(dirPath, constants.F_OK);
+        const stats = await stat(dirPath);
+        return stats.isDirectory();
+      } catch {
+        return false;
+      }
+    }
+
+    /**
+     * Detects which Next.js routers are available in the project.
+     * Checks for both App Router (app/, src/app/) and Pages Router (pages/, src/pages/).
+     */
+    private async detectRouters(): Promise<RouterConfig> {
+      const possibleAppDirs = ['app', 'src/app'];
+      const possiblePagesDirs = ['pages', 'src/pages'];
+
+      let appRouterDir: string | null = null;
+      let pagesRouterDir: string | null = null;
+
+      // Check for App Router
+      for (const dir of possibleAppDirs) {
+        const fullPath = resolve(this.config.workingDir, dir);
+        if (await this.directoryExists(fullPath)) {
+          appRouterDir = fullPath;
+          break;
         }
       }
+
+      // Check for Pages Router
+      for (const dir of possiblePagesDirs) {
+        const fullPath = resolve(this.config.workingDir, dir);
+        if (await this.directoryExists(fullPath)) {
+          pagesRouterDir = fullPath;
+          break;
+        }
+      }
+
+      return {
+        hasAppRouter: appRouterDir !== null,
+        appRouterDir,
+        hasPagesRouter: pagesRouterDir !== null,
+        pagesRouterDir,
+      };
     }
   }
 

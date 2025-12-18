@@ -19,7 +19,8 @@
   "exports": {
     ".": "./dist/index.js",
     "./loader": "./dist/loader.js",
-    "./runtime": "./dist/runtime.js"
+    "./runtime": "./dist/runtime.js",
+    "./pages-adapter": "./dist/pages-adapter.js"
   },
   "scripts": {
     "build": "tsc",
