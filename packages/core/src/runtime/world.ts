@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { World } from '@workflow/world';
 import { createLocalWorld } from '@workflow/world-local';
 import { createVercelWorld } from '@workflow/world-vercel';
-import { wrapWorldWithRetry } from './retry.js';
+import { RetryWorld } from './retry.js';
 
 const require = createRequire(join(process.cwd(), 'index.js'));
 
@@ -89,7 +89,7 @@ export const getWorld = (): World => {
     return globalSymbols[WorldCache];
   }
   // Wrap the world with retry logic for resilience against transient failures
-  globalSymbols[WorldCache] = wrapWorldWithRetry(createWorld());
+  globalSymbols[WorldCache] = new RetryWorld(createWorld());
   return globalSymbols[WorldCache];
 };
 

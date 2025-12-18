@@ -1,5 +1,30 @@
 import { WorkflowAPIError } from '@workflow/errors';
-import type { World } from '@workflow/world';
+import type {
+  CancelWorkflowRunParams,
+  CreateEventParams,
+  CreateEventRequest,
+  CreateHookRequest,
+  CreateStepRequest,
+  CreateWorkflowRunRequest,
+  GetHookParams,
+  GetStepParams,
+  GetWorkflowRunParams,
+  ListEventsByCorrelationIdParams,
+  ListEventsParams,
+  ListHooksParams,
+  ListWorkflowRunStepsParams,
+  ListWorkflowRunsParams,
+  MessageId,
+  PauseWorkflowRunParams,
+  QueueOptions,
+  QueuePayload,
+  QueuePrefix,
+  ResumeWorkflowRunParams,
+  UpdateStepRequest,
+  UpdateWorkflowRunRequest,
+  ValidQueueName,
+  World,
+} from '@workflow/world';
 import retry, { type Options as RetryOptions } from 'async-retry';
 
 /**
@@ -106,7 +131,7 @@ export async function withRetry<T>(
         // If the error is not retryable, bail immediately
         if (!isRetryableError(error)) {
           bail(error as Error);
-          // This return is never reached, but TypeScript requires it
+          // This throw is never reached, but TypeScript requires it
           throw error;
         }
         // Otherwise, throw to trigger a retry
@@ -121,47 +146,189 @@ export async function withRetry<T>(
 }
 
 /**
- * Creates a proxy handler that wraps method calls with retry logic.
+ * A World wrapper that adds automatic retry logic for all async operations.
+ *
+ * This class wraps another World instance and intercepts all method calls,
+ * adding retry logic with exponential backoff for transient failures.
  */
-function createRetryProxyHandler<T extends object>(): ProxyHandler<T> {
-  return {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
+export class RetryWorld implements World {
+  private readonly world: World;
 
-      // If it's a function, wrap it with retry logic
-      if (typeof value === 'function') {
-        return function (this: unknown, ...args: unknown[]) {
-          const result = value.apply(this === receiver ? target : this, args);
-          // If the function returns a promise, wrap it with retry
-          if (result instanceof Promise) {
-            return withRetry(() =>
-              value.apply(this === receiver ? target : this, args)
-            );
-          }
-          return result;
-        };
-      }
+  constructor(world: World) {
+    this.world = world;
+  }
 
-      // If it's an object (like runs, steps, events, hooks), wrap it recursively
-      if (value !== null && typeof value === 'object') {
-        return new Proxy(value as object, createRetryProxyHandler());
-      }
+  // ============ Queue methods ============
 
-      return value;
+  getDeploymentId(): Promise<string> {
+    // Idempotent read - safe to retry
+    return withRetry(() => this.world.getDeploymentId());
+  }
+
+  queue(
+    queueName: ValidQueueName,
+    message: QueuePayload,
+    opts?: QueueOptions
+  ): Promise<{ messageId: MessageId }> {
+    // Non-idempotent write - no retry
+    return this.world.queue(queueName, message, opts);
+  }
+
+  createQueueHandler(
+    queueNamePrefix: QueuePrefix,
+    handler: (
+      message: unknown,
+      meta: { attempt: number; queueName: ValidQueueName; messageId: MessageId }
+      // biome-ignore lint/suspicious/noConfusingVoidType: matches World interface
+    ) => Promise<void | { timeoutSeconds: number }>
+  ): (req: Request) => Promise<Response> {
+    // Factory method - no retry needed
+    return this.world.createQueueHandler(queueNamePrefix, handler);
+  }
+
+  // ============ Streamer methods ============
+
+  writeToStream(
+    name: string,
+    runId: string | Promise<string>,
+    chunk: string | Uint8Array
+  ): Promise<void> {
+    // Non-idempotent write - no retry
+    return this.world.writeToStream(name, runId, chunk);
+  }
+
+  closeStream(name: string, runId: string | Promise<string>): Promise<void> {
+    // Non-idempotent write - no retry
+    return this.world.closeStream(name, runId);
+  }
+
+  readFromStream(
+    name: string,
+    startIndex?: number
+  ): Promise<ReadableStream<Uint8Array>> {
+    // Idempotent read - safe to retry
+    return withRetry(() => this.world.readFromStream(name, startIndex));
+  }
+
+  listStreamsByRunId(runId: string): Promise<string[]> {
+    // Idempotent read - safe to retry
+    return withRetry(() => this.world.listStreamsByRunId(runId));
+  }
+
+  // ============ Optional start method ============
+
+  async start(): Promise<void> {
+    // Non-idempotent - no retry
+    if (this.world.start) {
+      await this.world.start();
+    }
+  }
+
+  // ============ Storage: runs ============
+
+  readonly runs = {
+    create: (data: CreateWorkflowRunRequest) => {
+      // Non-idempotent write - no retry
+      return this.world.runs.create(data);
+    },
+    get: (id: string, params?: GetWorkflowRunParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.runs.get(id, params));
+    },
+    update: (id: string, data: UpdateWorkflowRunRequest) => {
+      // Non-idempotent write - no retry
+      return this.world.runs.update(id, data);
+    },
+    list: (params?: ListWorkflowRunsParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.runs.list(params));
+    },
+    cancel: (id: string, params?: CancelWorkflowRunParams) => {
+      // Non-idempotent write - no retry
+      return this.world.runs.cancel(id, params);
+    },
+    pause: (id: string, params?: PauseWorkflowRunParams) => {
+      // Non-idempotent write - no retry
+      return this.world.runs.pause(id, params);
+    },
+    resume: (id: string, params?: ResumeWorkflowRunParams) => {
+      // Non-idempotent write - no retry
+      return this.world.runs.resume(id, params);
     },
   };
-}
 
-/**
- * Wraps a World instance with automatic retry logic for all async operations.
- *
- * This creates a proxy around the World object that intercepts all method calls
- * and wraps them with retry logic. Nested objects (runs, steps, events, hooks)
- * are also proxied recursively.
- *
- * @param world - The World instance to wrap
- * @returns A World instance with retry logic applied to all methods
- */
-export function wrapWorldWithRetry(world: World): World {
-  return new Proxy(world, createRetryProxyHandler<World>());
+  // ============ Storage: steps ============
+
+  readonly steps = {
+    create: (runId: string, data: CreateStepRequest) => {
+      // Non-idempotent write - no retry
+      return this.world.steps.create(runId, data);
+    },
+    get: (
+      runId: string | undefined,
+      stepId: string,
+      params?: GetStepParams
+    ) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.steps.get(runId, stepId, params));
+    },
+    update: (runId: string, stepId: string, data: UpdateStepRequest) => {
+      // Non-idempotent write - no retry
+      return this.world.steps.update(runId, stepId, data);
+    },
+    list: (params: ListWorkflowRunStepsParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.steps.list(params));
+    },
+  };
+
+  // ============ Storage: events ============
+
+  readonly events = {
+    create: (
+      runId: string,
+      data: CreateEventRequest,
+      params?: CreateEventParams
+    ) => {
+      // Non-idempotent write - no retry
+      return this.world.events.create(runId, data, params);
+    },
+    list: (params: ListEventsParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.events.list(params));
+    },
+    listByCorrelationId: (params: ListEventsByCorrelationIdParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.events.listByCorrelationId(params));
+    },
+  };
+
+  // ============ Storage: hooks ============
+
+  readonly hooks = {
+    create: (
+      runId: string,
+      data: CreateHookRequest,
+      params?: GetHookParams
+    ) => {
+      // Non-idempotent write - no retry
+      return this.world.hooks.create(runId, data, params);
+    },
+    get: (hookId: string, params?: GetHookParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.hooks.get(hookId, params));
+    },
+    getByToken: (token: string, params?: GetHookParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.hooks.getByToken(token, params));
+    },
+    list: (params: ListHooksParams) => {
+      // Idempotent read - safe to retry
+      return withRetry(() => this.world.hooks.list(params));
+    },
+    dispose: (hookId: string, params?: GetHookParams) => {
+      // Non-idempotent write - no retry
+      return this.world.hooks.dispose(hookId, params);
+    },
+  };
 }
