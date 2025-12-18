@@ -14,7 +14,7 @@ export default async function handler(
     return;
   }
 
-  const { x, y } = JSON.parse(req.body);
+  const { x, y } = req.body;
 
   console.log(`Calling step function directly with x=${x}, y=${y}`);
 
