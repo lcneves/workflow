@@ -359,11 +359,14 @@ export function workflowEntrypoint(
                   correlationId: e.correlationId,
                 }));
 
-              // Create all wait_completed events
-              for (const waitEvent of waitsToComplete) {
-                const result = await world.events.create(runId, waitEvent);
-                // Add the event to the events array so the workflow can see it
-                events.push(result.event);
+              // Batch create all wait_completed events
+              if (waitsToComplete.length > 0) {
+                const completedResults = await world.events.createBatch(
+                  runId,
+                  waitsToComplete
+                );
+                // Add the events to the events array so the workflow can see them
+                events.push(...completedResults.map((r) => r.event));
               }
 
               const result = await runWorkflow(

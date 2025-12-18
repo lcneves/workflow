@@ -97,7 +97,21 @@ export interface Storage {
       data: CreateEventRequest,
       params?: CreateEventParams
     ): Promise<EventResult>;
-
+    /**
+     * Create multiple events in a single atomic operation.
+     * This is more efficient than calling create() multiple times
+     * and ensures all events are created atomically.
+     *
+     * @param runId - The workflow run ID
+     * @param data - Array of events to create
+     * @param params - Optional parameters for event creation
+     * @returns Promise resolving to the created events and affected entities
+     */
+    createBatch(
+      runId: string,
+      data: CreateEventRequest[],
+      params?: CreateEventParams
+    ): Promise<EventResult[]>;
     list(params: ListEventsParams): Promise<PaginatedResponse<Event>>;
     listByCorrelationId(
       params: ListEventsByCorrelationIdParams

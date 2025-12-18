@@ -787,6 +787,228 @@ export function createEventsStorage(drizzle: Drizzle): Storage['events'] {
       const resolveData = params?.resolveData ?? 'all';
       return { event: filterEventData(parsed, resolveData), run, step, hook };
     },
+    async createBatch(runId, data, params): Promise<EventResult[]> {
+      if (data.length === 0) {
+        return [];
+      }
+
+      const resolveData = params?.resolveData ?? 'all';
+      const now = new Date();
+
+      // For run_created events, generate runId server-side if not provided
+      const hasRunCreated = data.some((e) => e.eventType === 'run_created');
+      let effectiveRunId = runId;
+      if (hasRunCreated && (!runId || runId === '')) {
+        effectiveRunId = `wrun_${ulid()}`;
+      }
+
+      // Separate events by type for entity creation
+      const runCreatedEvents = data.filter(
+        (e) => e.eventType === 'run_created'
+      );
+      const runStartedEvents = data.filter(
+        (e) => e.eventType === 'run_started'
+      );
+      const runCompletedEvents = data.filter(
+        (e) => e.eventType === 'run_completed'
+      );
+      const runFailedEvents = data.filter((e) => e.eventType === 'run_failed');
+      const runCancelledEvents = data.filter(
+        (e) => e.eventType === 'run_cancelled'
+      );
+      const runPausedEvents = data.filter((e) => e.eventType === 'run_paused');
+      const runResumedEvents = data.filter(
+        (e) => e.eventType === 'run_resumed'
+      );
+      const stepCreatedEvents = data.filter(
+        (e) => e.eventType === 'step_created'
+      );
+      const hookCreatedEvents = data.filter(
+        (e) => e.eventType === 'hook_created'
+      );
+
+      // Create run entities atomically with events
+      if (runCreatedEvents.length > 0) {
+        const runsToInsert = runCreatedEvents.map((eventData) => {
+          const runData = (eventData as any).eventData as {
+            deploymentId: string;
+            workflowName: string;
+            input: any[];
+            executionContext?: Record<string, any>;
+          };
+          return {
+            runId: effectiveRunId,
+            deploymentId: runData.deploymentId,
+            workflowName: runData.workflowName,
+            input: runData.input as SerializedContent,
+            executionContext: runData.executionContext as
+              | SerializedContent
+              | undefined,
+            status: 'pending' as const,
+          };
+        });
+        await drizzle
+          .insert(Schema.runs)
+          .values(runsToInsert)
+          .onConflictDoNothing();
+      }
+
+      // Update run status for run_started events
+      if (runStartedEvents.length > 0) {
+        await drizzle
+          .update(Schema.runs)
+          .set({
+            status: 'running',
+            startedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(Schema.runs.runId, effectiveRunId));
+      }
+
+      // Update run status for run_completed events
+      if (runCompletedEvents.length > 0) {
+        const completedData = (runCompletedEvents[0] as any).eventData as {
+          output?: any;
+        };
+        await drizzle
+          .update(Schema.runs)
+          .set({
+            status: 'completed',
+            output: completedData.output as SerializedContent | undefined,
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(Schema.runs.runId, effectiveRunId));
+      }
+
+      // Update run status for run_failed events
+      if (runFailedEvents.length > 0) {
+        const failedData = (runFailedEvents[0] as any).eventData as {
+          error: any;
+          errorCode?: string;
+        };
+        const errorMessage =
+          typeof failedData.error === 'string'
+            ? failedData.error
+            : (failedData.error?.message ?? 'Unknown error');
+        // Store structured error as JSON for deserializeRunError to parse
+        const errorJson = JSON.stringify({
+          message: errorMessage,
+          stack: failedData.error?.stack,
+          code: failedData.errorCode,
+        });
+        await drizzle
+          .update(Schema.runs)
+          .set({
+            status: 'failed',
+            error: errorJson,
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(Schema.runs.runId, effectiveRunId));
+      }
+
+      // Update run status for run_cancelled events
+      if (runCancelledEvents.length > 0) {
+        await drizzle
+          .update(Schema.runs)
+          .set({
+            status: 'cancelled',
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(Schema.runs.runId, effectiveRunId));
+      }
+
+      // Update run status for run_paused events
+      if (runPausedEvents.length > 0) {
+        await drizzle
+          .update(Schema.runs)
+          .set({
+            status: 'paused',
+            updatedAt: now,
+          })
+          .where(eq(Schema.runs.runId, effectiveRunId));
+      }
+
+      // Update run status for run_resumed events
+      if (runResumedEvents.length > 0) {
+        await drizzle
+          .update(Schema.runs)
+          .set({
+            status: 'running',
+            updatedAt: now,
+          })
+          .where(eq(Schema.runs.runId, effectiveRunId));
+      }
+
+      // Create step entities atomically with events
+      if (stepCreatedEvents.length > 0) {
+        const stepsToInsert = stepCreatedEvents.map((eventData) => {
+          const stepData = (eventData as any).eventData as {
+            stepName: string;
+            input: any;
+          };
+          return {
+            runId: effectiveRunId,
+            stepId: eventData.correlationId!,
+            stepName: stepData.stepName,
+            input: stepData.input as SerializedContent,
+            status: 'pending' as const,
+            attempt: 0,
+          };
+        });
+        await drizzle
+          .insert(Schema.steps)
+          .values(stepsToInsert)
+          .onConflictDoNothing();
+      }
+
+      // Create hook entities atomically with events
+      if (hookCreatedEvents.length > 0) {
+        const hooksToInsert = hookCreatedEvents.map((eventData) => {
+          const hookData = (eventData as any).eventData as {
+            token: string;
+            metadata?: any;
+          };
+          return {
+            runId: effectiveRunId,
+            hookId: eventData.correlationId!,
+            token: hookData.token,
+            metadata: hookData.metadata as SerializedContent,
+            ownerId: '', // TODO: get from context
+            projectId: '', // TODO: get from context
+            environment: '', // TODO: get from context
+          };
+        });
+        await drizzle
+          .insert(Schema.hooks)
+          .values(hooksToInsert)
+          .onConflictDoNothing();
+      }
+
+      // Insert all events in a single batch query
+      const eventsToInsert = data.map((eventData) => ({
+        runId: effectiveRunId,
+        eventId: `wevt_${ulid()}`,
+        correlationId: eventData.correlationId,
+        eventType: eventData.eventType,
+        eventData: 'eventData' in eventData ? eventData.eventData : undefined,
+      }));
+
+      const values = await drizzle
+        .insert(events)
+        .values(eventsToInsert)
+        .returning({ eventId: events.eventId, createdAt: events.createdAt });
+
+      // Combine input data with returned values
+      // TODO: Return actual entity data from the database after entity creation is moved here
+      return data.map((eventData, i) => {
+        const result = { ...eventData, ...values[i], runId: effectiveRunId };
+        const parsed = EventSchema.parse(result);
+        return { event: filterEventData(parsed, resolveData) };
+      });
+    },
     async list(params: ListEventsParams): Promise<PaginatedResponse<Event>> {
       const limit = params?.pagination?.limit ?? 100;
       const sortOrder = params.pagination?.sortOrder || 'asc';

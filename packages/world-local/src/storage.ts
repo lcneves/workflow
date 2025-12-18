@@ -858,6 +858,16 @@ export function createStorage(basedir: string): Storage {
         };
       },
 
+      async createBatch(runId, data, params): Promise<EventResult[]> {
+        // createBatch is just a sequential loop over create() to ensure monotonic ULIDs
+        const results: EventResult[] = [];
+        for (const eventData of data) {
+          const result = await this.create(runId, eventData, params);
+          results.push(result);
+        }
+        return results;
+      },
+
       async list(params) {
         const { runId } = params;
         const resolveData = params.resolveData ?? DEFAULT_RESOLVE_DATA_OPTION;

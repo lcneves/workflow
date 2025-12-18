@@ -194,3 +194,37 @@ export async function createWorkflowRunEvent(
     hook: wireResult.hook,
   };
 }
+
+export async function createWorkflowRunEventBatch(
+  id: string,
+  data: CreateEventRequest[],
+  params?: CreateEventParams,
+  config?: APIConfig
+): Promise<EventResult[]> {
+  if (data.length === 0) {
+    return [];
+  }
+
+  const resolveData = params?.resolveData ?? DEFAULT_RESOLVE_DATA_OPTION;
+
+  // TODO: Use a dedicated batch endpoint when available on the server
+  // For now, create events in parallel for improved performance
+  const results = await Promise.all(
+    data.map((eventData) =>
+      makeRequest({
+        endpoint: `/v1/runs/${id}/events`,
+        options: {
+          method: 'POST',
+          body: JSON.stringify(eventData, dateToStringReplacer),
+        },
+        config,
+        schema: EventResultSchema,
+      })
+    )
+  );
+
+  return results.map((result: any) => ({
+    ...result,
+    event: filterEventData(result.event, resolveData),
+  }));
+}

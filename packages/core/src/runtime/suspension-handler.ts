@@ -30,7 +30,7 @@ export interface SuspensionHandlerResult {
 /**
  * Handles a workflow suspension by processing all pending operations (hooks, steps, waits).
  * Uses an event-sourced architecture where entities (steps, hooks) are created atomically
- * with their corresponding events via events.create().
+ * with their corresponding events via createBatch.
  *
  * Processing order:
  * 1. Hooks are processed first to prevent race conditions with webhook receivers
@@ -72,7 +72,7 @@ export async function handleSuspension({
   });
 
   // Process hooks first to prevent race conditions with webhook receivers
-  // All hook creations run in parallel
+  // Hooks must be processed individually (not batched) to detect hook_conflict events
   // Track any hook conflicts that occur - these will be handled by re-enqueueing the workflow
   let hasHookConflict = false;
 
@@ -104,106 +104,101 @@ export async function handleSuspension({
     );
   }
 
-  // Build a map of stepId -> step event for steps that need creation
-  const stepsNeedingCreation = new Set(
-    stepItems
-      .filter((queueItem) => !queueItem.hasCreatedEvent)
-      .map((queueItem) => queueItem.correlationId)
+  // Build step_created events only for steps that haven't been created yet
+  // Steps with hasCreatedEvent=true already have their event in the log
+  const stepsNeedingCreation = stepItems.filter(
+    (queueItem) => !queueItem.hasCreatedEvent
+  );
+  const stepEvents: CreateEventRequest[] = stepsNeedingCreation.map(
+    (queueItem) => {
+      const dehydratedInput = dehydrateStepArguments(
+        {
+          args: queueItem.args,
+          closureVars: queueItem.closureVars,
+          thisVal: queueItem.thisVal,
+        },
+        suspension.globalThis
+      );
+      return {
+        eventType: 'step_created' as const,
+        correlationId: queueItem.correlationId,
+        eventData: {
+          stepName: queueItem.stepName,
+          input: dehydratedInput as Serializable,
+        },
+      };
+    }
   );
 
-  // Process steps and waits in parallel
-  // Each step: create event (if needed) -> queue message
-  // Each wait: create event (if needed)
-  const ops: Promise<void>[] = [];
+  // Build wait_created events (only for waits that haven't been created yet)
+  const waitEvents: CreateEventRequest[] = waitItems
+    .filter((queueItem) => !queueItem.hasCreatedEvent)
+    .map((queueItem) => ({
+      eventType: 'wait_created' as const,
+      correlationId: queueItem.correlationId,
+      eventData: {
+        resumeAt: queueItem.resumeAt,
+      },
+    }));
 
-  // Steps: create event then queue message, all in parallel
-  for (const queueItem of stepItems) {
-    ops.push(
-      (async () => {
-        // Create step event if not already created
-        if (stepsNeedingCreation.has(queueItem.correlationId)) {
-          const dehydratedInput = dehydrateStepArguments(
-            {
-              args: queueItem.args,
-              closureVars: queueItem.closureVars,
-              thisVal: queueItem.thisVal,
-            },
-            suspension.globalThis
-          );
-          const stepEvent: CreateEventRequest = {
-            eventType: 'step_created' as const,
-            correlationId: queueItem.correlationId,
-            eventData: {
-              stepName: queueItem.stepName,
-              input: dehydratedInput as Serializable,
-            },
-          };
-          try {
-            await world.events.create(runId, stepEvent);
-          } catch (err) {
-            if (WorkflowAPIError.is(err) && err.status === 409) {
-              console.warn(`Step already exists, continuing: ${err.message}`);
-            } else {
-              throw err;
-            }
+  // Process steps and waits in parallel using batch creation
+  await Promise.all([
+    // Create step events (World creates step entities atomically)
+    // Only for steps that don't already have a step_created event
+    stepEvents.length > 0
+      ? world.events.createBatch(runId, stepEvents).catch((err) => {
+          if (WorkflowAPIError.is(err) && err.status === 409) {
+            console.warn(
+              `Some steps already exist, continuing: ${err.message}`
+            );
+          } else {
+            throw err;
           }
-        }
+        })
+      : Promise.resolve(),
+    // Create wait events
+    waitEvents.length > 0
+      ? world.events.createBatch(runId, waitEvents).catch((err) => {
+          if (WorkflowAPIError.is(err) && err.status === 409) {
+            console.warn(
+              `Some waits already exist, continuing: ${err.message}`
+            );
+          } else {
+            throw err;
+          }
+        })
+      : Promise.resolve(),
+  ]);
 
-        // Queue step execution message
-        await queueMessage(
-          world,
-          `__wkf_step_${queueItem.stepName}`,
-          {
-            workflowName,
-            workflowRunId: runId,
-            workflowStartedAt,
-            stepId: queueItem.correlationId,
-            traceCarrier: await serializeTraceCarrier(),
-            requestedAt: new Date(),
-          },
-          {
-            idempotencyKey: queueItem.correlationId,
-          }
-        );
-      })()
+  // Queue step execution messages for ALL pending steps in parallel
+  // (both newly created and those with existing step_created events)
+  const queueOps = stepItems.map(async (queueItem) => {
+    await queueMessage(
+      world,
+      `__wkf_step_${queueItem.stepName}`,
+      {
+        workflowName,
+        workflowRunId: runId,
+        workflowStartedAt,
+        stepId: queueItem.correlationId,
+        traceCarrier: await serializeTraceCarrier(),
+        requestedAt: new Date(),
+      },
+      {
+        idempotencyKey: queueItem.correlationId,
+      }
     );
-  }
+  });
 
-  // Waits: create events in parallel (no queueing needed for waits)
-  for (const queueItem of waitItems) {
-    if (!queueItem.hasCreatedEvent) {
-      ops.push(
-        (async () => {
-          const waitEvent: CreateEventRequest = {
-            eventType: 'wait_created' as const,
-            correlationId: queueItem.correlationId,
-            eventData: {
-              resumeAt: queueItem.resumeAt,
-            },
-          };
-          try {
-            await world.events.create(runId, waitEvent);
-          } catch (err) {
-            if (WorkflowAPIError.is(err) && err.status === 409) {
-              console.warn(`Wait already exists, continuing: ${err.message}`);
-            } else {
-              throw err;
-            }
-          }
-        })()
-      );
-    }
-  }
-
-  // Wait for all step and wait operations to complete
+  // Wait for all queue operations to complete
   waitUntil(
-    Promise.all(ops).catch((opErr) => {
+    Promise.all(queueOps).catch((opErr) => {
       const isAbortError =
         opErr?.name === 'AbortError' || opErr?.name === 'ResponseAborted';
       if (!isAbortError) throw opErr;
     })
   );
-  await Promise.all(ops);
+  await Promise.all(queueOps);
 
   // Calculate minimum timeout from waits
   const now = Date.now();
