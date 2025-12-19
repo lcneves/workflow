@@ -1,6 +1,7 @@
 import boxen from 'boxen';
 import chalk from 'chalk';
-import updateCheck from 'update-check';
+import latestVersion from 'latest-version';
+import { lt, valid } from 'semver';
 
 const PACKAGES_TO_CHECK = ['workflow', '@workflow/cli'] as const;
 
@@ -14,6 +15,7 @@ interface UpdateInfo {
  * Check if a newer version of the CLI is available on npm.
  * This runs asynchronously and prints a warning if an update is available.
  * Errors are silently ignored to avoid disrupting the CLI experience.
+ * Works for both global and local installations.
  */
 export async function checkForUpdates(currentVersion: string): Promise<void> {
   try {
@@ -22,13 +24,14 @@ export async function checkForUpdates(currentVersion: string): Promise<void> {
     // Check both packages in parallel
     const results = await Promise.allSettled(
       PACKAGES_TO_CHECK.map(async (packageName) => {
-        const pkg = { name: packageName, version: currentVersion };
-        const update = await updateCheck(pkg);
-        if (update) {
+        const latest = await latestVersion(packageName);
+        // Only report if current version is less than latest
+        // Use semver comparison to handle pre-release versions correctly
+        if (latest && isNewerVersion(currentVersion, latest)) {
           return {
             packageName,
             currentVersion,
-            latestVersion: update.latest,
+            latestVersion: latest,
           };
         }
         return null;
@@ -47,6 +50,19 @@ export async function checkForUpdates(currentVersion: string): Promise<void> {
   } catch {
     // Silently ignore errors - don't disrupt the CLI experience
   }
+}
+
+/**
+ * Check if the latest version is newer than the current version.
+ * Handles pre-release versions (e.g., 4.0.1-beta.33).
+ */
+function isNewerVersion(current: string, latest: string): boolean {
+  // If both are valid semver, use proper comparison
+  if (valid(current) && valid(latest)) {
+    return lt(current, latest);
+  }
+  // Fallback to string comparison if semver parsing fails
+  return current !== latest;
 }
 
 function printUpdateWarning(update: UpdateInfo): void {

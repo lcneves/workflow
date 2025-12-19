@@ -37,12 +37,14 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/semver": "7.7.1",
     "@workflow/tsconfig": "workspace:*"
   },
   "dependencies": {
     "@oclif/core": "4.0.0",
     "@oclif/plugin-help": "6.2.31",
-    "update-check": "1.5.4",
+    "latest-version": "9.0.0",
+    "semver": "7.7.3",
     "@swc/core": "catalog:",
     "@workflow/builders": "workspace:*",
     "@workflow/swc-plugin": "workspace:*",
