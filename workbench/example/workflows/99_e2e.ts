@@ -215,7 +215,7 @@ export async function webhookWorkflow(
 export async function sleepingWorkflow() {
   'use workflow';
   const startTime = Date.now();
-  await sleep('5m');
+  await sleep('10s');
   const endTime = Date.now();
   return { startTime, endTime };
 }
