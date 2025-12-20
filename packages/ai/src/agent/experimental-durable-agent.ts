@@ -37,6 +37,7 @@ import {
   type UIMessageChunk,
   wrapLanguageModel,
 } from 'ai';
+import { FatalError } from 'workflow';
 
 /**
  * Middleware that makes each LLM call a durable workflow step.
@@ -82,8 +83,16 @@ function stripExecute(tools: ToolSet): ToolSet {
 }
 
 /**
+ * Result of a tool execution - either success with result or error with message.
+ */
+type ToolExecutionResult =
+  | { success: true; result: unknown }
+  | { success: false; error: string };
+
+/**
  * Execute a tool as a durable workflow step.
  * This ensures tool execution is retried on failure.
+ * FatalErrors are converted to error results that get sent back to the LLM.
  */
 async function executeToolDurably(
   toolName: string,
@@ -92,17 +101,28 @@ async function executeToolDurably(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tool: ToolSet[string],
   messages: ModelMessage[]
-): Promise<unknown> {
+): Promise<ToolExecutionResult> {
   'use step';
 
   if (!tool?.execute) {
     throw new Error(`Tool "${toolName}" has no execute function`);
   }
 
-  return tool.execute(input, {
-    toolCallId,
-    messages,
-  });
+  try {
+    const result = await tool.execute(input, {
+      toolCallId,
+      messages,
+    });
+    return { success: true, result };
+  } catch (error) {
+    // If it's a FatalError, convert it to an error result that gets sent back to the LLM
+    // This mimics AI SDK behavior where tool call failures are propagated back to the model
+    if (FatalError.is(error)) {
+      return { success: false, error: error.message };
+    }
+    // Re-throw other errors so the step retries
+    throw error;
+  }
 }
 
 /**
@@ -579,7 +599,7 @@ export class ExperimentalDurableAgent {
           const tool = this.tools[toolCall.toolName];
 
           // Execute tool durably - wrapped in 'use step' for automatic retry
-          const toolResult = await executeToolDurably(
+          const toolExecution = await executeToolDurably(
             toolCall.toolName,
             toolCall.toolCallId,
             toolCall.input,
@@ -595,10 +615,15 @@ export class ExperimentalDurableAgent {
                 type: 'tool-result',
                 toolCallId: toolCall.toolCallId,
                 toolName: toolCall.toolName,
-                output: {
-                  type: 'text',
-                  value: JSON.stringify(toolResult),
-                },
+                output: toolExecution.success
+                  ? {
+                      type: 'text',
+                      value: JSON.stringify(toolExecution.result),
+                    }
+                  : {
+                      type: 'error-text',
+                      value: toolExecution.error,
+                    },
               },
             ],
           });
@@ -759,7 +784,7 @@ export class ExperimentalDurableAgent {
           const tool = this.tools[toolCall.toolName];
 
           // Execute tool durably - wrapped in 'use step' for automatic retry
-          const toolResult = await executeToolDurably(
+          const toolExecution = await executeToolDurably(
             toolCall.toolName,
             toolCall.toolCallId,
             toolCall.input,
@@ -775,10 +800,15 @@ export class ExperimentalDurableAgent {
                 type: 'tool-result',
                 toolCallId: toolCall.toolCallId,
                 toolName: toolCall.toolName,
-                output: {
-                  type: 'text',
-                  value: JSON.stringify(toolResult),
-                },
+                output: toolExecution.success
+                  ? {
+                      type: 'text',
+                      value: JSON.stringify(toolExecution.result),
+                    }
+                  : {
+                      type: 'error-text',
+                      value: toolExecution.error,
+                    },
               },
             ],
           });
@@ -788,7 +818,9 @@ export class ExperimentalDurableAgent {
           await writer.write({
             type: 'tool-output-available',
             toolCallId: toolCall.toolCallId,
-            output: JSON.stringify(toolResult),
+            output: toolExecution.success
+              ? JSON.stringify(toolExecution.result)
+              : toolExecution.error,
           });
           writer.releaseLock();
         }
