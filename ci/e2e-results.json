@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2025-12-20T08:59:18.865Z",
-  "commit": "88ad5c9bbf4d79ef89a82492145ca70f9bf7cada",
+  "lastUpdated": "2025-12-20T09:56:47.729Z",
+  "commit": "696ef450f2add9548451acbc883a434f0522fd77",
   "branch": "main",
   "type": "e2e",
   "worlds": {
@@ -41,10 +41,10 @@
       "progress": 97
     },
     "local": {
-      "status": "partial",
+      "status": "passing",
       "total": 675,
-      "passed": 656,
-      "failed": 3,
+      "passed": 659,
+      "failed": 0,
       "skipped": 16,
       "frameworks": {
         "astro": {
@@ -64,18 +64,18 @@
         },
         "hono": {
           "total": 54,
-          "passed": 51,
-          "failed": 1
+          "passed": 52,
+          "failed": 0
         },
         "nextjs-turbopack": {
           "total": 135,
-          "passed": 134,
-          "failed": 1
+          "passed": 135,
+          "failed": 0
         },
         "nextjs-webpack": {
           "total": 108,
-          "passed": 107,
-          "failed": 1
+          "passed": 108,
+          "failed": 0
         },
         "nitro": {
           "total": 54,
@@ -98,7 +98,7 @@
           "failed": 0
         }
       },
-      "progress": 97
+      "progress": 98
     },
     "postgres": {
       "status": "passing",
@@ -161,10 +161,10 @@
       "progress": 98
     },
     "vercel": {
-      "status": "partial",
+      "status": "passing",
       "total": 297,
-      "passed": 285,
-      "failed": 1,
+      "passed": 286,
+      "failed": 0,
       "skipped": 11,
       "frameworks": {
         "astro": {
@@ -174,8 +174,8 @@
         },
         "express": {
           "total": 27,
-          "passed": 25,
-          "failed": 1
+          "passed": 26,
+          "failed": 0
         },
         "fastify": {
           "total": 27,
