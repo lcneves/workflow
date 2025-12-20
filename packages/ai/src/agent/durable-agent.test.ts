@@ -438,6 +438,176 @@ describe('DurableAgent', () => {
     });
   });
 
+  describe('providerOptions', () => {
+    it('should pass constructor providerOptions to streamTextIterator', async () => {
+      const mockModel = createMockModel();
+      const providerOptions = {
+        openai: {
+          reasoningEffort: 'high',
+        },
+      };
+
+      const agent = new DurableAgent({
+        model: async () => mockModel,
+        tools: {},
+        providerOptions,
+      });
+
+      const mockWritable = new WritableStream({
+        write: vi.fn(),
+        close: vi.fn(),
+      });
+
+      const { streamTextIterator } = await import('./stream-text-iterator.js');
+      const mockIterator = {
+        next: vi.fn().mockResolvedValueOnce({ done: true, value: [] }),
+      };
+      vi.mocked(streamTextIterator).mockReturnValue(
+        mockIterator as unknown as MockIterator
+      );
+
+      await agent.stream({
+        messages: [{ role: 'user', content: 'test' }],
+        writable: mockWritable,
+      });
+
+      // Verify streamTextIterator was called with providerOptions from constructor
+      expect(streamTextIterator).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerOptions,
+        })
+      );
+    });
+
+    it('should pass stream-level providerOptions to streamTextIterator', async () => {
+      const mockModel = createMockModel();
+      const providerOptions = {
+        openai: {
+          serviceTier: 'priority',
+        },
+      };
+
+      const agent = new DurableAgent({
+        model: async () => mockModel,
+        tools: {},
+      });
+
+      const mockWritable = new WritableStream({
+        write: vi.fn(),
+        close: vi.fn(),
+      });
+
+      const { streamTextIterator } = await import('./stream-text-iterator.js');
+      const mockIterator = {
+        next: vi.fn().mockResolvedValueOnce({ done: true, value: [] }),
+      };
+      vi.mocked(streamTextIterator).mockReturnValue(
+        mockIterator as unknown as MockIterator
+      );
+
+      await agent.stream({
+        messages: [{ role: 'user', content: 'test' }],
+        writable: mockWritable,
+        providerOptions,
+      });
+
+      // Verify streamTextIterator was called with providerOptions from stream call
+      expect(streamTextIterator).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerOptions,
+        })
+      );
+    });
+
+    it('should override constructor providerOptions with stream-level providerOptions', async () => {
+      const mockModel = createMockModel();
+      const constructorOptions = {
+        openai: {
+          reasoningEffort: 'high',
+        },
+      };
+      const streamOptions = {
+        openai: {
+          reasoningEffort: 'low',
+          serviceTier: 'priority',
+        },
+      };
+
+      const agent = new DurableAgent({
+        model: async () => mockModel,
+        tools: {},
+        providerOptions: constructorOptions,
+      });
+
+      const mockWritable = new WritableStream({
+        write: vi.fn(),
+        close: vi.fn(),
+      });
+
+      const { streamTextIterator } = await import('./stream-text-iterator.js');
+      const mockIterator = {
+        next: vi.fn().mockResolvedValueOnce({ done: true, value: [] }),
+      };
+      vi.mocked(streamTextIterator).mockReturnValue(
+        mockIterator as unknown as MockIterator
+      );
+
+      await agent.stream({
+        messages: [{ role: 'user', content: 'test' }],
+        writable: mockWritable,
+        providerOptions: streamOptions,
+      });
+
+      // Verify streamTextIterator was called with stream-level providerOptions (override)
+      expect(streamTextIterator).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerOptions: streamOptions,
+        })
+      );
+    });
+
+    it('should use constructor providerOptions when stream-level is not provided', async () => {
+      const mockModel = createMockModel();
+      const constructorOptions = {
+        anthropic: {
+          cacheControl: true,
+        },
+      };
+
+      const agent = new DurableAgent({
+        model: async () => mockModel,
+        tools: {},
+        providerOptions: constructorOptions,
+      });
+
+      const mockWritable = new WritableStream({
+        write: vi.fn(),
+        close: vi.fn(),
+      });
+
+      const { streamTextIterator } = await import('./stream-text-iterator.js');
+      const mockIterator = {
+        next: vi.fn().mockResolvedValueOnce({ done: true, value: [] }),
+      };
+      vi.mocked(streamTextIterator).mockReturnValue(
+        mockIterator as unknown as MockIterator
+      );
+
+      await agent.stream({
+        messages: [{ role: 'user', content: 'test' }],
+        writable: mockWritable,
+        // No providerOptions here - should use constructor's
+      });
+
+      // Verify streamTextIterator was called with constructor providerOptions
+      expect(streamTextIterator).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerOptions: constructorOptions,
+        })
+      );
+    });
+  });
+
   describe('tool execution with messages', () => {
     it('should pass conversation messages to tool execute function', async () => {
       // Track what messages were passed to the tool

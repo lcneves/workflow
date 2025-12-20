@@ -365,6 +365,43 @@ async function agentWithPrepareStep(userMessage: string) {
 }
 ```
 
+### Provider-Specific Options
+
+Use `providerOptions` to pass provider-specific settings like OpenAI's reasoning effort or service tier:
+
+```typescript
+import { DurableAgent } from "@workflow/ai/agent";
+import { getWritable } from "workflow";
+import type { UIMessageChunk } from "ai";
+
+async function agentWithProviderOptions(userMessage: string) {
+  "use workflow";
+
+  // Set default providerOptions in the constructor
+  const agent = new DurableAgent({
+    model: "openai/gpt-5.2",
+    system: "You are a helpful reasoning assistant.",
+    providerOptions: {
+      openai: {
+        reasoningEffort: "high",
+      },
+    },
+  });
+
+  await agent.stream({
+    messages: [{ role: "user", content: userMessage }],
+    writable: getWritable<UIMessageChunk>(),
+    // Override providerOptions per-call if needed
+    providerOptions: {
+      openai: {
+        reasoningEffort: "medium",
+        serviceTier: "priority",
+      },
+    },
+  });
+}
+```
+
 ### Message Injection with prepareStep
 
 Inject messages from external sources (like hooks) before each LLM call:

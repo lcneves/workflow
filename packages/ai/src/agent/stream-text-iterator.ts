@@ -3,6 +3,7 @@ import type {
   LanguageModelV2Prompt,
   LanguageModelV2ToolCall,
   LanguageModelV2ToolResultPart,
+  SharedV2ProviderOptions,
 } from '@ai-sdk/provider';
 import type {
   StepResult,
@@ -35,6 +36,7 @@ export async function* streamTextIterator({
   sendStart = true,
   onStepFinish,
   prepareStep,
+  providerOptions,
 }: {
   prompt: LanguageModelV2Prompt;
   tools: ToolSet;
@@ -44,6 +46,7 @@ export async function* streamTextIterator({
   sendStart?: boolean;
   onStepFinish?: StreamTextOnStepFinishCallback<any>;
   prepareStep?: PrepareStepCallback<any>;
+  providerOptions?: SharedV2ProviderOptions;
 }): AsyncGenerator<
   StreamTextIteratorYieldValue,
   LanguageModelV2Prompt,
@@ -83,6 +86,7 @@ export async function* streamTextIterator({
       toolsToModelTools(tools),
       {
         sendStart: sendStart && isFirstIteration,
+        providerOptions,
       }
     );
     isFirstIteration = false;

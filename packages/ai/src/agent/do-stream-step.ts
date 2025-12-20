@@ -4,6 +4,7 @@ import type {
   LanguageModelV2Prompt,
   LanguageModelV2StreamPart,
   LanguageModelV2ToolCall,
+  SharedV2ProviderOptions,
 } from '@ai-sdk/provider';
 import {
   gateway,
@@ -24,6 +25,7 @@ export async function doStreamStep(
   tools?: LanguageModelV2CallOptions['tools'],
   options?: {
     sendStart?: boolean;
+    providerOptions?: SharedV2ProviderOptions;
   }
 ) {
   'use step';
@@ -42,6 +44,7 @@ export async function doStreamStep(
   const result = await model.doStream({
     prompt: conversationPrompt,
     tools,
+    providerOptions: options?.providerOptions,
   });
 
   let finish: FinishPart | undefined;

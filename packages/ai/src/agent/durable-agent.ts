@@ -3,6 +3,7 @@ import type {
   LanguageModelV2Prompt,
   LanguageModelV2ToolCall,
   LanguageModelV2ToolResultPart,
+  SharedV2ProviderOptions,
 } from '@ai-sdk/provider';
 import {
   asSchema,
@@ -91,6 +92,22 @@ export interface DurableAgentOptions {
    * Optional system prompt to guide the agent's behavior.
    */
   system?: string;
+
+  /**
+   * Additional provider-specific options. They are passed through
+   * to the provider from the AI SDK and enable provider-specific
+   * functionality that can be fully encapsulated in the provider.
+   *
+   * @example
+   * ```typescript
+   * providerOptions: {
+   *   openai: {
+   *     reasoningEffort: 'high',
+   *   },
+   * }
+   * ```
+   */
+  providerOptions?: SharedV2ProviderOptions;
 }
 
 /**
@@ -162,6 +179,24 @@ export interface DurableAgentStreamOptions<TTools extends ToolSet = ToolSet> {
    * ```
    */
   prepareStep?: PrepareStepCallback<TTools>;
+
+  /**
+   * Additional provider-specific options. They are passed through
+   * to the provider from the AI SDK and enable provider-specific
+   * functionality that can be fully encapsulated in the provider.
+   *
+   * Overrides the providerOptions set in the constructor.
+   *
+   * @example
+   * ```typescript
+   * providerOptions: {
+   *   openai: {
+   *     reasoningEffort: 'high',
+   *   },
+   * }
+   * ```
+   */
+  providerOptions?: SharedV2ProviderOptions;
 }
 
 /**
@@ -196,11 +231,13 @@ export class DurableAgent {
   private model: string | (() => Promise<LanguageModelV2>);
   private tools: ToolSet;
   private system?: string;
+  private providerOptions?: SharedV2ProviderOptions;
 
   constructor(options: DurableAgentOptions) {
     this.model = options.model;
     this.tools = options.tools ?? {};
     this.system = options.system;
+    this.providerOptions = options.providerOptions;
   }
 
   generate() {
@@ -230,6 +267,7 @@ export class DurableAgent {
       sendStart: options.sendStart ?? true,
       onStepFinish: options.onStepFinish,
       prepareStep: options.prepareStep,
+      providerOptions: options.providerOptions ?? this.providerOptions,
     });
 
     let result = await iterator.next();
