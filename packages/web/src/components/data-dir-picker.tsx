@@ -95,6 +95,11 @@ export function DataDirPicker({
       {!isCheckingDir && checkResult?.found && !error && (
         <p className="mt-1 text-xs text-green-600 dark:text-green-400">
           ✓ Valid workflow data directory
+          {checkResult.shortName && (
+            <span className="ml-1 text-muted-foreground">
+              ({checkResult.shortName})
+            </span>
+          )}
         </p>
       )}
     </div>

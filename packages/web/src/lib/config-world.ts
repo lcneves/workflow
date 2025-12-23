@@ -1,8 +1,12 @@
 'use server';
 
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, isAbsolute } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import {
+  findWorkflowDataDir,
+  type WorkflowDataDirInfo,
+} from '@workflow/utils/check-data-dir';
 import { KNOWN_WORLDS, type KnownWorld } from './known-worlds';
 
 const require = createRequire(join(process.cwd(), 'index.js'));
@@ -78,7 +82,27 @@ export interface ValidationResult {
   warnings: ValidationWarning[];
 }
 
-// Validate configuration and return errors/warnings
+/**
+ * Resolve a dataDir path to the actual workflow data directory.
+ * The path can point to either a project directory or the data directory itself.
+ *
+ * @returns The resolved workflow data dir info, or null if not found
+ */
+export async function resolveDataDir(
+  dataDir: string
+): Promise<WorkflowDataDirInfo | null> {
+  if (!dataDir) return null;
+
+  // Server actions cannot reliably resolve relative paths because they
+  // execute in the server's working directory, not the user's.
+  if (!isAbsolute(dataDir)) {
+    return null;
+  }
+
+  return findWorkflowDataDir(dataDir);
+}
+
+// Validate configuration and return errors
 export async function validateWorldConfig(
   config: WorldConfig
 ): Promise<ValidationError[]> {
@@ -97,11 +121,23 @@ export async function validateWorldConfig(
           message:
             'Data directory path must be absolute. Use the CLI to set the data directory, or provide the full path starting with "/"',
         });
-      } else if (!existsSync(config.dataDir)) {
-        errors.push({
-          field: 'dataDir',
-          message: `Data directory does not exist: ${config.dataDir}`,
-        });
+      } else {
+        // Use findWorkflowDataDir to validate - it handles both project dirs and data dirs
+        const result = await findWorkflowDataDir(config.dataDir);
+        if (!result) {
+          // Check if the path exists at all
+          if (!existsSync(config.dataDir)) {
+            errors.push({
+              field: 'dataDir',
+              message: `Data directory does not exist: ${config.dataDir}`,
+            });
+          } else {
+            errors.push({
+              field: 'dataDir',
+              message: `Directory does not contain workflow data: ${config.dataDir}`,
+            });
+          }
+        }
       }
     }
 
@@ -141,29 +177,6 @@ export async function validateWorldConfig(
   return errors;
 }
 
-/**
- * Files/directories that indicate a valid workflow data directory
- */
-const WORKFLOW_DATA_INDICATORS = ['runs', 'hooks', 'streams'];
-
-/**
- * Check if a directory looks like a workflow data directory
- */
-function isWorkflowDataDir(dirPath: string): boolean {
-  if (!existsSync(dirPath)) {
-    return false;
-  }
-
-  try {
-    const entries = readdirSync(dirPath);
-    return WORKFLOW_DATA_INDICATORS.some((indicator) =>
-      entries.includes(indicator)
-    );
-  } catch {
-    return false;
-  }
-}
-
 export interface ConfigCheckResult {
   /** Whether the config is valid and ready to use */
   valid: boolean;
@@ -171,6 +184,8 @@ export interface ConfigCheckResult {
   reason?: string;
   /** The backend being checked */
   backend: string;
+  /** Resolved workflow data directory info (for local backend) */
+  dataDirInfo?: WorkflowDataDirInfo;
 }
 
 /**
@@ -205,15 +220,16 @@ export async function checkConfigHealth(
       };
     }
 
-    if (!existsSync(dataDir)) {
-      return {
-        valid: false,
-        reason: `Data directory does not exist: ${dataDir}`,
-        backend,
-      };
-    }
-
-    if (!isWorkflowDataDir(dataDir)) {
+    // Use findWorkflowDataDir to validate - it handles both project dirs and data dirs
+    const result = await findWorkflowDataDir(dataDir);
+    if (!result) {
+      if (!existsSync(dataDir)) {
+        return {
+          valid: false,
+          reason: `Data directory does not exist: ${dataDir}`,
+          backend,
+        };
+      }
       return {
         valid: false,
         reason: `Directory does not contain workflow data: ${dataDir}`,
@@ -221,7 +237,7 @@ export async function checkConfigHealth(
       };
     }
 
-    return { valid: true, backend };
+    return { valid: true, backend, dataDirInfo: result };
   }
 
   if (backend === 'postgres') {

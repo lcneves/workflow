@@ -1,7 +1,7 @@
 'use client';
 
 import type { WorldConfig } from '@/lib/config-world';
-import { resolveToAbsolutePath } from '@/lib/data-dir';
+import { getWorkflowDataDirInfo, resolveToAbsolutePath } from '@/lib/data-dir';
 
 const STORAGE_KEY = 'workflow-recent-configs';
 const MAX_RECENT_CONFIGS = 10;
@@ -9,7 +9,7 @@ const MAX_RECENT_CONFIGS = 10;
 export interface RecentConfig {
   /** Unique identifier for this config */
   id: string;
-  /** Display name for this config (auto-generated from backend + identifier) */
+  /** Display name for this config (shortName from workflow data dir or auto-generated) */
   name: string;
   /** The complete world config */
   config: WorldConfig;
@@ -43,9 +43,9 @@ function generateConfigId(config: WorldConfig): string {
 }
 
 /**
- * Generate a display name for a config
+ * Generate a fallback display name for a config (used when shortName is not available)
  */
-function generateConfigName(config: WorldConfig): string {
+function generateFallbackConfigName(config: WorldConfig): string {
   const backend = config.backend || 'local';
 
   if (backend === 'local') {
@@ -87,6 +87,28 @@ function generateConfigName(config: WorldConfig): string {
 }
 
 /**
+ * Generate a display name for a config using the workflow data directory info
+ * Falls back to path-based name generation if the data dir info is not available
+ */
+async function generateConfigName(config: WorldConfig): Promise<string> {
+  const backend = config.backend || 'local';
+
+  // For local backend, try to get the shortName from the workflow data dir
+  if (backend === 'local' && config.dataDir) {
+    try {
+      const info = await getWorkflowDataDirInfo(config.dataDir);
+      if (info?.shortName) {
+        return info.shortName;
+      }
+    } catch {
+      // Fall through to fallback
+    }
+  }
+
+  return generateFallbackConfigName(config);
+}
+
+/**
  * Get all recent configs from localStorage
  */
 export function getRecentConfigs(): RecentConfig[] {
@@ -102,7 +124,8 @@ export function getRecentConfigs(): RecentConfig[] {
 }
 
 /**
- * Migrate existing recent configs to ensure all dataDirs are absolute paths.
+ * Migrate existing recent configs to ensure all dataDirs are absolute paths
+ * and update names to use shortName format.
  * This runs once on page load to fix any legacy relative paths.
  */
 export async function migrateRecentConfigs(): Promise<void> {
@@ -115,26 +138,34 @@ export async function migrateRecentConfigs(): Promise<void> {
   const migratedConfigs = await Promise.all(
     configs.map(async (recentConfig) => {
       const { config } = recentConfig;
-      if (!config.dataDir || config.dataDir.startsWith('/')) {
-        return recentConfig;
+      let updatedConfig = config;
+      let needsUpdate = false;
+
+      // Migrate relative paths to absolute
+      if (config.dataDir && !config.dataDir.startsWith('/')) {
+        try {
+          const absolutePath = await resolveToAbsolutePath(config.dataDir);
+          if (absolutePath !== config.dataDir) {
+            updatedConfig = { ...config, dataDir: absolutePath };
+            needsUpdate = true;
+          }
+        } catch {
+          // Keep original if resolution fails
+        }
       }
 
-      // Relative path found - resolve it
-      try {
-        const absolutePath = await resolveToAbsolutePath(config.dataDir);
-        if (absolutePath !== config.dataDir) {
-          hasChanges = true;
-          const updatedConfig = { ...config, dataDir: absolutePath };
-          return {
-            ...recentConfig,
-            id: generateConfigId(updatedConfig),
-            name: generateConfigName(updatedConfig),
-            config: updatedConfig,
-          };
-        }
-      } catch {
-        // Keep original if resolution fails
+      // Regenerate name using shortName
+      if (needsUpdate || !recentConfig.name) {
+        hasChanges = true;
+        const newName = await generateConfigName(updatedConfig);
+        return {
+          ...recentConfig,
+          id: generateConfigId(updatedConfig),
+          name: newName,
+          config: updatedConfig,
+        };
       }
+
       return recentConfig;
     })
   );
@@ -178,9 +209,10 @@ export async function saveRecentConfig(
   const normalizedConfig = await normalizeConfig(config);
 
   if (typeof window === 'undefined') {
+    const name = await generateConfigName(normalizedConfig);
     return {
       id: generateConfigId(normalizedConfig),
-      name: generateConfigName(normalizedConfig),
+      name,
       config: normalizedConfig,
       lastUsed: Date.now(),
       createdAt: Date.now(),
@@ -188,7 +220,7 @@ export async function saveRecentConfig(
   }
 
   const id = generateConfigId(normalizedConfig);
-  const name = generateConfigName(normalizedConfig);
+  const name = await generateConfigName(normalizedConfig);
   const now = Date.now();
 
   try {

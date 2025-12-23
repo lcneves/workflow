@@ -1,52 +1,32 @@
 'use server';
 
-import { existsSync, readdirSync } from 'node:fs';
-import { join, resolve, isAbsolute } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
+import {
+  findWorkflowDataDir as findWorkflowDataDirFromUtils,
+  type WorkflowDataDirInfo,
+} from '@workflow/utils/check-data-dir';
+
+// Re-export for convenience
+export type { WorkflowDataDirInfo };
 
 export interface DataDirCheckResult {
   /** Whether a valid workflow data directory was found */
   found: boolean;
-  /** The resolved path to the workflow data directory */
+  /** The resolved absolute path to the workflow data directory */
   path: string | null;
-  /** The paths that were checked */
+  /** Short display name for the project (derived from project path) */
+  shortName: string | null;
+  /** The project directory (parent of the workflow data folder) */
+  projectDir: string | null;
+  /** The paths that were checked (for debugging) */
   checkedPaths: string[];
 }
 
 /**
- * Possible subdirectories where workflow data might be stored
- */
-const WORKFLOW_DATA_SUBDIRS = ['.next/workflow-data', '.workflow-data', ''];
-
-/**
- * Files/directories that indicate a valid workflow data directory
- */
-const WORKFLOW_DATA_INDICATORS = ['runs', 'hooks', 'streams'];
-
-/**
- * Check if a directory looks like a workflow data directory
- * by checking for expected subdirectories
- */
-async function isWorkflowDataDir(dirPath: string): Promise<boolean> {
-  const resolvedPath = resolve(dirPath);
-
-  if (!existsSync(resolvedPath)) {
-    return false;
-  }
-
-  try {
-    const entries = readdirSync(resolvedPath);
-    // A workflow data dir should have at least one of the indicator directories
-    return WORKFLOW_DATA_INDICATORS.some((indicator) =>
-      entries.includes(indicator)
-    );
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Find a workflow data directory starting from a given path.
- * Checks the path itself and common subdirectories.
+ * The path can be:
+ * - A project directory containing workflow data in a known location
+ * - The workflow data directory itself
  *
  * @param selectedPath - The path selected by the user (from folder picker or manual input)
  * @returns Result indicating whether data was found and where
@@ -59,37 +39,28 @@ export async function findWorkflowDataDir(
     ? selectedPath
     : resolve(process.cwd(), selectedPath);
 
-  const checkedPaths: string[] = [];
+  // Use the utils function which handles all the cases:
+  // 1. The path itself is a workflow data directory
+  // 2. The path contains a workflow data directory
+  // 3. Walking up the tree to find the project root
+  const result = await findWorkflowDataDirFromUtils(basePath);
 
-  // Check if the selected path itself is a workflow data directory
-  if (await isWorkflowDataDir(basePath)) {
+  if (result) {
     return {
       found: true,
-      path: basePath,
+      path: result.dataDir,
+      shortName: result.shortName,
+      projectDir: result.projectDir,
       checkedPaths: [basePath],
     };
-  }
-  checkedPaths.push(basePath);
-
-  // Check common subdirectories
-  for (const subdir of WORKFLOW_DATA_SUBDIRS) {
-    if (!subdir) continue; // Skip empty string since we already checked basePath
-
-    const fullPath = join(basePath, subdir);
-    if (await isWorkflowDataDir(fullPath)) {
-      return {
-        found: true,
-        path: fullPath,
-        checkedPaths: [...checkedPaths, fullPath],
-      };
-    }
-    checkedPaths.push(fullPath);
   }
 
   return {
     found: false,
     path: null,
-    checkedPaths,
+    shortName: null,
+    projectDir: null,
+    checkedPaths: [basePath],
   };
 }
 
@@ -98,7 +69,7 @@ export async function findWorkflowDataDir(
  */
 export async function validateDataDir(
   dataDir: string
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; info?: WorkflowDataDirInfo }> {
   if (!dataDir) {
     return { valid: false, error: 'Data directory path is required' };
   }
@@ -107,21 +78,16 @@ export async function validateDataDir(
     ? dataDir
     : resolve(process.cwd(), dataDir);
 
-  if (!existsSync(resolvedPath)) {
-    return {
-      valid: false,
-      error: `Directory does not exist: ${resolvedPath}`,
-    };
-  }
+  const result = await findWorkflowDataDirFromUtils(resolvedPath);
 
-  if (!(await isWorkflowDataDir(resolvedPath))) {
+  if (!result) {
     return {
       valid: false,
       error: `Directory does not appear to contain workflow data: ${resolvedPath}`,
     };
   }
 
-  return { valid: true };
+  return { valid: true, info: result };
 }
 
 /**
@@ -139,4 +105,18 @@ export async function resolveToAbsolutePath(
   }
 
   return resolve(process.cwd(), inputPath);
+}
+
+/**
+ * Find workflow data directory and return the full info.
+ * This is a thin wrapper around the utils function for use in server actions.
+ */
+export async function getWorkflowDataDirInfo(
+  inputPath: string
+): Promise<WorkflowDataDirInfo | null> {
+  const resolvedPath = isAbsolute(inputPath)
+    ? inputPath
+    : resolve(process.cwd(), inputPath);
+
+  return findWorkflowDataDirFromUtils(resolvedPath);
 }
