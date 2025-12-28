@@ -1,8 +1,8 @@
-import type { Nitro, NitroModule, RollupConfig } from 'nitro/types';
 import { fileURLToPath } from 'node:url';
+import { workflowTransformPlugin } from '@workflow/rollup';
+import type { Nitro, NitroModule, RollupConfig } from 'nitro/types';
 import { join } from 'pathe';
 import { LocalBuilder, VercelBuilder } from './builders.js';
-import { workflowTransformPlugin } from '@workflow/rollup';
 import type { ModuleOptions } from './types';
 
 export type { ModuleOptions };
@@ -16,11 +16,15 @@ export default {
     // Runtime plugin: allow configuring local queue origin via Nitro runtimeConfig
     // (Nuxt feeds its runtimeConfig into Nitro, so this enables Nuxt runtimeConfig support too.)
     nitro.options.plugins ||= [];
-    const runtimePluginPath = fileURLToPath(
-      new URL('./runtime/workflow-runtime-config', import.meta.url)
-    );
-    if (!nitro.options.plugins.includes(runtimePluginPath)) {
-      nitro.options.plugins.push(runtimePluginPath);
+    try {
+      const runtimePluginPath = fileURLToPath(
+        new URL('./runtime/workflow-runtime-config', import.meta.url)
+      );
+      if (!nitro.options.plugins.includes(runtimePluginPath)) {
+        nitro.options.plugins.push(runtimePluginPath);
+      }
+    } catch (error) {
+      console.error('Error setting up workflow/nitro:', error);
     }
 
     // Add transform plugin
