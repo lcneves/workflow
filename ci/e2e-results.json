@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2025-12-27T20:47:12.584Z",
-  "commit": "e6b1bef5bb323bb6e617330c1bd1dd16d2a50f48",
+  "lastUpdated": "2025-12-28T13:14:54.071Z",
+  "commit": "f989613d7020f987fba2c74f2e49c8d47ff74a29",
   "branch": "main",
   "type": "e2e",
   "worlds": {
@@ -41,10 +41,10 @@
       "progress": 97
     },
     "local": {
-      "status": "partial",
-      "total": 675,
+      "status": "passing",
+      "total": 648,
       "passed": 632,
-      "failed": 27,
+      "failed": 0,
       "skipped": 16,
       "frameworks": {
         "astro": {
@@ -68,9 +68,9 @@
           "failed": 0
         },
         "nextjs-turbopack": {
-          "total": 135,
+          "total": 108,
           "passed": 108,
-          "failed": 27
+          "failed": 0
         },
         "nextjs-webpack": {
           "total": 108,
@@ -98,7 +98,7 @@
           "failed": 0
         }
       },
-      "progress": 94
+      "progress": 98
     },
     "postgres": {
       "status": "passing",
@@ -161,16 +161,16 @@
       "progress": 98
     },
     "vercel": {
-      "status": "partial",
+      "status": "passing",
       "total": 297,
-      "passed": 285,
-      "failed": 1,
+      "passed": 286,
+      "failed": 0,
       "skipped": 11,
       "frameworks": {
         "astro": {
           "total": 27,
-          "passed": 25,
-          "failed": 1
+          "passed": 26,
+          "failed": 0
         },
         "express": {
           "total": 27,
