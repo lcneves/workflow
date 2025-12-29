@@ -1,5 +1,30 @@
 # @workflow/web-shared
 
+## 4.0.1-beta.34
+
+### Patch Changes
+
+- Updated dependencies [[`e3f0390`](https://github.com/vercel/workflow/commit/e3f0390469b15f54dee7aa9faf753cb7847a60c6)]:
+  - @workflow/world@4.0.1-beta.11
+  - @workflow/core@4.0.1-beta.32
+  - @workflow/errors@4.0.1-beta.12
+
+## 4.0.1-beta.33
+
+### Patch Changes
+
+- [#674](https://github.com/vercel/workflow/pull/674) [`4bc98ff`](https://github.com/vercel/workflow/commit/4bc98ff4a15a090e2233c18b75e0a1b5dd2e9ff1) Thanks [@VaguelySerious](https://github.com/VaguelySerious)! - Move ErrorBoundary component from web to web-shared and use in sidebar detail view.
+
+- Updated dependencies [[`25b02b0`](https://github.com/vercel/workflow/commit/25b02b0bfdefa499e13fb974b1832fbe47dbde86)]:
+  - @workflow/core@4.0.1-beta.31
+  - @workflow/errors@4.0.1-beta.11
+
+## 4.0.1-beta.32
+
+### Patch Changes
+
+- [#673](https://github.com/vercel/workflow/pull/673) [`616bc67`](https://github.com/vercel/workflow/commit/616bc67be4691830e272b4987c73f1155adc5303) Thanks [@VaguelySerious](https://github.com/VaguelySerious)! - Fix null access in event data. This is due to a typing issue in event.eventData in the world interface, which will be resolved separately
+
 ## 4.0.1-beta.31
 
 ### Patch Changes

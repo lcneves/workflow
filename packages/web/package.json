@@ -1,7 +1,7 @@
 {
   "name": "@workflow/web",
   "description": "Workflow Observability UI",
-  "version": "4.0.1-beta.19",
+  "version": "4.0.1-beta.22",
   "private": false,
   "files": [
     ".next",
@@ -47,6 +47,7 @@
     "@types/react": "19",
     "@types/react-dom": "19",
     "@workflow/core": "workspace:*",
+    "@workflow/utils": "workspace:*",
     "@workflow/world": "workspace:*",
     "@workflow/web-shared": "workspace:*",
     "class-variance-authority": "0.7.1",
