@@ -75,6 +75,7 @@ export function createQueue(
         attempt: 1,
         messageId,
         idempotencyKey: opts?.idempotencyKey,
+        inspectionEntity: opts.inspectionEntity,
       }),
     });
     return { messageId };
@@ -108,6 +109,7 @@ export function createQueue(
       const queueName = `${queue}${messageData.id}` as const;
       await localWorld.queue(queueName, message, {
         idempotencyKey: messageData.idempotencyKey,
+        inspectionEntity: messageData.inspectionEntity,
       });
     }
   }

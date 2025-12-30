@@ -3,7 +3,9 @@ import {
   MessageId,
   type Queue,
   QueuePayloadSchema,
+  type StepInvokePayload,
   ValidQueueName,
+  type WorkflowInvokePayload,
 } from '@workflow/world';
 import * as z from 'zod';
 import { type APIConfig, getHeaders, getHttpUrl } from './utils.js';
@@ -64,7 +66,17 @@ export function createQueue(config?: APIConfig): Queue {
     headers: Object.fromEntries(headers.entries()),
   });
 
-  const queue: Queue['queue'] = async (queueName, payload, opts) => {
+  const sendMessage = async ({
+    queueName,
+    payload,
+    deploymentId,
+    idempotencyKey,
+  }: {
+    queueName: ValidQueueName;
+    payload: StepInvokePayload | WorkflowInvokePayload;
+    deploymentId?: string;
+    idempotencyKey?: string;
+  }) => {
     // zod v3 doesn't have the `encode` method. We only support zod v4 officially,
     // but codebases that pin zod v3 are still common.
     const hasEncoder = typeof MessageWrapper.encode === 'function';
@@ -80,16 +92,22 @@ export function createQueue(config?: APIConfig): Queue {
       payload,
       queueName,
       // Store deploymentId in the message so it can be preserved when re-enqueueing
-      deploymentId: opts?.deploymentId,
+      deploymentId,
     });
     const sanitizedQueueName = queueName.replace(/[^A-Za-z0-9-_]/g, '-');
-    const { messageId } = await queueClient.send(
-      sanitizedQueueName,
-      encoded,
-      opts
-    );
+    const { messageId } = await queueClient.send(sanitizedQueueName, encoded, {
+      deploymentId,
+      idempotencyKey,
+    });
     return { messageId: MessageId.parse(messageId) };
   };
+
+  const queue: Queue['queue'] = (queueName, payload, opts) =>
+    sendMessage({
+      queueName,
+      payload,
+      ...opts,
+    });
 
   const createQueueHandler: Queue['createQueueHandler'] = (prefix, handler) => {
     return queueClient.handleCallback({
@@ -117,7 +135,7 @@ export function createQueue(config?: APIConfig): Queue {
             if (maxAllowedTimeout <= 0) {
               // Message is at its lifetime limit - re-enqueue to get a fresh 24-hour clock
               // Preserve the original deploymentId to ensure routing to the same deployment
-              await queue(queueName, payload, { deploymentId });
+              await sendMessage({ deploymentId, queueName, payload });
               return undefined;
             } else if (result.timeoutSeconds > maxAllowedTimeout) {
               // Clamp timeout to fit within remaining message lifetime

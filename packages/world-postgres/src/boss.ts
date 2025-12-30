@@ -17,5 +17,9 @@ export const MessageData = z.object({
       "The ID of the sub-queue. For workflows, it's the workflow name. For steps, it's the step name."
     ),
   data: Base64Buffer.describe('The message that was sent'),
+  inspectionEntity: z.object({
+    type: z.enum(['run', 'step']),
+    id: z.string(),
+  }),
 });
 export type MessageData = z.infer<typeof MessageData>;

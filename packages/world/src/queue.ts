@@ -51,7 +51,7 @@ export interface QueueOptions {
   /**
    * Entity to inspect using the CLI or dashboard
    */
-  inspectionEntity: { type: string; id: string };
+  inspectionEntity: { type: 'run' | 'step'; id: string };
 }
 
 export interface Queue {
