@@ -247,6 +247,8 @@ export function writeFailedExecutionMessage({
           : [
               [
                 chalk.italic('This message failed and will not be retried.'),
+                // I have a feeling that this "help" message should actually come from `workflow/core` because
+                // it should be shared across all worlds and not world-specific.
                 Logger.help(
                   `inspect the status by running this command: ${code(`npx workflow inspect ${entityName} ${entityId}`)}.`
                 ),
