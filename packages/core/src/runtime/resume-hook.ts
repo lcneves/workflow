@@ -123,6 +123,10 @@ export async function resumeHook<T = any>(
           } satisfies WorkflowInvokePayload,
           {
             deploymentId: workflowRun.deploymentId,
+            inspectionEntity: {
+              type: 'run',
+              id: hook.runId,
+            },
           }
         );
 

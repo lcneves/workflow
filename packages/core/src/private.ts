@@ -4,6 +4,7 @@
 
 import type { EventsConsumer } from './events-consumer.js';
 import type { QueueItem } from './global.js';
+import { ansifyStep } from './parse-name.js';
 import type { Serializable } from './schemas.js';
 
 export type StepFunction<
@@ -29,6 +30,10 @@ export function getStepFunction(stepId: string): StepFunction | undefined {
   return registeredSteps.get(stepId);
 }
 
+export function listRegisteredStepFunctions(): string[] {
+  return Array.from(registeredSteps.keys());
+}
+
 /**
  * Get closure variables for the current step function
  * @internal
@@ -46,4 +51,19 @@ export interface WorkflowOrchestratorContext {
   onWorkflowError: (error: Error) => void;
   generateUlid: () => string;
   generateNanoid: () => string;
+}
+
+export class StepNotFoundError extends Error {
+  name = 'StepNotFoundError';
+  constructor(stepName: string, opts?: { registeredSteps: string[] }) {
+    let steps = (opts?.registeredSteps ?? listRegisteredStepFunctions())
+      .map((x) => `- ${ansifyStep(x)}`)
+      .join('\n');
+    steps = steps
+      ? `.\nAvailable steps:\n${steps}`
+      : ` (no steps were registered)`;
+    super(
+      `Step function "${ansifyStep(stepName)}" not found.\nMake sure the step function is registered${steps}`
+    );
+  }
 }

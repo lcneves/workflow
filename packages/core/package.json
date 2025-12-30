@@ -56,6 +56,7 @@
     "@workflow/world": "workspace:*",
     "@workflow/world-local": "workspace:*",
     "@workflow/world-vercel": "workspace:*",
+    "chalk": "catalog:",
     "debug": "4.4.3",
     "devalue": "5.6.0",
     "ms": "2.1.3",

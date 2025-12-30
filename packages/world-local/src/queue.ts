@@ -10,6 +10,7 @@ import type { Config } from './config.js';
 import { resolveBaseUrl } from './config.js';
 import { frame } from './frame.js';
 import { PACKAGE_VERSION } from './init.js';
+import * as Logger from './logger.js';
 
 // For local queue, there is no technical limit on the message visibility lifespan,
 // but the environment variable can be used for testing purposes to set a max visibility limit.
@@ -120,17 +121,15 @@ export function createQueue(config: Partial<Config>): Queue {
             } catch {}
           }
 
-          console.error(
-            chalk.red(
-              createFailedQueueMessageError({
-                willRetry: defaultRetriesLeft > 0,
-                response,
-                queueName,
-                body,
-                responseText: text,
-              })
-            )
-          );
+          writeFailedExecutionMessage({
+            willRetry: defaultRetriesLeft > 0,
+            response,
+            queueName,
+            body,
+            responseText: text,
+            entityName: opts.inspectionEntity.type,
+            entityId: opts.inspectionEntity.id,
+          });
         }
 
         console.error(
@@ -219,51 +218,61 @@ export function createQueue(config: Partial<Config>): Queue {
   return { queue, createQueueHandler, getDeploymentId };
 }
 
-export function createFailedQueueMessageError({
+export function writeFailedExecutionMessage({
   queueName,
   response,
   body,
   responseText,
   willRetry,
+  entityName,
+  entityId,
 }: {
   queueName: string;
   willRetry: boolean;
   response: Response;
   body: Buffer;
   responseText: string;
+  entityName: string;
+  entityId: string;
 }) {
-  return frame({
-    text: `${chalk.dim('[local world]')} ${chalk.bold('error:')} failed to execute`,
-    contents: [
-      responseText || 'No reason provided.',
-      willRetry
-        ? chalk.blue(`${chalk.bold('note:')} it will be retried soon.`)
-        : [
-            chalk.italic('This message failed and will not be retried.'),
-            chalk.cyan(
-              `${chalk.bold('help:')} run ${code(`npx workflow inspect wrun_...`)} to inspect the workflow run and retry manually.`
-            ),
-          ].join('\n'),
-      ...(process.env.WORKFLOW_LOCAL_WORLD_DEBUG_REQUEST_ERRORS !== '1'
-        ? []
-        : [
-            chalk.reset(
+  const level = willRetry ? 'warn' : 'error';
+  Logger.write(
+    level,
+    frame({
+      text: `${chalk.bold(`${level}:`)} failed to execute workflow ${entityName}${!willRetry ? '' : chalk.italic(' and will retry')}.`,
+      contents: [
+        responseText || 'No reason provided.',
+        ...(willRetry
+          ? []
+          : [
               [
-                `queue name: ${queueName}`,
-                `response status: ${response.status}`,
-                frame({
-                  text: 'headers:',
-                  contents: Array.from(
-                    response.headers,
-                    ([key, value]) => `${key}=${value}`
-                  ),
-                }),
-                frame({ text: 'request body', contents: [body.toString()] }),
-              ].join('\n')
-            ),
-          ]),
-    ],
-  });
+                chalk.italic('This message failed and will not be retried.'),
+                Logger.help(
+                  `inspect the status by running this command: ${code(`npx workflow inspect ${entityName} ${entityId}`)}.`
+                ),
+              ].join('\n'),
+            ]),
+        ...(process.env.WORKFLOW_LOCAL_WORLD_DEBUG_REQUEST_ERRORS !== '1'
+          ? []
+          : [
+              chalk.reset(
+                [
+                  `queue name: ${queueName}`,
+                  `response status: ${response.status}`,
+                  frame({
+                    text: 'headers:',
+                    contents: Array.from(
+                      response.headers,
+                      ([key, value]) => `${key}=${value}`
+                    ),
+                  }),
+                  frame({ text: 'request body', contents: [body.toString()] }),
+                ].join('\n')
+              ),
+            ]),
+      ],
+    })
+  );
 }
 
 function code(str: string) {

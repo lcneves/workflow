@@ -48,6 +48,10 @@ export type QueuePayload = z.infer<typeof QueuePayloadSchema>;
 export interface QueueOptions {
   deploymentId?: string;
   idempotencyKey?: string;
+  /**
+   * Entity to inspect using the CLI or dashboard
+   */
+  inspectionEntity: { type: string; id: string };
 }
 
 export interface Queue {
@@ -63,7 +67,7 @@ export interface Queue {
   queue(
     queueName: ValidQueueName,
     message: QueuePayload,
-    opts?: QueueOptions
+    opts: QueueOptions
   ): Promise<{ messageId: MessageId }>;
 
   /**

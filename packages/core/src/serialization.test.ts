@@ -1,6 +1,7 @@
 import { runInContext } from 'node:vm';
 import type { WorkflowRuntimeError } from '@workflow/errors';
 import { describe, expect, it } from 'vitest';
+import { buildName } from './parse-name.js';
 import { getStepFunction, registerStepFunction } from './private.js';
 import {
   dehydrateStepArguments,
@@ -96,7 +97,7 @@ describe('workflow arguments', () => {
     `);
 
     const hydrated = hydrateWorkflowArguments(serialized, vmGlobalThis);
-    expect(hydrated).toBe(BigInt(9007199254740992));
+    expect(hydrated).toBe(9007199254740992n);
     expect(typeof hydrated).toBe('bigint');
   });
 
@@ -820,7 +821,7 @@ describe('step function serialization', () => {
   });
 
   it('should lookup registered step function by name', () => {
-    const stepName = 'myRegisteredStep';
+    const stepName = buildName('step', 'src/steps.ts', 'myRegisteredStep');
     const stepFn = async (x: number) => x * 2;
 
     // Register the step function
@@ -853,16 +854,17 @@ describe('step function serialization', () => {
   it('should throw error when reviver cannot find registered step function', () => {
     const revivers = getCommonRevivers(vmGlobalThis);
 
-    let err: Error | undefined;
-    try {
-      revivers.StepFunction({ stepId: 'nonExistentStep' });
-    } catch (err_) {
-      err = err_ as Error;
-    }
-
-    expect(err).toBeDefined();
-    expect(err?.message).toContain('Step function "nonExistentStep" not found');
-    expect(err?.message).toContain('Make sure the step function is registered');
+    expect(() => {
+      revivers.StepFunction({
+        stepId: buildName('step', 'my-file.ts', 'nonExistentStep'),
+      });
+    }).toThrowErrorMatchingInlineSnapshot(`
+      [StepNotFoundError: Step function "step//my-file.ts//nonExistentStep" not found.
+      Make sure the step function is registered.
+      Available steps:
+      - step//src/steps.ts//myRegisteredStep
+      - testStep]
+    `);
   });
 
   it('should dehydrate step function passed as argument to a step', () => {

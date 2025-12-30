@@ -7,6 +7,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
+import { inspect } from 'node:util';
+import { frame } from './frame.js';
+import * as Logger from './logger.js';
 
 /** Package name for version tracking */
 export const PACKAGE_NAME = '@workflow/world-local';
@@ -302,13 +305,24 @@ export function initDataDir(dataDir: string): void {
       suggestedVersion
     );
 
-    console.error(
-      `[world-local] Failed to upgrade data directory from version ${formatVersion(oldVersion)} to ${formatVersion(currentVersion)}:`,
-      error instanceof Error ? error.message : error
-    );
-    console.error(
-      `[world-local] Data is not compatible with the current version. ` +
-        `Please downgrade to ${PACKAGE_NAME}@${downgradeTarget}`
+    Logger.write(
+      'error',
+      frame({
+        text: `Failed to upgrade data directory from version ${formatVersion(oldVersion)} to ${formatVersion(currentVersion)}.`,
+        contents: [
+          `Data is incompatible with the current version: ${error instanceof Error ? error.message : inspect(error)}` +
+            '\n' +
+            Logger.help(
+              process.env.NODE_ENV === 'production'
+                ? `Deleting the persistence directory at ${Logger.code(dataDir)} will allow you to upgrade this version cleanly.`
+                : `Restarting a development server will resolve this issue by truncating the data.`
+            ) +
+            '\n' +
+            Logger.hint(
+              `you can downgrade to fix this issue: ${Logger.code(`npm i ${PACKAGE_NAME}@${downgradeTarget}`)}`
+            ),
+        ],
+      })
     );
 
     throw error;

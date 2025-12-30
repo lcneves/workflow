@@ -1,7 +1,7 @@
 import { WorkflowRuntimeError } from '@workflow/errors';
 import { DevalueError, parse, stringify, unflatten } from 'devalue';
 import { monotonicFactory } from 'ulid';
-import { getStepFunction } from './private.js';
+import { getStepFunction, StepNotFoundError } from './private.js';
 import { getWorld } from './runtime/world.js';
 import { contextStorage } from './step/context-storage.js';
 import {
@@ -619,9 +619,7 @@ export function getCommonRevivers(global: Record<string, any> = globalThis) {
 
       const stepFn = getStepFunction(stepId);
       if (!stepFn) {
-        throw new Error(
-          `Step function "${stepId}" not found. Make sure the step function is registered.`
-        );
+        throw new StepNotFoundError(stepId);
       }
 
       // If closure variables were serialized, return a wrapper function

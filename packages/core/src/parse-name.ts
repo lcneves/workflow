@@ -1,3 +1,5 @@
+import chalk from 'chalk';
+
 /**
  * Parse a machine readable name.
  *
@@ -61,4 +63,21 @@ export function parseWorkflowName(name: string) {
  */
 export function parseStepName(name: string) {
   return parseName('step', name);
+}
+
+export function buildName(
+  kind: 'workflow' | 'step',
+  filePath: string,
+  name: string
+) {
+  return `${kind}//${filePath}//${name}`;
+}
+
+export function ansifyStep(name: string) {
+  if (chalk.level <= 0) {
+    return name;
+  }
+  return name
+    .replace(/^(workflow|step)\/\//, chalk.dim('$1//'))
+    .replace(/\/\//g, chalk.dim('//'));
 }

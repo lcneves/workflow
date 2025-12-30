@@ -152,11 +152,21 @@ const stepHandler = getWorldHandlers().createQueueHandler(
             });
 
             // Re-invoke the workflow to handle the failed step
-            await queueMessage(world, `__wkf_workflow_${workflowName}`, {
-              runId: workflowRunId,
-              traceCarrier: await serializeTraceCarrier(),
-              requestedAt: new Date(),
-            });
+            await queueMessage(
+              world,
+              `__wkf_workflow_${workflowName}`,
+              {
+                runId: workflowRunId,
+                traceCarrier: await serializeTraceCarrier(),
+                requestedAt: new Date(),
+              },
+              {
+                inspectionEntity: {
+                  type: 'run',
+                  id: workflowRunId,
+                },
+              }
+            );
             return;
           }
 
@@ -189,11 +199,21 @@ const stepHandler = getWorldHandlers().createQueueHandler(
                 'cancelled',
               ].includes(step.status);
               if (isTerminalStep) {
-                await queueMessage(world, `__wkf_workflow_${workflowName}`, {
-                  runId: workflowRunId,
-                  traceCarrier: await serializeTraceCarrier(),
-                  requestedAt: new Date(),
-                });
+                await queueMessage(
+                  world,
+                  `__wkf_workflow_${workflowName}`,
+                  {
+                    runId: workflowRunId,
+                    traceCarrier: await serializeTraceCarrier(),
+                    requestedAt: new Date(),
+                  },
+                  {
+                    inspectionEntity: {
+                      type: 'run',
+                      id: workflowRunId,
+                    },
+                  }
+                );
               }
               return;
             }
@@ -416,11 +436,21 @@ const stepHandler = getWorldHandlers().createQueueHandler(
             }
           }
 
-          await queueMessage(world, `__wkf_workflow_${workflowName}`, {
-            runId: workflowRunId,
-            traceCarrier: await serializeTraceCarrier(),
-            requestedAt: new Date(),
-          });
+          await queueMessage(
+            world,
+            `__wkf_workflow_${workflowName}`,
+            {
+              runId: workflowRunId,
+              traceCarrier: await serializeTraceCarrier(),
+              requestedAt: new Date(),
+            },
+            {
+              inspectionEntity: {
+                type: 'run',
+                id: workflowRunId,
+              },
+            }
+          );
         }
       );
     });
