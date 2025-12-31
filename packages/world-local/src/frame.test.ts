@@ -1,5 +1,6 @@
-import { expect, test } from 'vitest';
-import { frame } from './frame.js';
+import { Chalk } from 'chalk';
+import { describe, expect, test } from 'vitest';
+import { frame, inlineExplanation } from './frame.js';
 
 test('frames', () => {
   const output = frame({
@@ -50,4 +51,88 @@ test('composable', () => {
           inner1
     "
   `);
+});
+
+describe('inlineExplanation', () => {
+  test('single odd-length explanation', () => {
+    const value = inlineExplanation`function ${{ text: 'hello', explain: 'name not allowed bro' }}() {\n  return 666\n}`;
+    expect(value).toEqual(
+      `
+function hello() {
+         ──┬──
+           ╰▶ name not allowed bro
+  return 666
+}
+`.trim()
+    );
+  });
+
+  test('single even-length explanation', () => {
+    const value = inlineExplanation`function ${{ text: 'name', explain: 'name not allowed bro' }}() {\n  return 666\n}`;
+    expect(value).toEqual(
+      `
+function name() {
+         ──┬─
+           ╰▶ name not allowed bro
+  return 666
+}
+`.trim()
+    );
+  });
+
+  test('two explanations', () => {
+    const value = inlineExplanation`function ${{ text: 'name', explain: 'name not allowed bro' }}(${{ text: 'arg', explain: 'unused' }}) {\n  return 666\n}`;
+    expect(value).toEqual(
+      `
+function name(arg) {
+         ──┬─ ─┬─
+           ╰───┼─▶ name not allowed bro
+               ╰─▶ unused
+  return 666
+}
+`.trim()
+    );
+  });
+
+  test('three explanations', () => {
+    const value = inlineExplanation`
+${{ text: 'fun', explain: 'nothing fun about it' }}ction ${{ text: 'name', explain: 'name not allowed bro' }}(${{ text: 'arg', explain: 'unused' }}) {
+  return 666
+}`;
+    expect(value).toEqual(
+      `
+function name(arg) {
+─┬─      ──┬─ ─┬─
+ ╰─────────┼───┼─▶ nothing fun about it
+           ╰───┼─▶ name not allowed bro
+               ╰─▶ unused
+  return 666
+}`
+    );
+  });
+
+  test('colored explanations', () => {
+    const red = (s: string) => `<R>${s}</R>`;
+    const green = (s: string) => `<G>${s}</G>`;
+    const value = inlineExplanation`
+function ${['name', 'name not allowed bro', { color: green }]}(${['arg', 'unused', { color: red }]}) {
+  return 666
+}`;
+
+    const chalk = new Chalk({ level: 3 });
+    console.log(inlineExplanation`
+function ${['name', 'name not allowed bro', { color: chalk.green }]}(${['arg', 'unused', { color: chalk.red }]}) {
+  return 666
+}`);
+
+    expect(value).toEqual(
+      `
+function <G>name</G>(<R>arg</R>) {
+         <G>──┬─</G> <R>─┬─</R>
+           <G>╰───┼─▶ name not allowed bro</G>
+               <R>╰─▶ unused</R>
+  return 666
+}`
+    );
+  });
 });
