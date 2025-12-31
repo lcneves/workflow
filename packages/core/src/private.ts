@@ -56,14 +56,20 @@ export interface WorkflowOrchestratorContext {
 export class StepNotFoundError extends Error {
   name = 'StepNotFoundError';
   constructor(stepName: string, opts?: { registeredSteps: string[] }) {
-    let steps = (opts?.registeredSteps ?? listRegisteredStepFunctions())
-      .map((x) => `- ${ansifyStep(x)}`)
-      .join('\n');
+    let allSteps = opts?.registeredSteps ?? listRegisteredStepFunctions();
+    if (!stepName.startsWith('__builtin_')) {
+      allSteps = allSteps.filter((s) => !s.startsWith('__builtin_'));
+    }
+
+    let steps = allSteps.map((x) => `- ${ansifyStep(x)}`).join('\n');
     steps = steps
       ? `.\nAvailable steps:\n${steps}`
       : ` (no steps were registered)`;
     super(
-      `Step function "${ansifyStep(stepName)}" not found.\nMake sure the step function is registered${steps}`
+      `Can't find requested step function "${ansifyStep(stepName)}".\nMake sure the step function is registered${steps}`
     );
+  }
+  toString() {
+    return this.message;
   }
 }

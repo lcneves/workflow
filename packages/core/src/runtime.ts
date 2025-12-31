@@ -11,6 +11,7 @@ import {
   type World,
 } from '@workflow/world';
 import { WorkflowSuspension } from './global.js';
+import { InspectableError } from './inspectable-error.js';
 import { runtimeLogger } from './logger.js';
 import { parseWorkflowName } from './parse-name.js';
 import {
@@ -407,7 +408,9 @@ export function workflowEntrypoint(
               }
             }
           }
-        ); // End withTraceContext
+        ).catch((err) => {
+          throw new InspectableError('run', runId, err);
+        });
       });
     }
   );

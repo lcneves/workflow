@@ -8,8 +8,9 @@ import {
 import { pluralize } from '@workflow/utils';
 import { getPort } from '@workflow/utils/get-port';
 import { StepInvokePayloadSchema } from '@workflow/world';
+import { InspectableError } from '../inspectable-error.js';
 import { runtimeLogger } from '../logger.js';
-import { getStepFunction } from '../private.js';
+import { getStepFunction, StepNotFoundError } from '../private.js';
 import type { Serializable } from '../schemas.js';
 import {
   dehydrateStepReturnValue,
@@ -65,7 +66,7 @@ const stepHandler = getWorldHandlers().createQueueHandler(
 
           const stepFn = getStepFunction(stepName);
           if (!stepFn) {
-            throw new Error(`Step "${stepName}" not found`);
+            throw new StepNotFoundError(stepName);
           }
           if (typeof stepFn !== 'function') {
             throw new Error(
@@ -453,6 +454,8 @@ const stepHandler = getWorldHandlers().createQueueHandler(
           );
         }
       );
+    }).catch((cause) => {
+      throw new InspectableError('step', stepId, cause);
     });
   }
 );

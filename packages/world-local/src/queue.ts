@@ -127,8 +127,6 @@ export function createQueue(config: Partial<Config>): Queue {
             queueName,
             body,
             responseText: text,
-            entityName: opts.inspectionEntity.type,
-            entityId: opts.inspectionEntity.id,
           });
         }
 
@@ -224,36 +222,23 @@ export function writeFailedExecutionMessage({
   body,
   responseText,
   willRetry,
-  entityName,
-  entityId,
 }: {
   queueName: string;
   willRetry: boolean;
   response: Response;
   body: Buffer;
   responseText: string;
-  entityName: string;
-  entityId: string;
 }) {
   const level = willRetry ? 'warn' : 'error';
   Logger.write(
     level,
     frame({
-      text: `${chalk.bold(`${level}:`)} failed to execute workflow ${entityName}${!willRetry ? '' : chalk.italic(' and will retry')}.`,
+      text: `${chalk.bold(`${level}:`)} failed to execute ${!willRetry ? '' : chalk.italic(' and will retry')}.`,
       contents: [
         responseText || 'No reason provided.',
         ...(willRetry
           ? []
-          : [
-              [
-                chalk.italic('This message failed and will not be retried.'),
-                // I have a feeling that this "help" message should actually come from `workflow/core` because
-                // it should be shared across all worlds and not world-specific.
-                Logger.help(
-                  `inspect the status by running this command: ${code(`npx workflow inspect ${entityName} ${entityId}`)}.`
-                ),
-              ].join('\n'),
-            ]),
+          : [chalk.italic('This message failed and will not be retried.')]),
         ...(process.env.WORKFLOW_LOCAL_WORLD_DEBUG_REQUEST_ERRORS !== '1'
           ? []
           : [
@@ -275,8 +260,4 @@ export function writeFailedExecutionMessage({
       ],
     })
   );
-}
-
-function code(str: string) {
-  return chalk.italic(`${chalk.dim('`')}${str}${chalk.dim('`')}`);
 }
