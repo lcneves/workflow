@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2025-12-31T09:07:33.535Z",
+  "lastUpdated": "2025-12-31T09:14:29.971Z",
   "commit": "7ff68d1753c43b14d161d249f6745de6beddd99b",
   "branch": "main",
   "type": "e2e",
@@ -101,10 +101,10 @@
       "progress": 94
     },
     "postgres": {
-      "status": "partial",
+      "status": "passing",
       "total": 348,
-      "passed": 339,
-      "failed": 1,
+      "passed": 340,
+      "failed": 0,
       "skipped": 8,
       "frameworks": {
         "astro": {
@@ -134,8 +134,8 @@
         },
         "nextjs-webpack": {
           "total": 58,
-          "passed": 57,
-          "failed": 1
+          "passed": 58,
+          "failed": 0
         },
         "nitro": {
           "total": 29,
@@ -158,7 +158,7 @@
           "failed": 0
         }
       },
-      "progress": 97
+      "progress": 98
     },
     "vercel": {
       "status": "passing",
