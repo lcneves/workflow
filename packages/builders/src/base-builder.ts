@@ -124,7 +124,7 @@ export abstract class BaseBuilder {
         absWorkingDir: this.config.workingDir,
         logLevel: 'silent',
       });
-    } catch (_) {}
+    } catch (_) { }
 
     console.log(
       `Discovering workflow directives`,
@@ -229,39 +229,65 @@ export abstract class BaseBuilder {
    * Creates a bundle for workflow step functions.
    * Steps have full Node.js runtime access and handle side effects, API calls, etc.
    *
-   * @param externalizeNonSteps - If true, only bundles step entry points and externalizes other code
-   * @returns Build context (for watch mode) and the collected workflow manifest
+   * This method externalizes non-step code (including the 'workflow' package).
+   * Builders that need a fully bundled output should run a second esbuild pass
+   * to bundle the intermediate output with all dependencies.
+   *
+   * @param outfile - If provided, writes the bundle to disk. If omitted, returns the bundle content in memory.
+   * @returns Build context (for watch mode), the collected workflow manifest, and outputContent when outfile is omitted
    */
-  protected async createStepsBundle({
-    inputFiles,
-    format = 'cjs',
-    outfile,
-    externalizeNonSteps,
-    tsconfigPath,
-  }: {
+  protected async createStepsBundle(options: {
+    tsconfigPath?: string;
+    inputFiles: string[];
+    outfile?: undefined;
+    format?: 'cjs' | 'esm';
+  }): Promise<{
+    context: esbuild.BuildContext | undefined;
+    manifest: WorkflowManifest;
+    outputContent: string;
+  }>;
+  protected async createStepsBundle(options: {
     tsconfigPath?: string;
     inputFiles: string[];
     outfile: string;
     format?: 'cjs' | 'esm';
-    externalizeNonSteps?: boolean;
   }): Promise<{
     context: esbuild.BuildContext | undefined;
     manifest: WorkflowManifest;
+  }>;
+  protected async createStepsBundle({
+    inputFiles,
+    format = 'cjs',
+    outfile,
+    tsconfigPath,
+  }: {
+    tsconfigPath?: string;
+    inputFiles: string[];
+    outfile?: string;
+    format?: 'cjs' | 'esm';
+  }): Promise<{
+    context: esbuild.BuildContext | undefined;
+    manifest: WorkflowManifest;
+    outputContent?: string;
   }> {
+    const writeToFile = !!outfile;
     // These need to handle watching for dev to scan for
     // new entries and changes to existing ones
+    const outDir = outfile ? dirname(outfile) : this.config.workingDir;
     const { discoveredSteps: stepFiles, discoveredWorkflows: workflowFiles } =
-      await this.discoverEntries(inputFiles, dirname(outfile));
+      await this.discoverEntries(inputFiles, outDir);
 
-    // log the step files for debugging
-    await this.writeDebugFile(outfile, { stepFiles, workflowFiles });
+    // log the step files for debugging (only when writing to file)
+    if (outfile) {
+      await this.writeDebugFile(outfile, { stepFiles, workflowFiles });
+    }
 
     const stepsBundleStart = Date.now();
     const workflowManifest: WorkflowManifest = {};
     const builtInSteps = 'workflow/internal/builtins';
 
     const resolvedBuiltInSteps = await enhancedResolve(
-      dirname(outfile),
+      outDir,
       'workflow/internal/builtins'
     ).catch((err) => {
       throw new Error(
@@ -321,7 +347,7 @@ export abstract class BaseBuilder {
       platform: 'node',
       conditions: ['node'],
       target: 'es2022',
-      write: true,
+      write: writeToFile,
       treeShaking: true,
       keepNames: true,
       minify: false,
@@ -344,13 +370,11 @@ export abstract class BaseBuilder {
       plugins: [
         createSwcPlugin({
           mode: 'step',
-          entriesToBundle: externalizeNonSteps
-            ? [
-                ...stepFiles,
-                ...(resolvedBuiltInSteps ? [resolvedBuiltInSteps] : []),
-              ]
-            : undefined,
-          outdir: outfile ? dirname(outfile) : undefined,
+          entriesToBundle: [
+            ...stepFiles,
+            ...(resolvedBuiltInSteps ? [resolvedBuiltInSteps] : []),
+          ],
+          outdir: outDir,
           workflowManifest,
         }),
       ],
@@ -367,11 +391,17 @@ export abstract class BaseBuilder {
     // Create .gitignore in .swc directory
     await this.createSwcGitignore();
 
+    // Get output content if not writing to file
+    const outputContent =
+      !writeToFile && stepsResult.outputFiles?.[0]
+        ? stepsResult.outputFiles[0].text
+        : undefined;
+
     if (this.config.watch) {
-      return { context: esbuildCtx, manifest: workflowManifest };
+      return { context: esbuildCtx, manifest: workflowManifest, outputContent };
     }
     await esbuildCtx.dispose();
-    return { context: undefined, manifest: workflowManifest };
+    return { context: undefined, manifest: workflowManifest, outputContent };
   }
 
   /**

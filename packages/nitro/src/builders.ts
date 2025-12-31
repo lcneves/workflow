@@ -58,7 +58,6 @@ export class LocalBuilder extends BaseBuilder {
 
     const { manifest } = await this.createStepsBundle({
       outfile: join(this.#outDir, 'steps.mjs'),
-      externalizeNonSteps: true,
       format: 'esm',
       inputFiles,
     });

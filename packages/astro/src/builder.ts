@@ -79,7 +79,6 @@ export class LocalBuilder extends BaseBuilder {
       format: 'esm',
       inputFiles,
       outfile: stepsRouteFile,
-      externalizeNonSteps: true,
       tsconfigPath,
     });
 

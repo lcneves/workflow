@@ -84,7 +84,6 @@ export class SvelteKitBuilder extends BaseBuilder {
       format: 'esm',
       inputFiles,
       outfile: join(stepsRouteDir, '+server.js'),
-      externalizeNonSteps: true,
       tsconfigPath,
     });
 

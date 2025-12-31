@@ -1,3 +1,4 @@
+import * as esbuild from 'esbuild';
 import { BaseBuilder } from './base-builder.js';
 import type { WorkflowConfig } from './types.js';
 
@@ -47,10 +48,34 @@ export class StandaloneBuilder extends BaseBuilder {
     const stepsBundlePath = this.resolvePath(this.config.stepsBundlePath);
     await this.ensureDirectory(stepsBundlePath);
 
-    const { manifest } = await this.createStepsBundle({
-      outfile: stepsBundlePath,
+    // Two-pass build approach (in-memory):
+    // 1. First pass: Create intermediate bundle in memory (no outfile)
+    // 2. Second pass: Bundle the in-memory output with all dependencies
+    const { manifest, outputContent } = await this.createStepsBundle({
       inputFiles,
       tsconfigPath,
+    });
+
+    // Second pass: bundle the in-memory output with all dependencies
+    await esbuild.build({
+      stdin: {
+        contents: outputContent,
+        resolveDir: this.config.workingDir,
+        sourcefile: 'steps-interim.js',
+        loader: 'js',
+      },
+      outfile: stepsBundlePath,
+      absWorkingDir: this.config.workingDir,
+      bundle: true,
+      format: 'cjs',
+      platform: 'node',
+      conditions: ['node'],
+      target: 'es2022',
+      treeShaking: true,
+      keepNames: true,
+      minify: false,
+      logLevel: 'error',
+      external: ['bun', 'bun:*', ...(this.config.externalPackages || [])],
     });
 
     return manifest;

@@ -402,7 +402,6 @@ export async function getNextBuilder() {
         format: 'esm',
         inputFiles,
         outfile: join(stepsRouteDir, 'route.js'),
-        externalizeNonSteps: true,
         tsconfigPath,
       });
     }
