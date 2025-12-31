@@ -1,7 +1,6 @@
 import { runInContext } from 'node:vm';
 import type { WorkflowRuntimeError } from '@workflow/errors';
 import { describe, expect, it } from 'vitest';
-import { buildName } from './parse-name.js';
 import { getStepFunction, registerStepFunction } from './private.js';
 import {
   dehydrateStepArguments,
@@ -999,3 +998,11 @@ describe('step function serialization', () => {
     expect(result).toEqual({ stepId: stepName });
   });
 });
+
+export function buildName(
+  kind: 'workflow' | 'step',
+  filePath: string,
+  name: string
+) {
+  return `${kind}//${filePath}//${name}`;
+}

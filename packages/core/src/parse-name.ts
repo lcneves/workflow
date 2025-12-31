@@ -65,14 +65,6 @@ export function parseStepName(name: string) {
   return parseName('step', name);
 }
 
-export function buildName(
-  kind: 'workflow' | 'step',
-  filePath: string,
-  name: string
-) {
-  return `${kind}//${filePath}//${name}`;
-}
-
 export function ansifyStep(name: string) {
   if (chalk.level <= 0) {
     return name;
