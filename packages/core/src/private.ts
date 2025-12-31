@@ -41,6 +41,7 @@ export function listRegisteredStepFunctions(): string[] {
 export { __private_getClosureVars } from './step/get-closure-vars.js';
 
 export interface WorkflowOrchestratorContext {
+  workflowRunId: string;
   globalThis: typeof globalThis;
   eventsConsumer: EventsConsumer;
   /**

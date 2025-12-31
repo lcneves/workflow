@@ -72,6 +72,7 @@ export async function runWorkflow(
     );
 
     const workflowContext: WorkflowOrchestratorContext = {
+      workflowRunId: workflowRun.runId,
       globalThis: vmGlobalThis,
       onWorkflowError: workflowDiscontinuation.reject,
       eventsConsumer: new EventsConsumer(events),
