@@ -36,6 +36,64 @@ type Explainish =
   | Explain
   | [text: string, explain: string, opts?: { color: Explain['color'] }];
 
+type Marker = {
+  startCol: number;
+  endCol: number;
+  explain: string;
+  color?: (s: string) => string;
+};
+
+const identity = (s: string) => s;
+
+function getMarkerMidpoint(marker: Marker): number {
+  const textLen = marker.endCol - marker.startCol;
+  return marker.startCol + Math.floor(textLen / 2);
+}
+
+function buildUnderline(markers: Marker[]): string {
+  const parts: string[] = [];
+  let pos = 0;
+  for (const marker of markers) {
+    const textLen = marker.endCol - marker.startCol;
+    const midPoint = Math.floor(textLen / 2);
+
+    if (marker.startCol > pos) {
+      parts.push(' '.repeat(marker.startCol - pos));
+      pos = marker.startCol;
+    }
+    const segment = `${'─'.repeat(midPoint)}┬${'─'.repeat(textLen - midPoint - 1)}`;
+    const colorFn = marker.color ?? identity;
+    parts.push(colorFn(segment));
+    pos += textLen;
+  }
+  return parts.join('');
+}
+
+function buildExplanationLine(
+  marker: Marker,
+  midCol: number,
+  remainingMids: number[],
+  isOnlyMarker: boolean
+): string {
+  let line = '╰';
+  let pos = midCol + 1;
+
+  for (const nextMid of remainingMids) {
+    while (pos < nextMid) {
+      line += '─';
+      pos++;
+    }
+    line += '┼';
+    pos++;
+  }
+
+  const arrow = isOnlyMarker ? '▶ ' : '─▶ ';
+  line += arrow + marker.explain;
+
+  const colorFn = marker.color ?? identity;
+  return ' '.repeat(midCol) + colorFn(line);
+}
+
 /**
  * @example
  * inlineExplanation`function ${{text: "hello", explain: "name not allowed bro"}}() {\n  return 666\n}`;
@@ -50,12 +108,6 @@ export function inlineExplanation(
   text: TemplateStringsArray,
   ...values: Explainish[]
 ): string {
-  type Marker = {
-    startCol: number;
-    endCol: number;
-    explain: string;
-    color?: (s: string) => string;
-  };
   const resultLines: string[] = [];
   let currentLine = '';
   let currentLineVisualLen = 0;
@@ -69,61 +121,18 @@ export function inlineExplanation(
       return;
     }
 
-    // Calculate midpoints for all markers
-    const markerMids = pendingMarkers.map((marker) => {
-      const textLen = marker.endCol - marker.startCol;
-      const midPoint = Math.floor(textLen / 2);
-      return marker.startCol + midPoint;
-    });
+    const markerMids = pendingMarkers.map(getMarkerMidpoint);
 
-    // Build single underline with all markers
-    const underlineParts: string[] = [];
-    let underlinePos = 0;
-    for (const marker of pendingMarkers) {
-      const textLen = marker.endCol - marker.startCol;
-      const midPoint = Math.floor(textLen / 2);
+    resultLines.push(buildUnderline(pendingMarkers));
 
-      // Pad to reach this marker's start
-      if (marker.startCol > underlinePos) {
-        underlineParts.push(' '.repeat(marker.startCol - underlinePos));
-        underlinePos = marker.startCol;
-      }
-      // Draw underline with ┬ in the middle
-      const underlineSegment = `${'─'.repeat(midPoint)}┬${'─'.repeat(textLen - midPoint - 1)}`;
-      const colorFn = marker.color ?? ((s: string) => s);
-      underlineParts.push(colorFn(underlineSegment));
-      underlinePos += textLen;
-    }
-    resultLines.push(underlineParts.join(''));
-
-    // Build explanation lines - each one draws through subsequent markers
     for (let i = 0; i < pendingMarkers.length; i++) {
-      const midCol = markerMids[i];
-      let explanationLine = '╰';
-
-      // Draw through remaining markers
-      let pos = midCol + 1;
-      for (let j = i + 1; j < pendingMarkers.length; j++) {
-        const nextMid = markerMids[j];
-        // Fill with ─ until we reach the next marker's midpoint
-        while (pos < nextMid) {
-          explanationLine += '─';
-          pos++;
-        }
-        // At the next marker's midpoint, use ┼
-        explanationLine += '┼';
-        pos++;
-      }
-
-      // Add the final arrow and explanation
-      // Single marker: ╰▶, multiple markers: always ─▶
-      if (pendingMarkers.length === 1) {
-        explanationLine += `▶ ${pendingMarkers[i].explain}`;
-      } else {
-        explanationLine += `─▶ ${pendingMarkers[i].explain}`;
-      }
-      const colorFn = pendingMarkers[i].color ?? ((s: string) => s);
-      resultLines.push(' '.repeat(midCol) + colorFn(explanationLine));
+      const line = buildExplanationLine(
+        pendingMarkers[i],
+        markerMids[i],
+        markerMids.slice(i + 1),
+        pendingMarkers.length === 1
+      );
+      resultLines.push(line);
     }
 
     pendingMarkers = [];
