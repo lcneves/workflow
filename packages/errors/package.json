@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "vitest",
     "dev": "tsc --watch",
     "clean": "tsc --build --clean && rm -rf dist",
     "typecheck": "tsc --noEmit"
@@ -32,7 +33,8 @@
     "@types/ms": "2.1.0",
     "@types/node": "catalog:",
     "@workflow/tsconfig": "workspace:*",
-    "@workflow/world": "workspace:*"
+    "@workflow/world": "workspace:*",
+    "vitest": "catalog:"
   },
   "dependencies": {
     "@workflow/utils": "workspace:*",

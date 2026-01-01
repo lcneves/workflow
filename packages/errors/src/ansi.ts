@@ -118,7 +118,7 @@ function buildExplanationLine(
 
 /**
  * @example
- * inlineExplanation`function ${{text: "hello", explain: "name not allowed bro"}}() {\n  return 666\n}`;
+ * inline`function ${{text: "hello", explain: "name not allowed bro"}}() {\n  return 666\n}`;
  * =>
  * function hello() {
  *          ──┬──
@@ -126,7 +126,7 @@ function buildExplanationLine(
  *   return 666
  * }
  */
-export function inlineExplanation(
+export function inline(
   text: TemplateStringsArray,
   ...values: Explainish[]
 ): string {
