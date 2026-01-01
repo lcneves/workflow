@@ -1,6 +1,7 @@
 import { FatalError } from '@workflow/errors';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  ENOTSUP,
   type HookInvocationQueueItem,
   type QueueItem,
   type StepInvocationQueueItem,
@@ -374,4 +375,16 @@ describe('WorkflowSuspension', () => {
 
     expect(error.message).toBe('1 hook has not been created yet');
   });
+});
+
+vi.mock('chalk');
+it('renders ENOTSUP nicely', () => {
+  expect(() =>
+    ENOTSUP('new ReadableStream')
+  ).toThrowErrorMatchingInlineSnapshot(`
+    [Error: <i><dim>\`</dim>new ReadableStream<dim>\`</dim></i> is unsupported in a workflow context.
+    ├▶ calling this in a workflow context can cause determinism issues.
+    ╰▶ <blue><b>hint:</b> exit the workflow function by calling a step function.
+       Read more about workflows and step functions: https://useworkflow.dev/docs/foundations/workflows-and-steps#step-functions</blue>]
+  `);
 });
