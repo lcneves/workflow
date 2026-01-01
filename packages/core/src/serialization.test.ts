@@ -718,9 +718,10 @@ describe('workflow arguments', () => {
       );
       // respondWith should throw an error when called from workflow context
       expect(hydrated.respondWith).toBeInstanceOf(Function);
-      expect(() => hydrated.respondWith()).toThrow(
-        '`respondWith()` must be called from within a step function'
-      );
+      expect(() => hydrated.respondWith()).toThrowErrorMatchingInlineSnapshot(`
+        [NotInStepContextError: \`respondWith()\` can only be called inside a step function
+        ╰▶ note: Read more about dynamic webhook responses: https://useworkflow.dev/docs/foundations/hooks#dynamic-responses-manual-mode]
+      `);
     } finally {
       (globalThis as any)[STABLE_ULID] = originalStableUlid;
     }
@@ -858,7 +859,7 @@ describe('step function serialization', () => {
         stepId: buildName('step', 'my-file.ts', 'nonExistentStep'),
       });
     }).toThrowErrorMatchingInlineSnapshot(`
-      [StepNotFoundError: Step function "step//my-file.ts//nonExistentStep" not found.
+      [StepNotFoundError: Can't find requested step function "step//my-file.ts//nonExistentStep".
       Make sure the step function is registered.
       Available steps:
       - step//src/steps.ts//myRegisteredStep
