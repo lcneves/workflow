@@ -972,9 +972,15 @@ describe('runWorkflow', () => {
           workflowRun,
           events
         )
-      ).rejects.toThrow(
-        'Timeout functions like "setTimeout" and "setInterval" are not supported in workflow functions'
-      );
+      ).rejects.toThrowErrorMatchingInlineSnapshot(`
+        [WorkflowRuntimeError: \`setTimeout\` is not available in a workflow context.
+        ├▶ Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.
+        │  Read more: https://useworkflow.dev/err/timeout-in-workflow
+        ╰▶ help: use the \`sleep\` function from the \`workflow\` package for time-based delays.
+           The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.
+
+        Learn more: https://useworkflow.dev/err/timeout-in-workflow]
+      `);
     });
 
     it('should throw an error when calling setInterval', async () => {
@@ -1001,9 +1007,15 @@ describe('runWorkflow', () => {
           workflowRun,
           events
         )
-      ).rejects.toThrow(
-        'Timeout functions like "setTimeout" and "setInterval" are not supported in workflow functions'
-      );
+      ).rejects.toThrowErrorMatchingInlineSnapshot(`
+        [WorkflowRuntimeError: \`setInterval\` is not available in a workflow context.
+        ├▶ Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.
+        │  Read more: https://useworkflow.dev/err/timeout-in-workflow
+        ╰▶ help: use the \`sleep\` function from the \`workflow\` package for time-based delays.
+           The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.
+
+        Learn more: https://useworkflow.dev/err/timeout-in-workflow]
+      `);
     });
 
     it('should throw an error when calling clearTimeout', async () => {
@@ -1030,9 +1042,15 @@ describe('runWorkflow', () => {
           workflowRun,
           events
         )
-      ).rejects.toThrow(
-        'Timeout functions like "setTimeout" and "setInterval" are not supported in workflow functions'
-      );
+      ).rejects.toThrowErrorMatchingInlineSnapshot(`
+        [WorkflowRuntimeError: \`clearTimeout\` is not available in a workflow context.
+        ├▶ Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.
+        │  Read more: https://useworkflow.dev/err/timeout-in-workflow
+        ╰▶ help: use the \`sleep\` function from the \`workflow\` package for time-based delays.
+           The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.
+
+        Learn more: https://useworkflow.dev/err/timeout-in-workflow]
+      `);
     });
 
     it('should throw an error when calling clearInterval', async () => {
@@ -1059,9 +1077,15 @@ describe('runWorkflow', () => {
           workflowRun,
           events
         )
-      ).rejects.toThrow(
-        'Timeout functions like "setTimeout" and "setInterval" are not supported in workflow functions'
-      );
+      ).rejects.toThrowErrorMatchingInlineSnapshot(`
+        [WorkflowRuntimeError: \`clearInterval\` is not available in a workflow context.
+        ├▶ Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.
+        │  Read more: https://useworkflow.dev/err/timeout-in-workflow
+        ╰▶ help: use the \`sleep\` function from the \`workflow\` package for time-based delays.
+           The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.
+
+        Learn more: https://useworkflow.dev/err/timeout-in-workflow]
+      `);
     });
 
     it('should throw an error when calling setImmediate', async () => {
@@ -1088,9 +1112,15 @@ describe('runWorkflow', () => {
           workflowRun,
           events
         )
-      ).rejects.toThrow(
-        'Timeout functions like "setTimeout" and "setInterval" are not supported in workflow functions'
-      );
+      ).rejects.toThrowErrorMatchingInlineSnapshot(`
+        [WorkflowRuntimeError: \`setImmediate\` is not available in a workflow context.
+        ├▶ Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.
+        │  Read more: https://useworkflow.dev/err/timeout-in-workflow
+        ╰▶ help: use the \`sleep\` function from the \`workflow\` package for time-based delays.
+           The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.
+
+        Learn more: https://useworkflow.dev/err/timeout-in-workflow]
+      `);
     });
 
     it('should throw an error when calling clearImmediate', async () => {
@@ -1117,9 +1147,15 @@ describe('runWorkflow', () => {
           workflowRun,
           events
         )
-      ).rejects.toThrow(
-        'Timeout functions like "setTimeout" and "setInterval" are not supported in workflow functions'
-      );
+      ).rejects.toThrowErrorMatchingInlineSnapshot(`
+        [WorkflowRuntimeError: \`clearImmediate\` is not available in a workflow context.
+        ├▶ Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.
+        │  Read more: https://useworkflow.dev/err/timeout-in-workflow
+        ╰▶ help: use the \`sleep\` function from the \`workflow\` package for time-based delays.
+           The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.
+
+        Learn more: https://useworkflow.dev/err/timeout-in-workflow]
+      `);
     });
 
     it('should include documentation link in error message', async () => {
@@ -1151,12 +1187,15 @@ describe('runWorkflow', () => {
         error = err as Error;
       }
       assert(error);
-      expect(error.message).toContain(
-        'https://useworkflow.dev/err/timeout-in-workflow'
-      );
-      expect(error.message).toContain(
-        'Use the "sleep" function from "workflow"'
-      );
+      expect(error).toMatchInlineSnapshot(`
+        [WorkflowRuntimeError: \`setTimeout\` is not available in a workflow context.
+        ├▶ Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.
+        │  Read more: https://useworkflow.dev/err/timeout-in-workflow
+        ╰▶ help: use the \`sleep\` function from the \`workflow\` package for time-based delays.
+           The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.
+
+        Learn more: https://useworkflow.dev/err/timeout-in-workflow]
+      `);
     });
   });
 
