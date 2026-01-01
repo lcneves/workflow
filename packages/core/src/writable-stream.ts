@@ -1,4 +1,4 @@
-import * as Logger from './prettylogger.js';
+import { Ansi } from '@workflow/errors';
 
 /**
  * The options for {@link getWritable}.
@@ -27,10 +27,10 @@ export function getWritable<W = any>(
   options: WorkflowWritableStreamOptions = {}
 ): WritableStream<W> {
   throw new Error(
-    Logger.frame(
+    Ansi.frame(
       '`getWritable()` can only be called inside a workflow or step function',
       [
-        Logger.help([
+        Ansi.help([
           'This function comes from Workflow DevKit, and requires to be used as a part of a workflow or a step,',
           'As it has no meaning outside of the workflow context.',
           'Read more about the writable workflow stream: https://useworkflow.dev/docs/api-reference/workflow/get-writable',

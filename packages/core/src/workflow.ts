@@ -8,7 +8,7 @@ import { monotonicFactory } from 'ulid';
 import { EventConsumerResult, EventsConsumer } from './events-consumer.js';
 import { ENOTSUP } from './global.js';
 import { parseWorkflowName } from './parse-name.js';
-import * as Logger from './prettylogger.js';
+import { Ansi } from '@workflow/errors';
 import type { WorkflowOrchestratorContext } from './private.js';
 import {
   dehydrateWorkflowReturnValue,
@@ -606,16 +606,13 @@ export async function runWorkflow(
  */
 export const timeoutFunctionError = (fnName: string) => () => {
   throw new WorkflowRuntimeError(
-    Logger.frame(
-      `${Logger.code(fnName)} is not available in a workflow context.`,
-      [
-        `Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.\nRead more: https://useworkflow.dev/err/${ERROR_SLUGS.TIMEOUT_FUNCTIONS_IN_WORKFLOW}`,
-        Logger.help([
-          `use the ${Logger.code('sleep')} function from the ${Logger.code('workflow')} package for time-based delays.`,
-          "The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.",
-        ]),
-      ]
-    ),
+    Ansi.frame(`${Ansi.code(fnName)} is not available in a workflow context.`, [
+      `Timer-based functions are not supported in workflow functions as they introduce non-deterministic behavior.\nRead more: https://useworkflow.dev/err/${ERROR_SLUGS.TIMEOUT_FUNCTIONS_IN_WORKFLOW}`,
+      Ansi.help([
+        `use the ${Ansi.code('sleep')} function from the ${Ansi.code('workflow')} package for time-based delays.`,
+        "The sleep function is a step function that can be awaited on and properly recorded in the workflow's event log.",
+      ]),
+    ]),
     { slug: ERROR_SLUGS.TIMEOUT_FUNCTIONS_IN_WORKFLOW }
   );
 };

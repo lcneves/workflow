@@ -1,4 +1,4 @@
-import * as Logger from '../prettylogger.js';
+import { Ansi } from '@workflow/errors';
 
 export interface WorkflowMetadata {
   /**
@@ -30,10 +30,10 @@ export function getWorkflowMetadata(): WorkflowMetadata {
   const ctx = (globalThis as any)[WORKFLOW_CONTEXT_SYMBOL] as WorkflowMetadata;
   if (!ctx) {
     throw new Error(
-      Logger.frame(
+      Ansi.frame(
         '`getWorkflowMetadata()` can only be called inside a workflow or step function',
         [
-          Logger.help([
+          Ansi.help([
             'This function comes from Workflow DevKit, and requires to be used as a part of a workflow or a step,',
             'As it has no meaning outside of the workflow context.',
             'Read more: https://useworkflow.dev/docs/api-reference/workflow/get-workflow-metadata',

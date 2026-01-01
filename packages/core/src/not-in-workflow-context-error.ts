@@ -1,5 +1,5 @@
 import { ansifyStep } from './parse-name.js';
-import * as Logger from './prettylogger.js';
+import { Ansi } from '@workflow/errors';
 import { getWorkflowMetadata } from './workflow/get-workflow-metadata.js';
 
 export class NotInWorkflowContextError extends Error {
@@ -9,9 +9,9 @@ export class NotInWorkflowContextError extends Error {
     docLink: `${string}: https://${string}`
   ) {
     super(
-      Logger.frame(
-        `${Logger.code(functionName)} can only be called inside a workflow function`,
-        [Logger.note(`Read more about ${docLink}`)]
+      Ansi.frame(
+        `${Ansi.code(functionName)} can only be called inside a workflow function`,
+        [Ansi.note(`Read more about ${docLink}`)]
       )
     );
   }
@@ -24,9 +24,9 @@ export class NotInStepContextError extends Error {
     docLink: `${string}: https://${string}`
   ) {
     super(
-      Logger.frame(
-        `${Logger.code(functionName)} can only be called inside a step function`,
-        [Logger.note(`Read more about ${docLink}`)]
+      Ansi.frame(
+        `${Ansi.code(functionName)} can only be called inside a step function`,
+        [Ansi.note(`Read more about ${docLink}`)]
       )
     );
   }
@@ -39,11 +39,11 @@ export class UnavailableInWorkflowContextError extends Error {
     docLink: `${string}: https://${string}`
   ) {
     const { workflowName } = getWorkflowMetadata();
-    const message = Logger.frame(
-      `${Logger.code(functionName)} cannot be called from a workflow context.`,
+    const message = Ansi.frame(
+      `${Ansi.code(functionName)} cannot be called from a workflow context.`,
       [
         'calling this in a workflow context can cause determinism issues.',
-        Logger.note([
+        Ansi.note([
           `this call was made from the ${ansifyStep(workflowName)} workflow context.`,
           `Read more about ${docLink}`,
         ]),

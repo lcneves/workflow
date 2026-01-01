@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@workflow/utils": "workspace:*",
+    "chalk": "catalog:",
     "ms": "2.1.3"
   }
 }

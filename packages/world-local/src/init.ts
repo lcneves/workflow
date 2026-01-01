@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { inspect } from 'node:util';
-import { frame } from './frame.js';
+import { Ansi } from '@workflow/errors';
 import * as Logger from './logger.js';
 
 /** Package name for version tracking */
@@ -307,22 +307,22 @@ export function initDataDir(dataDir: string): void {
 
     Logger.write(
       'error',
-      frame({
-        text: `Failed to upgrade data directory from version ${formatVersion(oldVersion)} to ${formatVersion(currentVersion)}.`,
-        contents: [
+      Ansi.frame(
+        `Failed to upgrade data directory from version ${formatVersion(oldVersion)} to ${formatVersion(currentVersion)}.`,
+        [
           `Data is incompatible with the current version: ${error instanceof Error ? error.message : inspect(error)}` +
             '\n' +
-            Logger.help(
+            Ansi.help(
               process.env.NODE_ENV === 'production'
-                ? `Deleting the persistence directory at ${Logger.code(dataDir)} will allow you to upgrade this version cleanly.`
+                ? `Deleting the persistence directory at ${Ansi.code(dataDir)} will allow you to upgrade this version cleanly.`
                 : `Restarting a development server will resolve this issue by truncating the data.`
             ) +
             '\n' +
-            Logger.hint(
-              `you can downgrade to fix this issue: ${Logger.code(`npm i ${PACKAGE_NAME}@${downgradeTarget}`)}`
+            Ansi.hint(
+              `you can downgrade to fix this issue: ${Ansi.code(`npm i ${PACKAGE_NAME}@${downgradeTarget}`)}`
             ),
-        ],
-      })
+        ]
+      )
     );
 
     throw error;

@@ -1,10 +1,32 @@
-export function frame({
-  text,
-  contents,
-}: {
-  text: string;
-  contents: string[];
-}): string {
+import chalk from 'chalk';
+
+const styles = {
+  info: chalk.blue,
+  help: chalk.cyan,
+  warn: chalk.yellow,
+  error: chalk.red,
+};
+
+export function help(messages: string | string[]) {
+  const message = Array.isArray(messages) ? messages.join('\n') : messages;
+  return styles.help(`${chalk.bold('help:')} ${message}`);
+}
+
+export function hint(messages: string | string[]) {
+  const message = Array.isArray(messages) ? messages.join('\n') : messages;
+  return styles.info(`${chalk.bold('hint:')} ${message}`);
+}
+
+export function note(messages: string | string[]) {
+  const message = Array.isArray(messages) ? messages.join('\n') : messages;
+  return styles.info(`${chalk.bold('note:')} ${message}`);
+}
+
+export function code(str: string) {
+  return chalk.italic(`${chalk.dim('`')}${str}${chalk.dim('`')}`);
+}
+
+export function frame(text: string, contents: string[]): string {
   const result = [text];
 
   contents.forEach((content, index) => {

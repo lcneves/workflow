@@ -1,5 +1,6 @@
 import { setTimeout } from 'node:timers/promises';
 import { JsonTransport } from '@vercel/queue';
+import { Ansi } from '@workflow/errors';
 import {
   MessageId,
   type Queue,
@@ -13,7 +14,6 @@ import { Agent } from 'undici';
 import z from 'zod';
 import type { Config } from './config.js';
 import { resolveBaseUrl } from './config.js';
-import { frame } from './frame.js';
 import { PACKAGE_VERSION } from './init.js';
 import * as Logger from './logger.js';
 
@@ -278,9 +278,9 @@ export function writeFailedExecutionMessage({
   const level = willRetry ? 'warn' : 'error';
   Logger.write(
     level,
-    frame({
-      text: `${chalk.bold(`${level}:`)} failed to execute ${!willRetry ? '' : chalk.italic(' and will retry')}.`,
-      contents: [
+    Ansi.frame(
+      `${chalk.bold(`${level}:`)} failed to execute ${!willRetry ? '' : chalk.italic(' and will retry')}.`,
+      [
         responseText || 'No reason provided.',
         ...(willRetry
           ? []
@@ -292,18 +292,18 @@ export function writeFailedExecutionMessage({
                 [
                   `queue name: ${queueName}`,
                   `response status: ${response.status}`,
-                  frame({
-                    text: 'headers:',
-                    contents: Array.from(
+                  Ansi.frame(
+                    'headers:',
+                    Array.from(
                       response.headers,
                       ([key, value]) => `${key}=${value}`
-                    ),
-                  }),
-                  frame({ text: 'request body', contents: [body.toString()] }),
+                    )
+                  ),
+                  Ansi.frame('request body', [body.toString()]),
                 ].join('\n')
               ),
             ]),
-      ],
-    })
+      ]
+    )
   );
 }

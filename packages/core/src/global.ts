@@ -1,5 +1,5 @@
 import { pluralize } from '@workflow/utils';
-import * as Logger from './prettylogger.js';
+import { Ansi } from '@workflow/errors';
 import type { Serializable } from './schemas.js';
 
 export interface StepInvocationQueueItem {
@@ -102,11 +102,11 @@ export class WorkflowSuspension extends Error {
 
 export function ENOTSUP(functionName: string): never {
   throw new Error(
-    Logger.frame(
-      `${Logger.code(functionName)} is unsupported in a workflow context.`,
+    Ansi.frame(
+      `${Ansi.code(functionName)} is unsupported in a workflow context.`,
       [
         'calling this in a workflow context can cause determinism issues.',
-        Logger.hint([
+        Ansi.hint([
           `exit the workflow function by calling a step function.`,
           `Read more about workflows and step functions: https://useworkflow.dev/docs/foundations/workflows-and-steps#step-functions`,
         ]),

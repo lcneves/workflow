@@ -4,7 +4,7 @@ import { EventConsumerResult } from './events-consumer.js';
 import { type StepInvocationQueueItem, WorkflowSuspension } from './global.js';
 import { stepLogger } from './logger.js';
 import { ansifyStep } from './parse-name.js';
-import * as Logger from './prettylogger.js';
+import { Ansi } from '@workflow/errors';
 import type { WorkflowOrchestratorContext } from './private.js';
 import type { Serializable } from './schemas.js';
 import { hydrateStepReturnValue } from './serialization.js';
@@ -82,11 +82,11 @@ export function createUseStep(ctx: WorkflowOrchestratorContext) {
               setTimeout(() => {
                 reject(
                   new WorkflowRuntimeError(
-                    Logger.frame(
+                    Ansi.frame(
                       `Corrupted event log: step ${correlationId} (${ansifyStep(stepName)}) started but not found in invocation queue`,
                       [
-                        Logger.help(
-                          `Inspect the events by running ${Logger.code(`npx workflow inspect events --run=${ctx.workflowRunId}`)}`
+                        Ansi.help(
+                          `Inspect the events by running ${Ansi.code(`npx workflow inspect events --run=${ctx.workflowRunId}`)}`
                         ),
                       ]
                     )
@@ -135,11 +135,11 @@ export function createUseStep(ctx: WorkflowOrchestratorContext) {
           setTimeout(() => {
             reject(
               new WorkflowRuntimeError(
-                Logger.frame(`Unexpected event type: "${event.eventType}"`, [
+                Ansi.frame(`Unexpected event type: "${event.eventType}"`, [
                   [
                     'This seems like a bug in the workflow runtime.',
                     'Please report this issue at https://github.com/vercel/workflow',
-                    `Include the output from ${Logger.code(`npx workflow inspect events --run=${ctx.workflowRunId}`)}`,
+                    `Include the output from ${Ansi.code(`npx workflow inspect events --run=${ctx.workflowRunId}`)}`,
                   ].join('\n'),
                 ])
               )
