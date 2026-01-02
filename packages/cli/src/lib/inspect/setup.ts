@@ -1,12 +1,27 @@
+import { join } from 'node:path';
 import { createWorld } from '@workflow/core/runtime';
 import chalk from 'chalk';
 import terminalLink from 'terminal-link';
+import XDGAppPaths from 'xdg-app-paths';
 import { logger, setJsonMode, setVerboseMode } from '../config/log.js';
+import { checkForUpdateCached } from '../update-check.js';
 import {
   inferLocalWorldEnvVars,
   inferVercelEnvVars,
   writeEnvVars,
 } from './env.js';
+
+// Get XDG-compliant cache directory for workflow
+const getXDGAppPaths = (app: string) => {
+  return (
+    XDGAppPaths as unknown as (app: string) => { dataDirs: () => string[] }
+  )(app);
+};
+
+const getWorkflowCacheDir = (): string => {
+  const dirs = getXDGAppPaths('workflow').dataDirs();
+  return dirs[0];
+};
 
 /**
  * Setup CLI world configuration.
@@ -29,17 +44,45 @@ export const setupCliWorld = async (
   setJsonMode(Boolean(flags.json));
   setVerboseMode(Boolean(flags.verbose));
 
+  // Check for updates
+  const cacheFile = join(getWorkflowCacheDir(), 'version-check.json');
+  const updateCheck = await checkForUpdateCached(version, cacheFile);
+
   const withAnsiLinks = flags.json ? false : true;
   const docsUrl = withAnsiLinks
     ? terminalLink('https://useworkflow.dev/', 'https://useworkflow.dev/')
     : 'https://useworkflow.dev/';
 
-  logger.showBox(
-    'green',
+  // Prepare showBox lines
+  const boxLines = [
     `Workflow CLI v${version}`,
     `Docs at ${docsUrl}`,
-    chalk.yellow('This is a beta release')
-  );
+    chalk.yellow('This is a beta release'),
+  ];
+
+  // Add update message if available
+  if (updateCheck.needsUpdate && updateCheck.latestVersion) {
+    boxLines.push(
+      '',
+      chalk.cyan(
+        `Update available: ${updateCheck.currentVersion} → ${updateCheck.latestVersion}`
+      ),
+      // Note that we're suggesting install "latest" instead of the release tag that the user is
+      // on, because we currently tag beta releases as "latest". After GA, we need to adjust
+      // this to install the release tag that the user is on.
+      chalk.gray(
+        `Run: \`[npm|bun|pnpm] i workflow@${updateCheck.latestVersion}\``
+      ),
+      chalk.gray(
+        terminalLink(
+          'View changelog',
+          'https://github.com/vercel/workflow/releases'
+        )
+      )
+    );
+  }
+
+  logger.showBox('green', ...boxLines);
 
   logger.debug('Inferring env vars, backend:', flags.backend);
   writeEnvVars({
