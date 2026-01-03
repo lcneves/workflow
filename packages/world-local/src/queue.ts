@@ -205,8 +205,7 @@ export function createQueue(config: Partial<Config>): Queue {
   };
 
   const getDeploymentId: Queue['getDeploymentId'] = async () => {
-    const packageInfo = await getPackageInfo();
-    return `dpl_local@${packageInfo.version}`;
+    return `dpl_local`;
   };
 
   return { queue, createQueueHandler, getDeploymentId };
