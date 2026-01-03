@@ -9,7 +9,8 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/** Package name - hardcoded since it doesn't change */
+const PACKAGE_NAME = '@workflow/world-local';
 
 interface PackageInfo {
   name: string;
@@ -19,18 +20,48 @@ interface PackageInfo {
 let cachedPackageInfo: PackageInfo | null = null;
 
 /**
+ * Get the directory path for this module.
+ * Works in both ESM (direct usage) and bundled CJS contexts.
+ */
+function getModuleDir(): string | null {
+  // In bundled CJS contexts, import.meta.url may be undefined or empty
+  if (typeof import.meta.url === 'string' && import.meta.url) {
+    return path.dirname(fileURLToPath(import.meta.url));
+  }
+  return null;
+}
+
+/**
  * Returns the package name and version from package.json.
  * The result is cached after the first read.
+ *
+ * In bundled contexts where package.json cannot be read,
+ * returns 'bundled' as the version.
  */
 export async function getPackageInfo(): Promise<PackageInfo> {
   if (cachedPackageInfo) {
     return cachedPackageInfo;
   }
-  const content = await readFile(
-    path.join(__dirname, '../package.json'),
-    'utf-8'
-  );
-  cachedPackageInfo = JSON.parse(content) as PackageInfo;
+
+  const moduleDir = getModuleDir();
+  if (moduleDir) {
+    try {
+      const content = await readFile(
+        path.join(moduleDir, '../package.json'),
+        'utf-8'
+      );
+      cachedPackageInfo = JSON.parse(content) as PackageInfo;
+      return cachedPackageInfo;
+    } catch {
+      // Fall through to bundled fallback
+    }
+  }
+
+  // Bundled context - package.json not accessible
+  cachedPackageInfo = {
+    name: PACKAGE_NAME,
+    version: 'bundled',
+  };
   return cachedPackageInfo;
 }
 
