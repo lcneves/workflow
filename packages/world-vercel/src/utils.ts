@@ -5,6 +5,9 @@ import { type StructuredError, StructuredErrorSchema } from '@workflow/world';
 import type { z } from 'zod';
 import { version } from './version.js';
 
+export const defaultUrl = 'https://vercel-workflow.com/api';
+export const defaultProxyUrl = 'https://api.vercel.com/v1/workflow';
+export const DEFAULT_RESOLVE_DATA_OPTION = 'all';
 export interface APIConfig {
   /**
    * URL of the workflow server to target. When using the proxy (projectId + teamId provided),
@@ -21,8 +24,6 @@ export interface APIConfig {
     environment?: string;
   };
 }
-
-export const DEFAULT_RESOLVE_DATA_OPTION = 'all';
 
 export function dateToStringReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Date) {
@@ -118,14 +119,11 @@ export const getHttpUrl = (
   config?: APIConfig
 ): { baseUrl: string; usingProxy: boolean; targetServerPath?: string } => {
   const projectConfig = config?.projectConfig;
-  const defaultUrl = 'https://vercel-workflow.com/api';
-  const defaultProxyUrl = 'https://api.vercel.com/v1/workflow';
-  const baseUrl = config?.baseUrl || defaultUrl;
 
   // Use proxy when both projectId and teamId are provided
   const usingProxy =
     Boolean(projectConfig?.projectId && projectConfig?.teamId) ||
-    baseUrl.includes('api.vercel.com/v1/workflow');
+    config?.baseUrl?.includes('api.vercel.com/v1/workflow');
 
   if (usingProxy) {
     // When using proxy, always use the hardcoded proxy URL.
@@ -140,7 +138,7 @@ export const getHttpUrl = (
 
   // When not using proxy, use baseUrl directly or fall back to default
   return {
-    baseUrl,
+    baseUrl: config?.baseUrl || defaultUrl,
     usingProxy: false,
   };
 };
