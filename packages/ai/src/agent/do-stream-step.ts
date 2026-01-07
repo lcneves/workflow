@@ -155,6 +155,11 @@ export async function doStreamStep(
 
   let finish: FinishPart | undefined;
   const toolCalls: LanguageModelV2ToolCall[] = [];
+  // Map of tool call ID to provider-executed tool result
+  const providerExecutedToolResults = new Map<
+    string,
+    { toolCallId: string; toolName: string; result: unknown; isError?: boolean }
+  >();
   const chunks: LanguageModelV2StreamPart[] = [];
   const includeRawChunks = options?.includeRawChunks ?? false;
 
@@ -189,6 +194,16 @@ export async function doStreamStep(
               ...chunk,
               input: chunk.input || '{}',
             });
+          } else if (chunk.type === 'tool-result') {
+            // Capture provider-executed tool results
+            if (chunk.providerExecuted) {
+              providerExecutedToolResults.set(chunk.toolCallId, {
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                result: chunk.result,
+                isError: chunk.isError,
+              });
+            }
           } else if (chunk.type === 'finish') {
             finish = chunk;
           }
@@ -446,7 +461,7 @@ export async function doStreamStep(
     .pipeTo(writable, { preventClose: true });
 
   const step = chunksToStep(chunks, toolCalls, conversationPrompt, finish);
-  return { toolCalls, finish, step };
+  return { toolCalls, finish, step, providerExecutedToolResults };
 }
 
 /**

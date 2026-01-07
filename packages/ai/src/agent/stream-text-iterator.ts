@@ -24,6 +24,16 @@ import { toolsToModelTools } from './tools-to-model-tools.js';
 import type { CompatibleLanguageModel } from './types.js';
 
 /**
+ * Provider-executed tool result captured from the stream.
+ */
+export interface ProviderExecutedToolResult {
+  toolCallId: string;
+  toolName: string;
+  result: unknown;
+  isError?: boolean;
+}
+
+/**
  * The value yielded by the stream text iterator when tool calls are requested.
  * Contains both the tool calls and the current conversation messages.
  */
@@ -36,6 +46,8 @@ export interface StreamTextIteratorYieldValue {
   step?: StepResult<ToolSet>;
   /** The current experimental context */
   context?: unknown;
+  /** Provider-executed tool results (keyed by tool call ID) */
+  providerExecutedToolResults?: Map<string, ProviderExecutedToolResult>;
 }
 
 // This runs in the workflow context
@@ -239,21 +251,22 @@ export async function* streamTextIterator({
           ? filterToolSet(tools, currentActiveTools)
           : tools;
 
-      const { toolCalls, finish, step } = await doStreamStep(
-        conversationPrompt,
-        currentModel,
-        writable,
-        toolsToModelTools(effectiveTools),
-        {
-          sendStart: sendStart && isFirstIteration,
-          ...currentGenerationSettings,
-          toolChoice: currentToolChoice,
-          includeRawChunks,
-          experimental_telemetry,
-          transforms,
-          responseFormat,
-        }
-      );
+      const { toolCalls, finish, step, providerExecutedToolResults } =
+        await doStreamStep(
+          conversationPrompt,
+          currentModel,
+          writable,
+          toolsToModelTools(effectiveTools),
+          {
+            sendStart: sendStart && isFirstIteration,
+            ...currentGenerationSettings,
+            toolChoice: currentToolChoice,
+            includeRawChunks,
+            experimental_telemetry,
+            transforms,
+            responseFormat,
+          }
+        );
       isFirstIteration = false;
       stepNumber++;
       steps.push(step);
@@ -279,11 +292,13 @@ export async function* streamTextIterator({
 
         // Yield the tool calls along with the current conversation messages
         // This allows executeTool to pass the conversation context to tool execute functions
+        // Also include provider-executed tool results so they can be used instead of local execution
         const toolResults = yield {
           toolCalls,
           messages: conversationPrompt,
           step,
           context: currentContext,
+          providerExecutedToolResults,
         };
 
         await writeToolOutputToUI(writable, toolResults);
