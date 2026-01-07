@@ -21,7 +21,7 @@ let cachedPackageInfo: PackageInfo | null = null;
 
 /**
  * Get the directory path for this module.
- * Works in both ESM (direct usage) and bundled CJS contexts.
+ * Works in ESM and falls back to a constant in CJS contexts (which shouldn't happen)
  */
 function getModuleDir(): string | null {
   // In bundled CJS contexts, import.meta.url may be undefined or empty
