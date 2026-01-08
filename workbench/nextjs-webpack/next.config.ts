@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   // for easier debugging
   experimental: {
-    serverMinification: false,
+    serverSourceMaps: true,
   },
   serverExternalPackages: ['@node-rs/xxhash'],
 };

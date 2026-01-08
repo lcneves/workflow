@@ -4,6 +4,9 @@ import { withWorkflow } from 'workflow/next';
 const nextConfig: NextConfig = {
   /* config options here */
   serverExternalPackages: ['@node-rs/xxhash'],
+  experimental: {
+    serverSourceMaps: true,
+  },
 };
 
 // export default nextConfig;
