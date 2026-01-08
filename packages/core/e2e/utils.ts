@@ -31,7 +31,7 @@ export function hasStepSourceMaps(): boolean {
   const appName = process.env.APP_NAME as string;
   if (['nextjs-webpack', 'nextjs-turbopack'].includes(appName)) {
     // we aren't enabling the sourcemaps flag for Next.js by default
-    if (!isLocalDeployment()) {
+    if (isLocalDeployment()) {
       return true;
     }
     return false;
