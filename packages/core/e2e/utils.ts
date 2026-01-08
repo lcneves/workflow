@@ -28,6 +28,13 @@ export function isLocalDeployment(): boolean {
 export function hasStepSourceMaps(): boolean {
   // TODO: we need to fix this
   const appName = process.env.APP_NAME as string;
+
+  // TODO: why do we see cross-file sourcemap failure with postgres
+  // nextjs-turbopack but not local prod nextjs-turbopack
+  if (appName === 'nextjs-turbopack' && process.env.WORKFLOW_POSTGRES_URL) {
+    return false;
+  }
+
   if (['nextjs-webpack', 'nextjs-turbopack'].includes(appName)) {
     if (isLocalDeployment() && process.platform !== 'win32') {
       return true;
