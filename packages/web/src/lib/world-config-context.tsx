@@ -189,8 +189,19 @@ function hasConfigInSearchParams(searchParams: URLSearchParams): boolean {
 }
 
 /**
+ * Check if a backend value represents local development
+ */
+function isLocalBackend(backend: string | undefined): boolean {
+  return !backend || backend === 'local' || backend === '@workflow/world-local';
+}
+
+/**
  * Build the effective config by merging server, user, and defaults
  * Priority: server env > user config > defaults
+ *
+ * For local backend: All fields are editable, env values don't "lock" fields.
+ * This is because local development doesn't have a deployment environment,
+ * and we want users to be able to change all config via the UI.
  */
 function buildEffectiveConfig(
   serverConfig: ServerWorldConfig | null,
@@ -208,6 +219,13 @@ function buildEffectiveConfig(
     'postgresUrl',
   ];
 
+  // First, determine the effective backend to decide if we're in local mode
+  const userBackend = userConfig.backend;
+  const serverBackend = serverConfig?.backend?.value;
+  const effectiveBackend =
+    userBackend || serverBackend || DEFAULT_CONFIG.backend;
+  const isLocal = isLocalBackend(effectiveBackend);
+
   const effective: Partial<EffectiveWorldConfig> = {};
 
   for (const field of fields) {
@@ -217,25 +235,47 @@ function buildEffectiveConfig(
     const userValue = userConfig[field];
     const defaultValue = DEFAULT_CONFIG[field];
 
-    // Priority: env > user > default
+    // For local backend: user config takes precedence, env doesn't lock fields
+    // For other backends: env vars take precedence and lock fields
     let value: string | undefined;
     let source: ConfigSource;
+    let editable: boolean;
 
-    if (isFromEnv && serverValue) {
-      value = serverValue;
-      source = 'env';
-    } else if (userValue !== undefined && userValue !== '') {
-      value = userValue;
-      source = 'user';
+    if (isLocal) {
+      // Local backend: prefer user config, don't lock based on env
+      if (userValue !== undefined && userValue !== '') {
+        value = userValue;
+        source = 'user';
+      } else if (serverValue) {
+        value = serverValue;
+        source = isFromEnv ? 'env' : 'default';
+      } else {
+        value = defaultValue || undefined;
+        source = 'default';
+      }
+      // All fields are editable for local backend
+      editable = true;
     } else {
-      value = defaultValue || undefined;
-      source = 'default';
+      // Non-local backend: env takes precedence and locks fields
+      if (isFromEnv && serverValue) {
+        value = serverValue;
+        source = 'env';
+        editable = false;
+      } else if (userValue !== undefined && userValue !== '') {
+        value = userValue;
+        source = 'user';
+        editable = true;
+      } else {
+        value = defaultValue || undefined;
+        source = 'default';
+        editable = true;
+      }
     }
 
     effective[field] = {
       value,
       source,
-      editable: !isFromEnv,
+      editable,
     };
   }
 
@@ -253,6 +293,10 @@ export function WorldConfigProvider({ children }: { children: ReactNode }) {
   const [userConfig, setUserConfig] = useState<UserWorldConfig>({});
   const [isLoading, setIsLoading] = useState(true);
   const [hasProcessedQueryParams, setHasProcessedQueryParams] = useState(false);
+  // Client-resolved dataDirInfo based on effective dataDir (not server's cwd)
+  const [resolvedDataDirInfo, setResolvedDataDirInfo] = useState<
+    ServerConfigResult['dataDirInfo'] | null
+  >(null);
 
   // Load server config on mount
   useEffect(() => {
@@ -328,6 +372,30 @@ export function WorldConfigProvider({ children }: { children: ReactNode }) {
     [serverConfig, userConfig]
   );
 
+  // Resolve dataDirInfo based on effective dataDir (not server's cwd)
+  // This is needed because the server doesn't receive workflow env vars,
+  // so it can't resolve the correct data directory
+  useEffect(() => {
+    const dataDir = effectiveConfig.dataDir.value;
+    if (!dataDir || dataDir === './') {
+      setResolvedDataDirInfo(null);
+      return;
+    }
+
+    validateDataDir(dataDir)
+      .then((result) => {
+        if (result.valid && result.info) {
+          setResolvedDataDirInfo(result.info);
+        } else {
+          setResolvedDataDirInfo(null);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to validate dataDir:', error);
+        setResolvedDataDirInfo(null);
+      });
+  }, [effectiveConfig.dataDir.value]);
+
   // Determine mode
   const mode: ConfigMode = useMemo(() => {
     if (serverConfig?.hasServerConfig) {
@@ -393,7 +461,9 @@ export function WorldConfigProvider({ children }: { children: ReactNode }) {
     updateUserConfig,
     resetUserConfig,
     toEnvMap,
-    dataDirInfo: serverConfig?.dataDirInfo ?? null,
+    // Use client-resolved dataDirInfo based on effective dataDir,
+    // not the server's (which uses packages/web as cwd)
+    dataDirInfo: resolvedDataDirInfo,
     serverCwd: serverConfig?.cwd ?? '',
     validateDataDirectory: validateDataDir,
   };

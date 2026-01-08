@@ -29,12 +29,12 @@ export function ConnectionStatus() {
 
   // Determine display name for backend
   const backendDisplayNames: Record<string, string> = {
-    local: 'Local',
-    vercel: 'Vercel',
-    postgres: 'PostgreSQL',
-    '@workflow/world-local': 'Local',
-    '@workflow/world-vercel': 'Vercel',
-    '@workflow/world-postgres': 'PostgreSQL',
+    local: 'Local development',
+    vercel: 'Connected to Vercel',
+    postgres: 'Connected to PostgreSQL',
+    '@workflow/world-local': 'Local development',
+    '@workflow/world-vercel': 'Connected to Vercel',
+    '@workflow/world-postgres': 'Connected to Postgres',
   };
   const backendName = backendDisplayNames[backend] || backend;
 
@@ -93,7 +93,7 @@ export function ConnectionStatus() {
     <div className="text-sm text-muted-foreground flex items-center gap-2">
       <span className="font-medium flex items-center gap-1.5">
         {isFromEnv && <Lock className="w-3 h-3 text-blue-500" />}
-        Connected to: {backendName}
+        {backendName}
         {subtitle && (
           <span className="text-muted-foreground">({subtitle})</span>
         )}

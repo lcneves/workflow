@@ -29,7 +29,13 @@ const WORKFLOW_ENV_VARS_TO_EXCLUDE = [
   'WORKFLOW_LOCAL_DATA_DIR',
   'WORKFLOW_MANIFEST_PATH',
   'WORKFLOW_POSTGRES_URL',
-  // Note: We keep PORT and other system env vars
+  // PORT is excluded because:
+  // 1. The CLI sets PORT to the target app's port (e.g., 3000)
+  // 2. But the web server runs on a different port (e.g., 3456 via --webPort)
+  // 3. If we pass PORT=3000 to the web server, it would be captured in
+  //    INITIAL_ENV_SNAPSHOT and shown as "locked" - confusing for local dev
+  // 4. The correct port is passed via query params instead
+  'PORT',
 ];
 
 let serverProcess: ChildProcess | null = null;
