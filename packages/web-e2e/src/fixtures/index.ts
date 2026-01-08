@@ -144,8 +144,48 @@ export const test = base.extend<WebE2EFixtures, WebE2EWorkerFixtures>({
   webPage: async ({ page, webServer }, use) => {
     // Navigate to the web UI with configuration params
     const url = webServer.getUrl('/');
-    await page.goto(url);
-    await use(page);
+    
+    // Try to navigate to the server with retry logic and better error handling
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await page.goto(url, { waitUntil: 'networkidle' });
+        await use(page);
+        return;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        // Check if server is still running
+        const serverRunning = await webServer.isRunning();
+        
+        if (attempt < maxRetries && serverRunning) {
+          // Server is running but navigation failed, try again
+          console.warn(
+            `[webPage] Navigation attempt ${attempt} failed: ${lastError.message}. ` +
+            `Retrying (${attempt}/${maxRetries})...`
+          );
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          // Last attempt or server is down
+          if (!serverRunning) {
+            throw new Error(
+              `[webPage] Failed to navigate to ${url}: Server is not responding. ` +
+              `Original error: ${lastError.message}`
+            );
+          } else {
+            throw new Error(
+              `[webPage] Failed to navigate to ${url} after ${maxRetries} attempts. ` +
+              `Last error: ${lastError.message}`
+            );
+          }
+        }
+      }
+    }
+    
+    // Fallback (should not reach here, but for safety)
+    throw lastError || new Error('Failed to navigate to webPage');
   },
 
   e2eMetadata: async ({ webServerConfig }, use) => {
