@@ -148,14 +148,20 @@ async function startWebServer(webPort: number): Promise<boolean> {
     // about passing args with shell: true
     const shellCommand = `npx next start -p ${webPort}`;
     logger.debug(`Running: ${shellCommand} in ${packagePath}`);
+    logger.debug(
+      `Environment: WORKFLOW_LOCAL_DATA_DIR=${process.env.WORKFLOW_LOCAL_DATA_DIR}`
+    );
 
     // Start the Next.js server WITHOUT detaching
     // This keeps it attached to the CLI process
+    // IMPORTANT: Explicitly pass process.env to ensure environment variables
+    // (especially WORKFLOW_LOCAL_DATA_DIR) are inherited by the child process
     serverProcess = spawn(shellCommand, {
       shell: true,
       cwd: packagePath,
       detached: false, // Keep attached so Ctrl+C works
       stdio: ['ignore', 'pipe', 'pipe'], // Pipe output so we can log it if needed
+      env: process.env, // Explicitly inherit environment
     });
 
     // Register cleanup handlers to ensure server is killed on exit

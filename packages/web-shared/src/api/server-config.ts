@@ -53,6 +53,13 @@ for (const key of CONFIG_ENV_VARS) {
   INITIAL_ENV_SNAPSHOT[key] = process.env[key];
 }
 
+// Debug: Log captured env snapshot at module load
+console.log('[server-config] Module loaded. INITIAL_ENV_SNAPSHOT:', {
+  cwd: process.cwd(),
+  WORKFLOW_LOCAL_DATA_DIR: INITIAL_ENV_SNAPSHOT.WORKFLOW_LOCAL_DATA_DIR,
+  WORKFLOW_TARGET_WORLD: INITIAL_ENV_SNAPSHOT.WORKFLOW_TARGET_WORLD,
+});
+
 /**
  * Configuration field with its value and source
  */
