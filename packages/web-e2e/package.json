@@ -1,0 +1,20 @@
+{
+  "name": "@workflow/web-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Playwright e2e tests for the Workflow Web UI",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:local": "WORKFLOW_WEB_E2E_BACKEND=local playwright test",
+    "test:vercel": "WORKFLOW_WEB_E2E_BACKEND=vercel playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

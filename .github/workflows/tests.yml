@@ -599,11 +599,94 @@ jobs:
       setup-command: ${{ matrix.world.setup-command }}
     secrets: inherit
 
+  # Web UI E2E Tests - runs after main e2e tests to verify the web UI displays workflow runs correctly
+  web-e2e:
+    name: Web UI E2E Tests (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    needs: [e2e-vercel-prod, e2e-local-prod]
+    if: always() && !cancelled()
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [local, vercel]
+
+    env:
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-workflow-dev
+        with:
+          build-packages: 'false'
+
+      - name: Download E2E artifacts (for runId metadata)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-results-*
+          path: e2e-results
+          merge-multiple: true
+
+      - name: Copy metadata files to expected location
+        run: |
+          # Copy metadata files from artifacts to root for the tests to find
+          find e2e-results -name "e2e-metadata-*.json" -exec cp {} . \; || true
+          ls -la e2e-metadata-*.json 2>/dev/null || echo "No metadata files found"
+
+      - name: Build packages
+        run: pnpm turbo run build --filter='@workflow/web' --filter='@workflow/cli'
+
+      - name: Install Playwright browsers
+        working-directory: packages/web-e2e
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Web E2E Tests (Local Backend)
+        if: matrix.backend == 'local'
+        working-directory: packages/web-e2e
+        run: pnpm test
+        env:
+          WORKFLOW_WEB_E2E_BACKEND: local
+          APP_NAME: nextjs-turbopack
+
+      - name: Run Web E2E Tests (Vercel Backend)
+        if: matrix.backend == 'vercel'
+        working-directory: packages/web-e2e
+        run: pnpm test
+        env:
+          WORKFLOW_WEB_E2E_BACKEND: vercel
+          APP_NAME: nextjs-turbopack
+          WORKFLOW_VERCEL_AUTH_TOKEN: ${{ secrets.VERCEL_LABS_TOKEN }}
+          WORKFLOW_VERCEL_PROJECT: prj_yjkM7UdHliv8bfxZ1sMJQf1pMpdi
+          WORKFLOW_VERCEL_TEAM: vercel-labs
+          WORKFLOW_VERCEL_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-report-${{ matrix.backend }}
+          path: packages/web-e2e/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-results-${{ matrix.backend }}
+          path: packages/web-e2e/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Final job: Aggregate all E2E results and update PR comment
   summary:
     name: E2E Summary
     runs-on: ubuntu-latest
-    needs: [e2e-vercel-prod, e2e-local-dev, e2e-local-prod, e2e-local-postgres, e2e-windows, e2e-community]
+    needs: [e2e-vercel-prod, e2e-local-dev, e2e-local-prod, e2e-local-postgres, e2e-windows, e2e-community, web-e2e]
     if: always() && !cancelled()
     timeout-minutes: 10
 
@@ -634,6 +717,7 @@ jobs:
           POSTGRES_STATUS="${{ needs.e2e-local-postgres.result }}"
           WINDOWS_STATUS="${{ needs.e2e-windows.result }}"
           COMMUNITY_STATUS="${{ needs.e2e-community.result }}"
+          WEB_E2E_STATUS="${{ needs.web-e2e.result }}"
 
           echo "vercel=$VERCEL_STATUS" >> $GITHUB_OUTPUT
           echo "local-dev=$LOCAL_DEV_STATUS" >> $GITHUB_OUTPUT
@@ -641,15 +725,17 @@ jobs:
           echo "postgres=$POSTGRES_STATUS" >> $GITHUB_OUTPUT
           echo "windows=$WINDOWS_STATUS" >> $GITHUB_OUTPUT
           echo "community=$COMMUNITY_STATUS" >> $GITHUB_OUTPUT
+          echo "web-e2e=$WEB_E2E_STATUS" >> $GITHUB_OUTPUT
 
           # Community world failures are warnings, not errors
+          # Web E2E failures are also warnings (non-blocking) since they test the UI, not core functionality
           if [[ "$VERCEL_STATUS" == "failure" || "$LOCAL_DEV_STATUS" == "failure" || "$LOCAL_PROD_STATUS" == "failure" || "$POSTGRES_STATUS" == "failure" || "$WINDOWS_STATUS" == "failure" ]]; then
             echo "has_failures=true" >> $GITHUB_OUTPUT
           else
             echo "has_failures=false" >> $GITHUB_OUTPUT
           fi
 
-          if [[ "$COMMUNITY_STATUS" == "failure" ]]; then
+          if [[ "$COMMUNITY_STATUS" == "failure" || "$WEB_E2E_STATUS" == "failure" ]]; then
             echo "has_warnings=true" >> $GITHUB_OUTPUT
           else
             echo "has_warnings=false" >> $GITHUB_OUTPUT
@@ -689,8 +775,9 @@ jobs:
           message: |
 
             ---
-            ⚠️ **Community world tests failed** (non-blocking):
+            ⚠️ **Non-blocking test failures:**
             - Community Worlds: ${{ needs.e2e-community.result }}
+            - Web UI E2E: ${{ needs.web-e2e.result }}
 
             Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
 
