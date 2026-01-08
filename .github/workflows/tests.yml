@@ -538,7 +538,7 @@ jobs:
       - name: Run E2E Tests (Next.js)
         run: |
           cd workbench/nextjs-turbopack
-          $job = Start-Job -ScriptBlock { Set-Location $using:PWD; pnpm dev }
+          $job = Start-Job -ScriptBlock { $env:NODE_OPTIONS = $using:env:NODE_OPTIONS; Set-Location $using:PWD; pnpm dev }
           Start-Sleep -Seconds 15
           cd ../..
           pnpm vitest run packages/core/e2e/dev.test.ts

@@ -14,6 +14,19 @@ export function workflowTransformPlugin(): Plugin {
         return null;
       }
 
+      // Get the combined source map from previous transforms (if any)
+      // This is the Rollup way to get input source maps for chaining
+      let inputSourceMap: string | undefined;
+      try {
+        const combinedMap = this.getCombinedSourcemap();
+        if (combinedMap) {
+          inputSourceMap = JSON.stringify(combinedMap);
+        }
+      } catch {
+        // getCombinedSourcemap() throws if no previous transforms produced maps
+        // This is expected for the first transform in the chain
+      }
+
       const isTypeScript =
         id.endsWith('.ts') ||
         id.endsWith('.tsx') ||
@@ -91,6 +104,8 @@ export function workflowTransformPlugin(): Plugin {
         minify: false,
         sourceMaps: true,
         inlineSourcesContent: true,
+        // Pass input source map from previous transforms for proper source map chaining
+        inputSourceMap,
       });
 
       return {
