@@ -233,6 +233,7 @@ export async function workflowAndStepMetadataWorkflow() {
       workflowRunId: workflowMetadata.workflowRunId,
       workflowStartedAt: workflowMetadata.workflowStartedAt,
       url: workflowMetadata.url,
+      workflowName: workflowMetadata.workflowName,
     },
     stepMetadata,
     innerWorkflowMetadata,
