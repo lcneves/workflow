@@ -42,11 +42,6 @@ export function hasStepSourceMaps(): boolean {
     return appName !== 'sveltekit';
   }
 
-  // Vite only works in vercel, not on local prod or dev
-  if (appName === 'vite') {
-    return false;
-  }
-
   // Prod buils for frameworks typically don't consume source maps. So let's disable testing
   // in local prod and local postgres tests
   if (!process.env.DEV_TEST_CONFIG) {
@@ -63,20 +58,6 @@ export function hasStepSourceMaps(): boolean {
  *       get rid of this strange matrix
  */
 export function hasWorkflowSourceMaps(): boolean {
-  const appName = process.env.APP_NAME as string;
-
-  // Vercel deployments have proper source map support for workflow errors
-  if (!isLocalDeployment()) {
-    return true;
-  }
-
-  // These frameworks currently don't handle sourcemaps correctly in local dev
-  // TODO: figure out how to get sourcemaps working in these frameworks too
-  if (process.env.DEV_TEST_CONFIG && ['vite', 'astro'].includes(appName)) {
-    return false;
-  }
-
-  // Works everywhere else
   return true;
 }
 

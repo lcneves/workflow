@@ -8,4 +8,7 @@ export default defineConfig({
     serverDir: './',
     plugins: ['plugins/start-pg-world.ts'],
   },
+  build: {
+    sourcemap: true,
+  },
 });
