@@ -22,12 +22,4 @@ export default defineConfig({
   security: {
     checkOrigin: false,
   },
-  vite: {
-    build: {
-      sourcemap: true, // Enables production source maps
-    },
-    dev: {
-      sourcemap: true,
-    },
-  },
 });
