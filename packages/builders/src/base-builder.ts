@@ -120,9 +120,11 @@ export abstract class BaseBuilder {
         write: false,
         outdir,
         bundle: true,
-        sourcemap: EMIT_SOURCEMAPS_FOR_DEBUGGING,
+        sourcemap: false,
         absWorkingDir: this.config.workingDir,
         logLevel: 'silent',
+        // External packages that should not be bundled during discovery
+        external: this.config.externalPackages || [],
       });
     } catch (_) {}
 
@@ -339,8 +341,11 @@ export abstract class BaseBuilder {
         '.mjs',
         '.cjs',
       ],
-      // TODO: investigate proper source map support
-      sourcemap: EMIT_SOURCEMAPS_FOR_DEBUGGING,
+      // Inline source maps for better stack traces in step execution.
+      // Steps execute in Node.js context and inline sourcemaps ensure we get
+      // meaningful stack traces with proper file names and line numbers when errors
+      // occur in deeply nested function calls across multiple files.
+      sourcemap: 'inline',
       plugins: [
         createSwcPlugin({
           mode: 'step',
@@ -480,6 +485,8 @@ export abstract class BaseBuilder {
         // happens first, preventing false positives on Node.js imports in unused code paths
         createNodeModuleErrorPlugin(),
       ],
+      // External packages that should not be bundled (e.g., server-only, client-only for Next.js)
+      external: this.config.externalPackages || [],
     });
     const interimBundle = await interimBundleCtx.rebuild();
 
@@ -747,7 +754,7 @@ export const OPTIONS = handler;`;
         '.mjs',
         '.cjs',
       ],
-      sourcemap: false,
+      sourcemap: EMIT_SOURCEMAPS_FOR_DEBUGGING,
       mainFields: ['module', 'main'],
       // Don't externalize anything - bundle everything including workflow packages
       external: [],
