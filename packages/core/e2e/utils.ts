@@ -31,20 +31,9 @@ export function hasStepSourceMaps(): boolean {
   const appName = process.env.APP_NAME as string;
   if (['nextjs-webpack', 'nextjs-turbopack'].includes(appName)) {
     // we aren't enabling the sourcemaps flag for Next.js by default
-    if (process.env.DEPLOYMENT_URL?.includes('localhost')) {
+    if (!isLocalDeployment()) {
       return true;
     }
-    return false;
-  }
-
-  // Vercel builds have proper source maps for all other frameworks, EXCEPT sveltekit
-  if (!isLocalDeployment()) {
-    return appName !== 'sveltekit';
-  }
-
-  // Prod buils for frameworks typically don't consume source maps. So let's disable testing
-  // in local prod and local postgres tests
-  if (!process.env.DEV_TEST_CONFIG) {
     return false;
   }
 
