@@ -32,9 +32,9 @@ export function hasStepSourceMaps(): boolean {
   if (['nextjs-webpack', 'nextjs-turbopack'].includes(appName)) {
     // we aren't enabling the sourcemaps flag for Next.js by default
     if (process.env.DEPLOYMENT_URL?.includes('localhost')) {
-      return false;
+      return true;
     }
-    return true;
+    return false;
   }
 
   // Vercel builds have proper source maps for all other frameworks, EXCEPT sveltekit
