@@ -20,11 +20,13 @@ These tests verify that the Workflow Web UI correctly displays workflow runs, st
 ### Prerequisites
 
 1. Build the workspace packages:
+
    ```bash
    pnpm build
    ```
 
 2. (Optional) Run the main e2e tests first to generate runIds:
+
    ```bash
    APP_NAME=nextjs-turbopack DEPLOYMENT_URL=http://localhost:3000 pnpm test:e2e
    ```
@@ -92,4 +94,3 @@ DEBUG=pw:api pnpm test
 # View test report
 pnpm report
 ```
-

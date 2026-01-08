@@ -135,7 +135,7 @@ jobs:
           build-packages: 'false'
 
       - name: Run Unit Tests
-        run: pnpm test --filter='!./docs'
+        run: pnpm test --filter='!./docs' --filter='!./packages/web-e2e'
 
   build-error-messages:
     name: Node.js Module Build Errors Test
