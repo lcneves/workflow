@@ -5,4 +5,7 @@ import { workflowPlugin } from 'workflow/sveltekit';
 
 export default defineConfig({
   plugins: [workflowPlugin(), devtoolsJson(), sveltekit()],
+  build: {
+    sourcemap: true,
+  },
 });
