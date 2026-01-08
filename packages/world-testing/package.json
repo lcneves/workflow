@@ -16,7 +16,7 @@
     "directory": "packages/world-testing"
   },
   "scripts": {
-    "build": "rimraf dist/workflows; wf build && tsc",
+    "build": "rimraf dist/workflows && wf build && tsc",
     "clean": "tsc --build --clean && rm -rf dist .well-known* .workflow-data",
     "start": "node --watch src/server.mts",
     "test": "vitest"
