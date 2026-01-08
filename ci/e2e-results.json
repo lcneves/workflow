@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-01-08T10:08:49.618Z",
-  "commit": "0d79ff084ce85880a11b9d056bd07c26bf68547a",
+  "lastUpdated": "2026-01-08T18:40:10.690Z",
+  "commit": "073e26a372cc4d57dbd3f82228b26c81947b1cde",
   "branch": "main",
   "type": "e2e",
   "worlds": {
@@ -14,13 +14,13 @@
       "progress": 97
     },
     "redis": {
-      "status": "passing",
+      "status": "partial",
       "total": 37,
-      "passed": 37,
-      "failed": 0,
+      "passed": 36,
+      "failed": 1,
       "skipped": 0,
       "frameworks": {},
-      "progress": 100
+      "progress": 97
     },
     "starter": {
       "status": "partial",
@@ -41,16 +41,16 @@
       "progress": 97
     },
     "local": {
-      "status": "partial",
-      "total": 850,
-      "passed": 832,
-      "failed": 2,
+      "status": "passing",
+      "total": 714,
+      "passed": 698,
+      "failed": 0,
       "skipped": 16,
       "frameworks": {
         "astro": {
           "total": 68,
-          "passed": 64,
-          "failed": 2
+          "passed": 66,
+          "failed": 0
         },
         "express": {
           "total": 68,
@@ -68,13 +68,13 @@
           "failed": 0
         },
         "nextjs-turbopack": {
-          "total": 170,
-          "passed": 170,
+          "total": 102,
+          "passed": 102,
           "failed": 0
         },
         "nextjs-webpack": {
-          "total": 136,
-          "passed": 136,
+          "total": 68,
+          "passed": 68,
           "failed": 0
         },
         "nitro": {
@@ -102,8 +102,8 @@
     },
     "postgres": {
       "status": "passing",
-      "total": 408,
-      "passed": 400,
+      "total": 340,
+      "passed": 332,
       "failed": 0,
       "skipped": 8,
       "frameworks": {
@@ -128,13 +128,13 @@
           "failed": 0
         },
         "nextjs-turbopack": {
-          "total": 68,
-          "passed": 68,
+          "total": 34,
+          "passed": 34,
           "failed": 0
         },
         "nextjs-webpack": {
-          "total": 68,
-          "passed": 68,
+          "total": 34,
+          "passed": 34,
           "failed": 0
         },
         "nitro": {
