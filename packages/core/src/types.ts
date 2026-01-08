@@ -1,4 +1,4 @@
-import { types } from 'node:util';
+import { inspect, types } from 'node:util';
 
 export function getErrorName(v: unknown): string {
   if (types.isNativeError(v)) {
@@ -9,7 +9,9 @@ export function getErrorName(v: unknown): string {
 
 export function getErrorStack(v: unknown): string {
   if (types.isNativeError(v)) {
-    return v.stack ?? '';
+    // Use util.inspect to get the formatted error with source maps applied.
+    // Accessing err.stack directly returns the raw stack without source map resolution.
+    return inspect(v);
   }
   return '';
 }

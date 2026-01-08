@@ -3,19 +3,22 @@ import { transform } from '@swc/core';
 
 // This loader applies the "use workflow"/"use step"
 // client transformation
-export default async function workflowLoader(
+export default function workflowLoader(
   this: {
     resourcePath: string;
+    async: () => (err: Error | null, content?: string, sourceMap?: any) => void;
   },
   source: string | Buffer,
   sourceMap: any
-): Promise<string> {
+) {
+  const callback = this.async();
   const filename = this.resourcePath;
   const normalizedSource = source.toString();
 
   // only apply the transform if file needs it
   if (!normalizedSource.match(/(use step|use workflow)/)) {
-    return normalizedSource;
+    callback(null, normalizedSource, sourceMap);
+    return;
   }
 
   const isTypeScript =
@@ -64,7 +67,7 @@ export default async function workflowLoader(
   }
 
   // Transform with SWC
-  const result = await transform(normalizedSource, {
+  transform(normalizedSource, {
     filename: relativeFilename,
     jsc: {
       parser: {
@@ -94,7 +97,12 @@ export default async function workflowLoader(
     inputSourceMap: sourceMap,
     sourceMaps: true,
     inlineSourcesContent: true,
-  });
-
-  return result.code;
+  }).then(
+    (result) => {
+      callback(null, result.code);
+    },
+    (err) => {
+      callback(err);
+    }
+  );
 }
