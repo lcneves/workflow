@@ -113,13 +113,11 @@ export interface HttpConfig {
   baseUrl: string;
   headers: Headers;
   usingProxy: boolean;
-  /** When using proxy, the target server URL to pass as ?path= parameter */
-  targetServerPath?: string;
 }
 
 export const getHttpUrl = (
   config?: APIConfig
-): { baseUrl: string; usingProxy: boolean; targetServerPath?: string } => {
+): { baseUrl: string; usingProxy: boolean } => {
   const projectConfig = config?.projectConfig;
 
   // Use proxy when both projectId and teamId are provided explicitly
@@ -132,7 +130,6 @@ export const getHttpUrl = (
     return {
       baseUrl: defaultProxyUrl,
       usingProxy: true,
-      targetServerPath: config?.baseUrl,
     };
   }
 
@@ -173,8 +170,8 @@ export async function getHttpConfig(config?: APIConfig): Promise<HttpConfig> {
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  const { baseUrl, usingProxy, targetServerPath } = getHttpUrl(config);
-  return { baseUrl, headers, usingProxy, targetServerPath };
+  const { baseUrl, usingProxy } = getHttpUrl(config);
+  return { baseUrl, headers, usingProxy };
 }
 
 export async function makeRequest<T>({
@@ -188,24 +185,18 @@ export async function makeRequest<T>({
   config?: APIConfig;
   schema: z.ZodSchema<T>;
 }): Promise<T> {
-  const { baseUrl, headers, usingProxy, targetServerPath } =
-    await getHttpConfig(config);
+  const { baseUrl, headers, usingProxy } = await getHttpConfig(config);
   headers.set('Content-Type', 'application/json');
   // NOTE: Add a unique header to bypass RSC request memoization.
   // See: https://github.com/vercel/workflow/issues/618
   headers.set('X-Request-Time', Date.now().toString());
 
-  let url = `${baseUrl}${endpoint}`;
+  const url = `${baseUrl}${endpoint}`;
   // When using the proxy with a target server path, append it as a query parameter.
   // This allows the proxy to forward requests to a specific workflow server deployment.
-  if (usingProxy && targetServerPath) {
-    const urlObj = new URL(url);
-    urlObj.searchParams.set('path', targetServerPath);
-    url = urlObj.toString();
-  }
   if (process.env.DEBUG === '1') {
     console.error(
-      `[world-vercel] makeRequest: usingProxy=${usingProxy}, targetServerPath=${targetServerPath}, url=${url}`
+      `[world-vercel] makeRequest: usingProxy=${usingProxy}, proxyHeader=${headers.get('x-vercel-workflow-api-url')}, url=${url}`
     );
   }
   const request = new Request(url, {
