@@ -191,8 +191,18 @@ export class WebServer {
    */
   async isRunning(): Promise<boolean> {
     try {
-      const response = await fetch(this.baseUrl, { method: 'HEAD' });
-      return response.ok;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      try {
+        const response = await fetch(this.baseUrl, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        return response.ok;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } catch {
       return false;
     }
