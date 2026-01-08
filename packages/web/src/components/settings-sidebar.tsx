@@ -20,7 +20,7 @@ import {
   validateWorldConfig,
   type WorldConfig,
 } from '@/lib/config-world';
-import { useDataDirInfo, useWorldsAvailability } from '@/lib/hooks';
+import { useWorldsAvailability } from '@/lib/hooks';
 
 interface SettingsSidebarProps {
   open?: boolean;
@@ -43,7 +43,6 @@ export function SettingsSidebar({
 
   const { data: worldsAvailability = [], isLoading: isLoadingWorlds } =
     useWorldsAvailability();
-  const { data: dataDirInfo } = useDataDirInfo(localConfig.dataDir);
 
   const backend = localConfig.backend || 'local';
   const isLocal = backend === 'local';

@@ -682,6 +682,44 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-screenshots-${{ matrix.backend }}
+          path: packages/web-e2e/screenshots/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Post Web UI screenshots to PR comment
+  web-e2e-screenshots:
+    name: Post Web UI Screenshots
+    runs-on: ubuntu-latest
+    needs: [web-e2e]
+    if: always() && !cancelled() && github.event_name == 'pull_request'
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download screenshots
+        uses: actions/download-artifact@v4
+        with:
+          pattern: web-e2e-screenshots-*
+          path: screenshots
+          merge-multiple: true
+
+      - name: List screenshots
+        run: find screenshots -type f -name "*.png" | sort || echo "No screenshots found"
+
+      - name: Post screenshots to PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/post-web-e2e-screenshots.js screenshots
+
   # Final job: Aggregate all E2E results and update PR comment
   summary:
     name: E2E Summary
