@@ -173,7 +173,6 @@ const statusMap: Record<WorkflowRunStatus, { label: string; color: string }> = {
   running: { label: 'Running', color: 'bg-blue-600 dark:bg-blue-400' },
   completed: { label: 'Completed', color: 'bg-green-600 dark:bg-green-400' },
   failed: { label: 'Failed', color: 'bg-red-600 dark:bg-red-400' },
-  paused: { label: 'Paused', color: 'bg-yellow-600 dark:bg-yellow-400' },
   cancelled: { label: 'Cancelled', color: 'bg-gray-600 dark:bg-gray-400' },
 };
 
