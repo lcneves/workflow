@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/index.js';
+import { expect, test } from './fixtures/index.js';
 
 test.describe('Web UI - Runs List', () => {
   test('should display the runs tab by default', async ({ webPage }) => {
@@ -127,7 +127,6 @@ test.describe('Web UI - Run Detail View', () => {
   test('should navigate to run detail page', async ({
     webPage,
     getAnyRunId,
-    e2eMetadata,
   }) => {
     // Skip if no run IDs available
     const runId = getAnyRunId();

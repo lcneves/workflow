@@ -1,5 +1,3 @@
-import { spawn, type ChildProcess } from 'node:child_process';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 
 /**
@@ -12,7 +10,7 @@ export interface WebServerConfig {
   backend: 'local' | 'vercel';
 
   /**
-   * Port to run the web server on
+   * Port the web server runs on
    */
   port: number;
 
@@ -33,13 +31,11 @@ export interface WebServerConfig {
 }
 
 /**
- * Web server manager for Playwright tests.
- * Spawns the @workflow/web Next.js server and manages its lifecycle.
+ * URL builder for the web UI.
+ * The actual server lifecycle is managed by Playwright's webServer config.
  */
-export class WebServer {
-  private process: ChildProcess | null = null;
+export class WebUrlBuilder {
   private config: WebServerConfig;
-  private started = false;
 
   constructor(config: WebServerConfig) {
     this.config = config;
@@ -50,6 +46,13 @@ export class WebServer {
    */
   get baseUrl(): string {
     return `http://localhost:${this.config.port}`;
+  }
+
+  /**
+   * Get the backend type
+   */
+  get backend(): 'local' | 'vercel' {
+    return this.config.backend;
   }
 
   /**
@@ -90,143 +93,6 @@ export class WebServer {
       url.searchParams.set(key, value);
     }
     return url.toString();
-  }
-
-  /**
-   * Start the web server
-   */
-  async start(): Promise<void> {
-    if (this.started) {
-      console.log('[WebServer] Already started');
-      return;
-    }
-
-    // Check if server is already running on the port
-    if (await this.isRunning()) {
-      console.log(
-        `[WebServer] Server already running on port ${this.config.port}`
-      );
-      this.started = true;
-      return;
-    }
-
-    // Find the @workflow/web package
-    const webPackagePath = this.findWebPackagePath();
-    console.log(`[WebServer] Using web package at: ${webPackagePath}`);
-
-    // Start the Next.js server
-    const shellCommand = `npx next start -p ${this.config.port}`;
-    console.log(`[WebServer] Starting: ${shellCommand}`);
-
-    // Create env object and properly remove workflow-specific vars
-    // (Setting to undefined doesn't actually delete the property)
-    const env = { ...process.env };
-    delete env.WORKFLOW_TARGET_WORLD;
-    delete env.WORKFLOW_VERCEL_ENV;
-    delete env.WORKFLOW_VERCEL_AUTH_TOKEN;
-    delete env.WORKFLOW_VERCEL_PROJECT;
-    delete env.WORKFLOW_VERCEL_TEAM;
-    delete env.WORKFLOW_LOCAL_DATA_DIR;
-
-    this.process = spawn(shellCommand, {
-      shell: true,
-      cwd: webPackagePath,
-      detached: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env,
-    });
-
-    // Log server output
-    this.process.stdout?.on('data', (data) => {
-      console.log(`[WebServer] ${data.toString().trim()}`);
-    });
-
-    this.process.stderr?.on('data', (data) => {
-      console.error(`[WebServer] ${data.toString().trim()}`);
-    });
-
-    this.process.on('error', (error) => {
-      console.error(`[WebServer] Process error: ${error}`);
-    });
-
-    this.process.on('exit', (code, signal) => {
-      if (code !== 0 && code !== null) {
-        console.log(`[WebServer] Exited with code ${code}`);
-      }
-      this.process = null;
-    });
-
-    // Wait for server to be ready
-    const maxRetries = 60;
-    const retryInterval = 1000;
-
-    for (let i = 0; i < maxRetries; i++) {
-      await this.sleep(retryInterval);
-      if (await this.isRunning()) {
-        console.log(`[WebServer] Server ready on port ${this.config.port}`);
-        this.started = true;
-        return;
-      }
-    }
-
-    throw new Error(
-      `[WebServer] Failed to start within ${maxRetries * retryInterval}ms`
-    );
-  }
-
-  /**
-   * Stop the web server
-   */
-  async stop(): Promise<void> {
-    if (this.process && !this.process.killed) {
-      console.log('[WebServer] Stopping server...');
-      this.process.kill('SIGTERM');
-      this.process = null;
-    }
-    this.started = false;
-  }
-
-  /**
-   * Check if the server is running
-   */
-  async isRunning(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      try {
-        const response = await fetch(this.baseUrl, {
-          method: 'GET',
-          signal: controller.signal,
-        });
-        return response.ok;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Find the @workflow/web package path
-   */
-  private findWebPackagePath(): string {
-    try {
-      // Try to resolve from the workspace root
-      const requireFromHere = createRequire(import.meta.url);
-      const packageJsonPath = requireFromHere.resolve(
-        '@workflow/web/package.json'
-      );
-      return path.dirname(packageJsonPath);
-    } catch {
-      // Fallback to relative path from this package
-      return path.resolve(import.meta.dirname, '../../../web');
-    }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

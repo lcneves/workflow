@@ -2,7 +2,7 @@ import { test as base, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  WebServer,
+  WebUrlBuilder,
   getDefaultConfig,
   type WebServerConfig,
 } from './web-server.js';
@@ -28,9 +28,14 @@ export interface E2EMetadata {
  */
 export interface WebE2EFixtures {
   /**
-   * The web server instance
+   * Configuration for the web server
    */
-  webServer: WebServer;
+  webServerConfig: WebServerConfig;
+
+  /**
+   * URL builder for creating URLs with correct query params
+   */
+  urlBuilder: WebUrlBuilder;
 
   /**
    * A page that's already navigated to the web UI with correct config params
@@ -51,21 +56,6 @@ export interface WebE2EFixtures {
    * Get the first available runId from the e2e metadata
    */
   getAnyRunId: () => string | null;
-}
-
-/**
- * Worker-scoped fixtures (shared across all tests in a worker)
- */
-export interface WebE2EWorkerFixtures {
-  /**
-   * Web server configuration
-   */
-  webServerConfig: WebServerConfig;
-
-  /**
-   * The shared web server instance (per worker)
-   */
-  sharedWebServer: WebServer;
 }
 
 /**
@@ -116,84 +106,34 @@ function findE2EMetadata(
 /**
  * Extended Playwright test with web e2e fixtures
  */
-export const test = base.extend<WebE2EFixtures, WebE2EWorkerFixtures>({
-  // Worker-scoped: shared across all tests in a worker
-  webServerConfig: [
-    async ({}, use) => {
-      const config = getDefaultConfig();
-      await use(config);
-    },
-    { scope: 'worker' },
-  ],
-
-  sharedWebServer: [
-    async ({ webServerConfig }, use) => {
-      const server = new WebServer(webServerConfig);
-      await server.start();
-      await use(server);
-      await server.stop();
-    },
-    { scope: 'worker' },
-  ],
-
-  // Test-scoped fixtures
-  webServer: async ({ sharedWebServer }, use) => {
-    await use(sharedWebServer);
+export const test = base.extend<WebE2EFixtures>({
+  // Configuration (test-scoped but constant)
+  webServerConfig: async ({}, use) => {
+    const config = getDefaultConfig();
+    await use(config);
   },
 
-  webPage: async ({ page, webServer }, use) => {
-    // Navigate to the web UI with configuration params
-    const url = webServer.getUrl('/');
-    
-    // Try to navigate to the server with retry logic and better error handling
-    const maxRetries = 3;
-    let lastError: Error | null = null;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await page.goto(url, { waitUntil: 'networkidle' });
-        await use(page);
-        return;
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        
-        // Check if server is still running
-        const serverRunning = await webServer.isRunning();
-        
-        if (attempt < maxRetries && serverRunning) {
-          // Server is running but navigation failed, try again
-          console.warn(
-            `[webPage] Navigation attempt ${attempt} failed: ${lastError.message}. ` +
-            `Retrying (${attempt}/${maxRetries})...`
-          );
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } else {
-          // Last attempt or server is down
-          if (!serverRunning) {
-            throw new Error(
-              `[webPage] Failed to navigate to ${url}: Server is not responding. ` +
-              `Original error: ${lastError.message}`
-            );
-          } else {
-            throw new Error(
-              `[webPage] Failed to navigate to ${url} after ${maxRetries} attempts. ` +
-              `Last error: ${lastError.message}`
-            );
-          }
-        }
-      }
-    }
-    
-    // Fallback (should not reach here, but for safety)
-    throw lastError || new Error('Failed to navigate to webPage');
+  // URL builder
+  urlBuilder: async ({ webServerConfig }, use) => {
+    const builder = new WebUrlBuilder(webServerConfig);
+    await use(builder);
   },
 
+  // Page pre-navigated to the web UI
+  webPage: async ({ page, urlBuilder }, use) => {
+    const url = urlBuilder.getUrl('/');
+    await page.goto(url);
+    await use(page);
+  },
+
+  // E2E metadata from previous tests
   e2eMetadata: async ({ webServerConfig }, use) => {
     const appName = process.env.APP_NAME || 'nextjs-turbopack';
     const metadata = findE2EMetadata(appName, webServerConfig.backend);
     await use(metadata);
   },
 
+  // Helper to get runId by test name
   getRunId: async ({ e2eMetadata }, use) => {
     const fn = (testName: string): string | null => {
       if (!e2eMetadata?.runIds) return null;
@@ -203,6 +143,7 @@ export const test = base.extend<WebE2EFixtures, WebE2EWorkerFixtures>({
     await use(fn);
   },
 
+  // Helper to get any available runId
   getAnyRunId: async ({ e2eMetadata }, use) => {
     const fn = (): string | null => {
       if (!e2eMetadata?.runIds || e2eMetadata.runIds.length === 0) return null;
@@ -213,4 +154,4 @@ export const test = base.extend<WebE2EFixtures, WebE2EWorkerFixtures>({
 });
 
 export { expect } from '@playwright/test';
-export type { WebServer, WebServerConfig };
+export type { WebUrlBuilder, WebServerConfig };
