@@ -137,7 +137,10 @@ test.describe('Web UI - Run Detail View', () => {
     }
 
     // Navigate to run detail page
-    const runDetailUrl = webPage.url().replace(/\?.*$/, '') + `run/${runId}`;
+    const pageUrl = new URL(webPage.url());
+    pageUrl.pathname = `/run/${runId}`;
+    pageUrl.search = '';
+    const runDetailUrl = pageUrl.toString();
     await webPage.goto(runDetailUrl);
 
     await webPage.waitForLoadState('networkidle');
@@ -158,8 +161,10 @@ test.describe('Web UI - Run Detail View', () => {
     }
 
     // Navigate to run detail page
-    const baseUrl = webPage.url().split('?')[0];
-    const runDetailUrl = `${baseUrl}run/${runId}`;
+    const pageUrl = new URL(webPage.url());
+    pageUrl.pathname = `/run/${runId}`;
+    pageUrl.search = '';
+    const runDetailUrl = pageUrl.toString();
     await webPage.goto(runDetailUrl);
 
     await webPage.waitForLoadState('networkidle');
@@ -186,8 +191,10 @@ test.describe('Web UI - Run Detail View', () => {
       return;
     }
 
-    const baseUrl = webPage.url().split('?')[0];
-    const runDetailUrl = `${baseUrl}run/${runId}`;
+    const pageUrl = new URL(webPage.url());
+    pageUrl.pathname = `/run/${runId}`;
+    pageUrl.search = '';
+    const runDetailUrl = pageUrl.toString();
     await webPage.goto(runDetailUrl);
 
     await webPage.waitForLoadState('networkidle');
@@ -205,8 +212,10 @@ test.describe('Web UI - Run Detail View', () => {
       return;
     }
 
-    const baseUrl = webPage.url().split('?')[0];
-    const runDetailUrl = `${baseUrl}run/${runId}`;
+    const pageUrl = new URL(webPage.url());
+    pageUrl.pathname = `/run/${runId}`;
+    pageUrl.search = '';
+    const runDetailUrl = pageUrl.toString();
     await webPage.goto(runDetailUrl);
 
     await webPage.waitForLoadState('networkidle');
@@ -233,8 +242,10 @@ test.describe('Web UI - Run Detail View', () => {
       return;
     }
 
-    const baseUrl = webPage.url().split('?')[0];
-    const runDetailUrl = `${baseUrl}run/${runId}`;
+    const pageUrl = new URL(webPage.url());
+    pageUrl.pathname = `/run/${runId}`;
+    pageUrl.search = '';
+    const runDetailUrl = pageUrl.toString();
     await webPage.goto(runDetailUrl);
 
     await webPage.waitForLoadState('networkidle');
@@ -289,8 +300,10 @@ test.describe('Web UI - Navigation', () => {
 test.describe('Web UI - Error Handling', () => {
   test('should handle invalid run ID gracefully', async ({ webPage }) => {
     // Navigate to a non-existent run
-    const baseUrl = webPage.url().split('?')[0];
-    const invalidRunUrl = `${baseUrl}run/invalid_run_id_12345`;
+    const pageUrl = new URL(webPage.url());
+    pageUrl.pathname = '/run/invalid_run_id_12345';
+    pageUrl.search = '';
+    const invalidRunUrl = pageUrl.toString();
     await webPage.goto(invalidRunUrl);
 
     await webPage.waitForLoadState('networkidle');
