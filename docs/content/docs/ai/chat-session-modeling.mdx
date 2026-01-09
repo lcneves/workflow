@@ -127,7 +127,7 @@ This is the pattern used in the [Building Durable AI Agents](/docs/ai) guide.
 
 A single workflow handles the entire conversation session across multiple turns, and owns the current conversation state. The clients/API routes inject new messages via hooks.
 
-<Tabs items={['Workflow', 'API Routes', 'Hook Definition', 'Client']}>
+<Tabs items={['Workflow', 'API Routes', 'Hook Definition', 'useMultiTurnChat helper', 'Client']}>
 
 <Tab value="Workflow">
 
@@ -228,7 +228,7 @@ export const chatMessageHook = defineHook({
 
 </Tab>
 
-<Tab value="useMultiTurnChat helpers">
+<Tab value="useMultiTurnChat helper">
 
 We can replace our `useChat` react hook with a custom hook that manages the chat session. This hook will handle switching between the API endpoints for creating a new thread and sending follow-up messages.
 
@@ -291,6 +291,20 @@ export function useMultiTurnChat() {
   }, [threadId, sendMessage]);
 
   return { messages, threadId, startSession, sendMessage, endSession, ...chatProps };
+}
+```
+
+</Tab>
+
+<Tab value="Client">
+
+```typescript title="app/chats/[id]/page.tsx" lineNumbers
+"use client";
+
+import { useMultiTurnChat } from "@/hooks/use-multi-turn-chat";
+
+export function Chat({ initialMessages }) {
+  const { messages, threadId, startSession, sendMessage, endSession, ...chatProps } = useMultiTurnChat();
 }
 ```
 
