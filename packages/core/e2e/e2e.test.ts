@@ -677,6 +677,9 @@ describe('e2e', () => {
             // of hasStepSourceMaps() to see where they are supported
             if (hasStepSourceMaps()) {
               expect(result.stack).toContain('99_e2e.ts:597:9');
+            } else {
+              // test negated in case we fix it
+              expect(result.stack).not.toContain('99_e2e.ts');
             }
 
             // Verify step failed via CLI (--withData needed to resolve errorRef)
