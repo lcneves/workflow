@@ -51,10 +51,12 @@ export async function applySwcTransform(
           ? {
               syntax: 'typescript',
               tsx: filename.endsWith('.tsx'),
+              decorators: true,
             }
           : {
               syntax: 'ecmascript',
               jsx: filename.endsWith('.jsx'),
+              decorators: true,
             }),
       },
       target: 'es2022',
@@ -67,6 +69,8 @@ export async function applySwcTransform(
         react: {
           runtime: 'preserve',
         },
+        legacyDecorator: true,
+        decoratorMetadata: true,
       },
     },
     // TODO: investigate proper source map support as they

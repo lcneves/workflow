@@ -72,10 +72,12 @@ export default async function workflowLoader(
           ? {
               syntax: 'typescript',
               tsx: filename.endsWith('.tsx'),
+              decorators: true,
             }
           : {
               syntax: 'ecmascript',
               jsx: filename.endsWith('.jsx'),
+              decorators: true,
             }),
       },
       target: 'es2022',
@@ -88,6 +90,8 @@ export default async function workflowLoader(
         react: {
           runtime: 'preserve',
         },
+        legacyDecorator: true,
+        decoratorMetadata: true,
       },
     },
     minify: false,
