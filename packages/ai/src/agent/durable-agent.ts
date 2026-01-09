@@ -18,12 +18,20 @@ import {
   type StreamTextOnStepFinishCallback,
   type ToolChoice,
   type ToolSet,
+  type UIMessage,
   type UIMessageChunk,
 } from 'ai';
 import { convertToLanguageModelPrompt, standardizePrompt } from 'ai/internal';
 import { FatalError } from 'workflow';
 import { streamTextIterator } from './stream-text-iterator.js';
 import type { CompatibleLanguageModel } from './types.js';
+import { UIMessageAccumulator } from './ui-message-accumulator.js';
+
+// Re-export UIMessageAccumulator for consumers
+export {
+  UIMessageAccumulator,
+  createUIMessageAccumulator,
+} from './ui-message-accumulator.js';
 
 // Re-export for consumers
 export type { CompatibleLanguageModel } from './types.js';
@@ -336,9 +344,15 @@ export type StreamTextOnFinishCallback<
   readonly steps: StepResult<TTools>[];
 
   /**
-   * The final messages including all tool calls and results.
+   * The final messages including all tool calls and results (in ModelMessage format).
    */
   readonly messages: ModelMessage[];
+
+  /**
+   * The accumulated UI messages that were streamed to the client.
+   * Only available when `accumulateUIMessages` is enabled.
+   */
+  readonly uiMessages?: UIMessage[];
 
   /**
    * Context that is passed into tool execution.
@@ -544,6 +558,18 @@ export interface DurableAgentStreamOptions<
    * ```
    */
   prepareStep?: PrepareStepCallback<TTools>;
+
+  /**
+   * When enabled, accumulates UIMessages from the stream chunks.
+   * The accumulated messages will be available in the result's `uiMessages` property
+   * and in the `onFinish` callback.
+   *
+   * This allows server-side code to have access to the same UIMessage[] format
+   * that the client receives via the stream.
+   *
+   * @default false
+   */
+  accumulateUIMessages?: boolean;
 }
 
 /**
@@ -554,9 +580,15 @@ export interface DurableAgentStreamResult<
   OUTPUT = never,
 > {
   /**
-   * The final messages including all tool calls and results.
+   * The final messages including all tool calls and results (in ModelMessage format).
    */
   messages: ModelMessage[];
+
+  /**
+   * The accumulated UI messages that were streamed to the client.
+   * Only available when `accumulateUIMessages` is enabled.
+   */
+  uiMessages?: UIMessage[];
 
   /**
    * Details for all steps.
@@ -699,6 +731,12 @@ export class DurableAgent<TBaseTools extends ToolSet = ToolSet> {
 
     const steps: StepResult<TTools>[] = [];
 
+    // Set up UIMessage accumulator if enabled
+    const accumulator = options.accumulateUIMessages
+      ? new UIMessageAccumulator(options.writable)
+      : null;
+    const effectiveWritable = accumulator?.writable ?? options.writable;
+
     // Check for abort before starting
     if (mergedGenerationSettings.abortSignal?.aborted) {
       if (options.onAbort) {
@@ -714,7 +752,7 @@ export class DurableAgent<TBaseTools extends ToolSet = ToolSet> {
     const iterator = streamTextIterator({
       model: this.model,
       tools: effectiveTools as ToolSet,
-      writable: options.writable,
+      writable: effectiveWritable,
       prompt: modelPrompt,
       stopConditions: options.stopWhen,
       maxSteps: options.maxSteps,
@@ -810,8 +848,11 @@ export class DurableAgent<TBaseTools extends ToolSet = ToolSet> {
 
     // Only call closeStream if there's something to do
     if (sendFinish || !preventClose) {
-      await closeStream(options.writable, preventClose, sendFinish);
+      await closeStream(effectiveWritable, preventClose, sendFinish);
     }
+
+    // Get accumulated UI messages if enabled
+    const uiMessages = accumulator?.messages;
 
     // Use the final messages from the iterator, or fall back to original messages
     const messages = (finalMessages ??
@@ -847,6 +888,7 @@ export class DurableAgent<TBaseTools extends ToolSet = ToolSet> {
       await options.onFinish({
         steps,
         messages: messages as ModelMessage[],
+        uiMessages,
         experimental_context: experimentalContext,
         experimental_output: experimentalOutput,
       });
@@ -859,6 +901,7 @@ export class DurableAgent<TBaseTools extends ToolSet = ToolSet> {
 
     return {
       messages: messages as ModelMessage[],
+      uiMessages,
       steps,
       experimental_output: experimentalOutput,
     };
