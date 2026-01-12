@@ -6,17 +6,20 @@ import { getDecoratorOptionsForDirectory } from './config-helpers.js';
 
 const require = createRequire(import.meta.url);
 
-// Cache decorator options - tsconfig doesn't change during a build
-let cachedDecoratorOptions: Awaited<
+// Cache decorator options per directory - tsconfig doesn't change during a build
+const decoratorOptionsCache = new Map<
+  string,
   ReturnType<typeof getDecoratorOptionsForDirectory>
-> | null = null;
+>();
 
-async function getDecoratorOptions() {
-  if (cachedDecoratorOptions) {
-    return cachedDecoratorOptions;
+function getDecoratorOptions() {
+  const cwd = process.cwd();
+  let cached = decoratorOptionsCache.get(cwd);
+  if (!cached) {
+    cached = getDecoratorOptionsForDirectory(cwd);
+    decoratorOptionsCache.set(cwd, cached);
   }
-  cachedDecoratorOptions = await getDecoratorOptionsForDirectory(process.cwd());
-  return cachedDecoratorOptions;
+  return cached;
 }
 
 export type WorkflowManifest = {
