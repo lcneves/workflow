@@ -55,7 +55,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { worldConfigToEnvMap } from '@/lib/config';
-import type { WorldConfig } from '@/lib/config-world';
+import type { WorldConfig } from '@/lib/config-world-types';
 import { useDataDirInfo } from '@/lib/hooks';
 import { useTableSelection } from '@/lib/hooks/use-table-selection';
 import { CopyableText } from './display-utils/copyable-text';

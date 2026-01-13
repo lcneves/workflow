@@ -28,12 +28,27 @@
     "./check-data-dir": {
       "types": "./dist/check-data-dir.d.ts",
       "default": "./dist/check-data-dir.js"
+    },
+    "./worlds-manifest": {
+      "types": "./dist/worlds-manifest.d.ts",
+      "default": "./dist/worlds-manifest.js"
+    },
+    "./env-display-names": {
+      "types": "./dist/env-display-names.d.ts",
+      "default": "./dist/env-display-names.js"
+    },
+    "./project": {
+      "types": "./dist/project.d.ts",
+      "default": "./dist/project.js"
     }
   },
   "scripts": {
+    "generate-manifest": "tsx scripts/copy-manifest.ts",
+    "prebuild": "pnpm generate-manifest",
     "build": "tsc",
+    "predev": "pnpm generate-manifest",
     "dev": "tsc --watch",
-    "clean": "tsc --build --clean && rm -rf dist",
+    "clean": "tsc --build --clean && rm -rf dist && rm -f src/worlds-manifest-data.ts",
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"
   },
@@ -41,6 +56,7 @@
     "@types/ms": "2.1.0",
     "@types/node": "catalog:",
     "@workflow/tsconfig": "workspace:*",
+    "tsx": "4.20.6",
     "vitest": "catalog:"
   },
   "dependencies": {

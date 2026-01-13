@@ -378,6 +378,10 @@ function envToQueryParams(
       params.set(paramName, String(value));
     }
   }
+
+  // Pass current working directory as projectDir
+  params.set('projectDir', process.cwd());
+
   // We only take the runId/stepId/hookId flags directly, the rest are set via env vars,
   // which are internally already influenced by the CLI flags
   for (const flagName of ['runId', 'stepId', 'hookId'] as const) {

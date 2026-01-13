@@ -2,7 +2,7 @@
 
 import type { EnvMap } from '@workflow/web-shared/server';
 import { createSerializer, parseAsString, useQueryStates } from 'nuqs';
-import type { WorldConfig } from '@/lib/config-world';
+import type { WorldConfig } from '@/lib/config-world-types';
 
 // Default configuration
 // Note: dataDir is intentionally undefined - the server will auto-discover

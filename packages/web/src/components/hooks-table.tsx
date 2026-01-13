@@ -46,7 +46,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { worldConfigToEnvMap } from '@/lib/config';
-import type { WorldConfig } from '@/lib/config-world';
+import type { WorldConfig } from '@/lib/config-world-types';
 import { CopyableText } from './display-utils/copyable-text';
 import { RelativeTime } from './display-utils/relative-time';
 import { TableSkeleton } from './display-utils/table-skeleton';

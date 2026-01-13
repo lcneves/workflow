@@ -7,7 +7,7 @@ import {
 import { fetchWorkflowsManifest } from '@workflow/web-shared/server';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { worldConfigToEnvMap } from '@/lib/config';
-import type { WorldConfig } from '@/lib/config-world';
+import type { WorldConfig } from '@/lib/config-world-types';
 import { adaptManifest } from '@/lib/flow-graph/manifest-adapter';
 import type { WorkflowGraphManifest } from '@/lib/flow-graph/workflow-graph-types';
 

@@ -1,0 +1,204 @@
+/**
+ * Auto-generated from worlds-manifest.json
+ * DO NOT EDIT MANUALLY - Run 'pnpm prebuild' to regenerate
+ */
+
+import type { WorldsManifest } from './worlds-manifest-types.js';
+
+export const worldsManifestData: WorldsManifest = {
+  worlds: [
+    {
+      id: 'local',
+      type: 'official',
+      package: '@workflow/world-local',
+      name: 'Local',
+      description: 'Filesystem-based world for local development and testing',
+      docs: '/docs/deploying/world/local-world',
+      env: {},
+      services: [],
+      requiredEnv: [],
+      optionalEnv: [
+        'WORKFLOW_LOCAL_DATA_DIR',
+        'WORKFLOW_MANIFEST_PATH',
+        'PORT',
+        'WORKFLOW_LOCAL_BASE_URL',
+        'WORKFLOW_LOCAL_QUEUE_MAX_VISIBILITY',
+        'WORKFLOW_LOCAL_QUEUE_CONCURRENCY',
+      ],
+    },
+    {
+      id: 'postgres',
+      type: 'official',
+      package: '@workflow/world-postgres',
+      name: 'Postgres',
+      description: 'PostgreSQL-based world for multi-host deployments',
+      docs: '/docs/deploying/world/postgres-world',
+      env: {
+        WORKFLOW_TARGET_WORLD: '@workflow/world-postgres',
+        WORKFLOW_POSTGRES_URL: 'postgres://world:world@localhost:5432/world',
+      },
+      services: [
+        {
+          name: 'postgres',
+          image: 'postgres:18-alpine',
+          ports: ['5432:5432'],
+          env: {
+            POSTGRES_USER: 'world',
+            POSTGRES_PASSWORD: 'world',
+            POSTGRES_DB: 'world',
+          },
+          healthCheck: {
+            cmd: 'pg_isready',
+            interval: '10s',
+            timeout: '5s',
+            retries: 5,
+          },
+        },
+      ],
+      setup: './packages/world-postgres/bin/setup.js',
+      requiredEnv: ['WORKFLOW_POSTGRES_URL'],
+      optionalEnv: [
+        'DATABASE_URL',
+        'WORKFLOW_POSTGRES_JOB_PREFIX',
+        'WORKFLOW_POSTGRES_WORKER_CONCURRENCY',
+        'PORT',
+      ],
+    },
+    {
+      id: 'vercel',
+      type: 'official',
+      package: '@workflow/world-vercel',
+      name: 'Vercel',
+      description: 'Production-ready world for Vercel platform deployments',
+      docs: '/docs/deploying/world/vercel-world',
+      env: {
+        WORKFLOW_VERCEL_ENV: 'production',
+      },
+      services: [],
+      requiresDeployment: true,
+      requiredEnv: [
+        'WORKFLOW_VERCEL_AUTH_TOKEN',
+        'WORKFLOW_VERCEL_PROJECT',
+        'WORKFLOW_VERCEL_TEAM',
+      ],
+      optionalEnv: [
+        'WORKFLOW_VERCEL_ENV',
+        'WORKFLOW_VERCEL_BACKEND_URL',
+        'WORKFLOW_VERCEL_SKIP_PROXY',
+      ],
+    },
+    {
+      id: 'starter',
+      type: 'community',
+      package: '@workflow-worlds/starter',
+      name: 'Starter',
+      description: 'Starter template for building Workflow DevKit Worlds',
+      repository: 'https://github.com/mizzle-dev/workflow-worlds',
+      docs: 'https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/starter',
+      env: {
+        WORKFLOW_TARGET_WORLD: '@workflow-worlds/starter',
+      },
+      services: [],
+      requiredEnv: [],
+      optionalEnv: [],
+    },
+    {
+      id: 'turso',
+      type: 'community',
+      package: '@workflow-worlds/turso',
+      name: 'Turso',
+      description: 'Turso/libSQL World for embedded or remote SQLite databases',
+      repository: 'https://github.com/mizzle-dev/workflow-worlds',
+      docs: 'https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/turso',
+      env: {
+        WORKFLOW_TARGET_WORLD: '@workflow-worlds/turso',
+        WORKFLOW_TURSO_DATABASE_URL: 'file:workflow.db',
+      },
+      services: [],
+      setup: 'pnpm exec workflow-turso-setup',
+      requiredEnv: ['WORKFLOW_TURSO_DATABASE_URL'],
+      optionalEnv: ['WORKFLOW_TURSO_AUTH_TOKEN'],
+    },
+    {
+      id: 'mongodb',
+      type: 'community',
+      package: '@workflow-worlds/mongodb',
+      name: 'MongoDB',
+      description: 'MongoDB World using native driver',
+      repository: 'https://github.com/mizzle-dev/workflow-worlds',
+      docs: 'https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/mongodb',
+      env: {
+        WORKFLOW_TARGET_WORLD: '@workflow-worlds/mongodb',
+        WORKFLOW_MONGODB_URI: 'mongodb://localhost:27017',
+        WORKFLOW_MONGODB_DATABASE_NAME: 'workflow',
+      },
+      services: [
+        {
+          name: 'mongodb',
+          image: 'mongo:7',
+          ports: ['27017:27017'],
+          healthCheck: {
+            cmd: "mongosh --eval 'db.runCommand({ ping: 1 })'",
+            interval: '10s',
+            timeout: '5s',
+            retries: 5,
+          },
+        },
+      ],
+      requiredEnv: ['WORKFLOW_MONGODB_URI'],
+      optionalEnv: ['WORKFLOW_MONGODB_DATABASE_NAME'],
+    },
+    {
+      id: 'redis',
+      type: 'community',
+      package: '@workflow-worlds/redis',
+      name: 'Redis',
+      description:
+        'Redis World using BullMQ for queues, Redis Streams for output',
+      repository: 'https://github.com/mizzle-dev/workflow-worlds',
+      docs: 'https://github.com/mizzle-dev/workflow-worlds/tree/main/packages/redis',
+      env: {
+        WORKFLOW_TARGET_WORLD: '@workflow-worlds/redis',
+        WORKFLOW_REDIS_URI: 'redis://localhost:6379',
+      },
+      services: [
+        {
+          name: 'redis',
+          image: 'redis:7-alpine',
+          ports: ['6379:6379'],
+          healthCheck: {
+            cmd: 'redis-cli ping',
+            interval: '10s',
+            timeout: '5s',
+            retries: 5,
+          },
+        },
+      ],
+      requiredEnv: ['WORKFLOW_REDIS_URI'],
+      optionalEnv: [],
+    },
+    {
+      id: 'jazz',
+      type: 'community',
+      package: 'workflow-world-jazz',
+      name: 'Jazz',
+      description:
+        'Jazz Cloud world for local-first sync and real-time collaboration',
+      repository: 'https://github.com/garden-co/workflow-world-jazz',
+      docs: 'https://github.com/garden-co/workflow-world-jazz',
+      env: {
+        WORKFLOW_TARGET_WORLD: 'workflow-world-jazz',
+      },
+      services: [],
+      requiresCredentials: true,
+      credentialsNote:
+        'Requires JAZZ_API_KEY, JAZZ_WORKER_ACCOUNT, and JAZZ_WORKER_SECRET from Jazz Cloud',
+      requiredEnv: [
+        'JAZZ_API_KEY',
+        'JAZZ_WORKER_ACCOUNT',
+        'JAZZ_WORKER_SECRET',
+      ],
+      optionalEnv: [],
+    },
+  ],
+} as const;

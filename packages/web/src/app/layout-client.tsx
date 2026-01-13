@@ -1,14 +1,22 @@
 'use client';
 
 import { TooltipProvider } from '@radix-ui/react-tooltip';
+import { getSelfHostedStatus } from '@workflow/web-shared/server';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ThemeProvider, useTheme } from 'next-themes';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import useSWR from 'swr';
 import { ConnectionStatus } from '@/components/display-utils/connection-status';
 import { SettingsDropdown } from '@/components/settings-dropdown';
 import { Toaster } from '@/components/ui/sonner';
 import { buildUrlWithConfig, useQueryParamConfig } from '@/lib/config';
+import { ProjectProvider, useProject } from '@/lib/project-context';
+import {
+  getCleanedUrl,
+  hasConfigParams,
+  initializeProjectFromParams,
+} from '@/lib/project-init';
 import { Logo } from '../icons/logo';
 
 interface LayoutClientProps {
@@ -21,6 +29,7 @@ function LayoutContent({ children }: LayoutClientProps) {
   const searchParams = useSearchParams();
   const config = useQueryParamConfig();
   const { setTheme } = useTheme();
+  const { currentProject, isSelfHosted, setCurrentProject } = useProject();
 
   const id = searchParams.get('id');
   const runId = searchParams.get('runId');
@@ -31,6 +40,26 @@ function LayoutContent({ children }: LayoutClientProps) {
 
   // Track if we've already handled the initial navigation
   const hasNavigatedRef = useRef(false);
+  const hasInitializedProjectRef = useRef(false);
+
+  // Initialize project from query params on first load
+  useEffect(() => {
+    if (hasInitializedProjectRef.current || isSelfHosted) return;
+
+    if (hasConfigParams(searchParams)) {
+      // Parse query params into a project
+      const project = initializeProjectFromParams(searchParams);
+      if (project) {
+        setCurrentProject(project);
+      }
+
+      // Remove config params from URL, keeping view state params
+      const cleanedUrl = getCleanedUrl(pathname, searchParams);
+      window.history.replaceState({}, '', cleanedUrl);
+
+      hasInitializedProjectRef.current = true;
+    }
+  }, [searchParams, pathname, setCurrentProject, isSelfHosted]);
 
   // Sync theme from URL param to next-themes (one-time or when explicitly changed)
   useEffect(() => {
@@ -160,6 +189,25 @@ function LayoutContent({ children }: LayoutClientProps) {
 }
 
 export function LayoutClient({ children }: LayoutClientProps) {
+  // Fetch self-hosted status from server
+  const { data: selfHostedResult, isLoading: isSelfHostedLoading } = useSWR(
+    'selfHostedStatus',
+    async () => {
+      const result = await getSelfHostedStatus();
+      if (result.success) {
+        return result.data.isSelfHosted;
+      }
+      return false;
+    },
+    {
+      revalidateOnFocus: false,
+      revalidateIfStale: false,
+      revalidateOnReconnect: false,
+    }
+  );
+
+  const isSelfHosted = selfHostedResult ?? false;
+
   return (
     <ThemeProvider
       attribute="class"
@@ -168,7 +216,9 @@ export function LayoutClient({ children }: LayoutClientProps) {
       disableTransitionOnChange
       storageKey="workflow-theme"
     >
-      <LayoutContent>{children}</LayoutContent>
+      <ProjectProvider isSelfHosted={isSelfHosted}>
+        <LayoutContent>{children}</LayoutContent>
+      </ProjectProvider>
     </ThemeProvider>
   );
 }

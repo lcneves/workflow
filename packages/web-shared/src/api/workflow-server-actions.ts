@@ -55,6 +55,24 @@ export type ServerActionResult<T> =
   | { success: false; error: ServerActionError };
 
 /**
+ * Check if the app is running in self-hosted mode.
+ * In self-hosted mode, the app uses only server-side environment variables.
+ * Note: This is an internal helper function, not a server action.
+ */
+function isSelfHostedMode(): boolean {
+  return process.env.WORKFLOW_UI_SELF_HOSTING === 'true';
+}
+
+/**
+ * Get self-hosting status for the client.
+ */
+export async function getSelfHostedStatus(): Promise<
+  ServerActionResult<{ isSelfHosted: boolean }>
+> {
+  return createResponse({ isSelfHosted: isSelfHostedMode() });
+}
+
+/**
  * Cache for World instances keyed by envMap
  *
  * IMPORTANT: This cache works under the assumption that if the UI is used to look at
@@ -62,24 +80,69 @@ export type ServerActionResult<T> =
  * setting them directly on their Next.js instance. If environment variables are set
  * directly on process.env, the cached World may operate with incorrect environment
  * configuration.
+ *
+ * CACHING RULES:
+ * - Never cache worlds for 'vercel' backend (multi-tenant scenario)
+ * - For other backends, cache based on relevant env vars
  */
 const worldCache = new Map<string, World>();
 
-function getWorldFromEnv(envMap: EnvMap) {
+/**
+ * Check if the world should be cached.
+ * Returns false for vercel backend (multi-tenant) to prevent cross-tenant data leakage.
+ */
+function shouldCacheWorld(envMap: EnvMap): boolean {
+  const targetWorld = envMap.WORKFLOW_TARGET_WORLD || '';
+  const isVercel =
+    targetWorld === 'vercel' ||
+    targetWorld === '@workflow/world-vercel' ||
+    targetWorld.includes('world-vercel');
+  return !isVercel;
+}
+
+/**
+ * Merge provided envMap with server environment variables.
+ * In self-hosted mode, ignores the provided envMap and uses only server env.
+ */
+function resolveEnvMap(providedEnvMap: EnvMap): EnvMap {
+  if (isSelfHostedMode()) {
+    // In self-hosted mode, ignore provided env vars and use server env
+    return {
+      WORKFLOW_TARGET_WORLD: process.env.WORKFLOW_TARGET_WORLD,
+      WORKFLOW_LOCAL_DATA_DIR: process.env.WORKFLOW_LOCAL_DATA_DIR,
+      WORKFLOW_MANIFEST_PATH: process.env.WORKFLOW_MANIFEST_PATH,
+      WORKFLOW_VERCEL_AUTH_TOKEN: process.env.WORKFLOW_VERCEL_AUTH_TOKEN,
+      WORKFLOW_VERCEL_PROJECT: process.env.WORKFLOW_VERCEL_PROJECT,
+      WORKFLOW_VERCEL_TEAM: process.env.WORKFLOW_VERCEL_TEAM,
+      WORKFLOW_VERCEL_ENV: process.env.WORKFLOW_VERCEL_ENV,
+      WORKFLOW_VERCEL_BACKEND_URL: process.env.WORKFLOW_VERCEL_BACKEND_URL,
+      WORKFLOW_POSTGRES_URL: process.env.WORKFLOW_POSTGRES_URL,
+      PORT: process.env.PORT,
+    };
+  }
+  return providedEnvMap;
+}
+
+function getWorldFromEnv(providedEnvMap: EnvMap) {
+  const envMap = resolveEnvMap(providedEnvMap);
+
   // Generate stable cache key from envMap
   const sortedKeys = Object.keys(envMap).sort();
   const sortedEntries = sortedKeys.map((key) => [key, envMap[key]]);
   const cacheKey = JSON.stringify(Object.fromEntries(sortedEntries));
 
+  // Check if we should use caching for this world
+  const useCache = shouldCacheWorld(envMap);
+
   // Check if we have a cached World for this configuration
-  // Note: This returns the cached World without re-setting process.env.
-  // See comment above worldCache for important usage assumptions.
-  const cachedWorld = worldCache.get(cacheKey);
-  if (cachedWorld) {
-    return cachedWorld;
+  if (useCache) {
+    const cachedWorld = worldCache.get(cacheKey);
+    if (cachedWorld) {
+      return cachedWorld;
+    }
   }
 
-  // No cached World found, create a new one
+  // No cached World found (or caching disabled), create a new one
   for (const [key, value] of Object.entries(envMap)) {
     if (value === undefined || value === null || value === '') {
       continue;
@@ -89,8 +152,10 @@ function getWorldFromEnv(envMap: EnvMap) {
 
   const world = createWorld();
 
-  // Cache the newly created World
-  worldCache.set(cacheKey, world);
+  // Cache the newly created World (if caching is enabled)
+  if (useCache) {
+    worldCache.set(cacheKey, world);
+  }
 
   return world;
 }
@@ -820,4 +885,228 @@ export async function fetchWorkflowsManifest(
     steps: {},
     workflows: {},
   });
+}
+
+/**
+ * Project validation result from server-side checks.
+ */
+export interface ProjectValidationError {
+  field: string;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+export interface ProjectValidationResult {
+  valid: boolean;
+  errors: ProjectValidationError[];
+  warnings: ProjectValidationError[];
+}
+
+/**
+ * Validate a project configuration on the server.
+ *
+ * This performs server-side validation including:
+ * - Checking if required environment variables are present
+ * - Validating file paths exist (for local world)
+ * - Testing connection to remote backends
+ */
+export async function validateProjectConfig(
+  worldEnv: EnvMap,
+  worldId: string
+): Promise<ServerActionResult<ProjectValidationResult>> {
+  const envMap = resolveEnvMap(worldEnv);
+  const errors: ProjectValidationError[] = [];
+  const warnings: ProjectValidationError[] = [];
+
+  try {
+    // World-specific validation
+    switch (worldId) {
+      case 'local':
+        await validateLocalWorldConfig(envMap, errors, warnings);
+        break;
+      case 'vercel':
+        await validateVercelWorldConfig(envMap, errors, warnings);
+        break;
+      case 'postgres':
+        validatePostgresWorldConfig(envMap, errors, warnings);
+        break;
+      default:
+        // For unknown worlds, just check that we can create a world instance
+        try {
+          getWorldFromEnv(envMap);
+        } catch (err) {
+          errors.push({
+            field: 'WORKFLOW_TARGET_WORLD',
+            message: `Failed to initialize world: ${err instanceof Error ? err.message : String(err)}`,
+            severity: 'error',
+          });
+        }
+    }
+
+    return createResponse({
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    });
+  } catch (error) {
+    return createServerActionError(error, 'validateProjectConfig', {
+      worldId,
+    });
+  }
+}
+
+/**
+ * Validate local world configuration.
+ */
+async function validateLocalWorldConfig(
+  envMap: EnvMap,
+  errors: ProjectValidationError[],
+  warnings: ProjectValidationError[]
+): Promise<void> {
+  const dataDir = envMap.WORKFLOW_LOCAL_DATA_DIR;
+  const port = envMap.PORT;
+
+  // Validate port
+  if (port) {
+    const portNum = Number.parseInt(port, 10);
+    if (Number.isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      errors.push({
+        field: 'PORT',
+        message: 'Port must be a number between 1 and 65535',
+        severity: 'error',
+      });
+    }
+  }
+
+  // Check data directory
+  if (dataDir) {
+    const resolvedPath = path.isAbsolute(dataDir)
+      ? dataDir
+      : path.resolve(process.cwd(), dataDir);
+
+    try {
+      await fs.access(resolvedPath);
+    } catch {
+      // Directory doesn't exist - this might be okay, workflow data will be created
+      warnings.push({
+        field: 'WORKFLOW_LOCAL_DATA_DIR',
+        message: `Directory not found: ${resolvedPath}. It will be created when workflows run.`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  // Try to create a world to validate the overall configuration
+  try {
+    getWorldFromEnv(envMap);
+  } catch (err) {
+    errors.push({
+      field: 'WORKFLOW_TARGET_WORLD',
+      message: `Failed to initialize local world: ${err instanceof Error ? err.message : String(err)}`,
+      severity: 'error',
+    });
+  }
+}
+
+/**
+ * Validate Vercel world configuration.
+ */
+async function validateVercelWorldConfig(
+  envMap: EnvMap,
+  errors: ProjectValidationError[],
+  _warnings: ProjectValidationError[]
+): Promise<void> {
+  const authToken = envMap.WORKFLOW_VERCEL_AUTH_TOKEN;
+  const project = envMap.WORKFLOW_VERCEL_PROJECT;
+  const team = envMap.WORKFLOW_VERCEL_TEAM;
+  const env = envMap.WORKFLOW_VERCEL_ENV;
+
+  // Check required fields
+  if (!authToken) {
+    errors.push({
+      field: 'WORKFLOW_VERCEL_AUTH_TOKEN',
+      message: 'Auth token is required for Vercel backend',
+      severity: 'error',
+    });
+  }
+
+  if (!project) {
+    errors.push({
+      field: 'WORKFLOW_VERCEL_PROJECT',
+      message: 'Project is required for Vercel backend',
+      severity: 'error',
+    });
+  }
+
+  if (!team) {
+    errors.push({
+      field: 'WORKFLOW_VERCEL_TEAM',
+      message: 'Team is required for Vercel backend',
+      severity: 'error',
+    });
+  }
+
+  // Validate environment value
+  if (env && !['production', 'preview', 'development'].includes(env)) {
+    errors.push({
+      field: 'WORKFLOW_VERCEL_ENV',
+      message:
+        'Environment must be one of: production, preview, or development',
+      severity: 'error',
+    });
+  }
+
+  // If we have all required fields, try to create a world
+  if (authToken && project && team && errors.length === 0) {
+    try {
+      const world = getWorldFromEnv(envMap);
+      // Try a simple API call to validate the connection
+      await world.runs.list({ pagination: { limit: 1 } });
+    } catch (err) {
+      errors.push({
+        field: 'WORKFLOW_VERCEL_AUTH_TOKEN',
+        message: `Connection failed: ${err instanceof Error ? err.message : String(err)}`,
+        severity: 'error',
+      });
+    }
+  }
+}
+
+/**
+ * Validate Postgres world configuration.
+ */
+function validatePostgresWorldConfig(
+  envMap: EnvMap,
+  errors: ProjectValidationError[],
+  _warnings: ProjectValidationError[]
+): void {
+  const url = envMap.WORKFLOW_POSTGRES_URL;
+
+  if (!url) {
+    errors.push({
+      field: 'WORKFLOW_POSTGRES_URL',
+      message: 'PostgreSQL URL is required',
+      severity: 'error',
+    });
+    return;
+  }
+
+  if (!url.startsWith('postgres://') && !url.startsWith('postgresql://')) {
+    errors.push({
+      field: 'WORKFLOW_POSTGRES_URL',
+      message: 'PostgreSQL URL must start with postgres:// or postgresql://',
+      severity: 'error',
+    });
+  }
+
+  // Try to create a world to validate the connection
+  try {
+    getWorldFromEnv(envMap);
+  } catch (err) {
+    errors.push({
+      field: 'WORKFLOW_POSTGRES_URL',
+      message: `Failed to initialize postgres world: ${err instanceof Error ? err.message : String(err)}`,
+      severity: 'error',
+    });
+  }
 }

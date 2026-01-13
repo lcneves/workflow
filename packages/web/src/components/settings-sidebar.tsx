@@ -15,11 +15,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useQueryParamConfig, useUpdateConfigQueryParams } from '@/lib/config';
-import {
-  type ValidationError,
-  validateWorldConfig,
-  type WorldConfig,
-} from '@/lib/config-world';
+import { validateWorldConfig } from '@/lib/config-world';
+import type { ValidationError, WorldConfig } from '@/lib/config-world-types';
 import { useDataDirInfo, useWorldsAvailability } from '@/lib/hooks';
 
 interface SettingsSidebarProps {

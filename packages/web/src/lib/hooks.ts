@@ -1,11 +1,8 @@
 'use client';
 
 import useSWR from 'swr';
-import {
-  checkWorldsAvailability,
-  resolveDataDirInfo,
-  type WorkflowDataDirInfo,
-} from './config-world';
+import { checkWorldsAvailability, resolveDataDirInfo } from './config-world';
+import type { WorkflowDataDirInfo } from './config-world-types';
 
 export function useWorldsAvailability() {
   return useSWR('worlds-availability', checkWorldsAvailability, {

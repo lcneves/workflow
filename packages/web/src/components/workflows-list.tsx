@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { WorldConfig } from '@/lib/config-world';
+import type { WorldConfig } from '@/lib/config-world-types';
 import { useWorkflowGraphManifest } from '@/lib/flow-graph/use-workflow-graph';
 import type { WorkflowGraph } from '@/lib/flow-graph/workflow-graph-types';
 import { TableSkeleton } from './display-utils/table-skeleton';

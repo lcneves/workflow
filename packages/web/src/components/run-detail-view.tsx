@@ -51,7 +51,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { buildUrlWithConfig, worldConfigToEnvMap } from '@/lib/config';
-import type { WorldConfig } from '@/lib/config-world';
+import type { WorldConfig } from '@/lib/config-world-types';
 import { mapRunToExecution } from '@/lib/flow-graph/graph-execution-mapper';
 import { useWorkflowGraphManifest } from '@/lib/flow-graph/use-workflow-graph';
 

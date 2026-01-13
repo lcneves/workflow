@@ -3,45 +3,28 @@
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
-import {
-  findWorkflowDataDir,
-  type WorkflowDataDirInfo,
-} from '@workflow/utils/check-data-dir';
+import { findWorkflowDataDir } from '@workflow/utils/check-data-dir';
 import { KNOWN_WORLDS, type KnownWorld } from './known-worlds';
 
-export type { WorkflowDataDirInfo };
+// Re-export types from the types file for consumers that import from this file
+export type {
+  ValidationError,
+  ValidationResult,
+  ValidationWarning,
+  WorldAvailability,
+  WorldConfig,
+  WorkflowDataDirInfo,
+} from './config-world-types';
+
+// Import types for use in this file
+import type {
+  ValidationError,
+  WorldAvailability,
+  WorldConfig,
+  WorkflowDataDirInfo,
+} from './config-world-types';
 
 const require = createRequire(join(process.cwd(), 'index.js'));
-
-export interface WorldConfig {
-  backend?: string;
-  env?: string;
-  authToken?: string;
-  project?: string;
-  team?: string;
-  port?: string;
-  // Will always be defined (""./"" if not set by user), but only used for local world
-  dataDir: string;
-  // Path to the workflow manifest file (defaults to app/.well-known/workflow/v1/manifest.json)
-  manifestPath?: string;
-  // Postgres fields
-  postgresUrl?: string;
-}
-
-export interface ValidationError {
-  field: string;
-  message: string;
-}
-
-export interface WorldAvailability {
-  id: string;
-  displayName: string;
-  packageName: string | null;
-  description: string;
-  isBuiltIn: boolean;
-  isInstalled: boolean;
-  installCommand?: string;
-}
 
 /**
  * Check which world packages are installed.
@@ -73,16 +56,6 @@ export async function checkWorldsAvailability(): Promise<WorldAvailability[]> {
 
     return availability;
   });
-}
-
-export interface ValidationWarning {
-  field: string;
-  message: string;
-}
-
-export interface ValidationResult {
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
 }
 
 // Validate configuration and return errors/warnings
