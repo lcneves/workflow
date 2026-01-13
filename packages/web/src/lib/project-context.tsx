@@ -174,8 +174,7 @@ function getProjectDirFromParams(
   if (envMap.WORKFLOW_PROJECT_DIR) return envMap.WORKFLOW_PROJECT_DIR;
 
   // Fall back to dataDir for local world
-  const dataDir =
-    envMap.WORKFLOW_LOCAL_DATA_DIR || searchParams.get('dataDir');
+  const dataDir = envMap.WORKFLOW_LOCAL_DATA_DIR || searchParams.get('dataDir');
   if (dataDir) return dataDir;
 
   return './';
@@ -238,22 +237,54 @@ export function ProjectProvider({
   // Initialize from localStorage and query params
   useEffect(() => {
     const initializeProject = async () => {
-      // In self-hosting mode, don't use localStorage or query params
+      // Check for query params
+      const searchParams = new URLSearchParams(window.location.search);
+      const configParams = [
+        'backend',
+        'dataDir',
+        'authToken',
+        'project',
+        'team',
+        'env',
+        'port',
+        'manifestPath',
+        'postgresUrl',
+        'projectDir',
+      ];
+      const hasConfigParams = configParams.some((p) => searchParams.has(p));
+
+      // Always remove config params from URL (keep view-related params)
+      if (hasConfigParams) {
+        const newParams = new URLSearchParams();
+        const viewParams = [
+          'resource',
+          'id',
+          'runId',
+          'stepId',
+          'hookId',
+          'tab',
+          'sidebar',
+          'theme',
+        ];
+        for (const param of viewParams) {
+          const value = searchParams.get(param);
+          if (value) newParams.set(param, value);
+        }
+
+        const newUrl = newParams.toString()
+          ? `${window.location.pathname}?${newParams.toString()}`
+          : window.location.pathname;
+
+        window.history.replaceState({}, '', newUrl);
+      }
+
+      // In self-hosting mode, don't use localStorage or query params for project config
       if (isSelfHosting) {
         setIsLoading(false);
         return;
       }
 
       const { current, recent } = loadFromStorage();
-
-      // Check for query params
-      const searchParams = new URLSearchParams(window.location.search);
-      const hasConfigParams =
-        searchParams.has('backend') ||
-        searchParams.has('dataDir') ||
-        searchParams.has('authToken') ||
-        searchParams.has('project') ||
-        searchParams.has('team');
 
       if (hasConfigParams) {
         // Create/update project from query params
@@ -288,29 +319,6 @@ export function ProjectProvider({
             saveRecentToStorage(updatedRecent);
           }
         }
-
-        // Remove config params from URL (keep view-related params)
-        const newParams = new URLSearchParams();
-        const viewParams = [
-          'resource',
-          'id',
-          'runId',
-          'stepId',
-          'hookId',
-          'tab',
-          'sidebar',
-          'theme',
-        ];
-        for (const param of viewParams) {
-          const value = searchParams.get(param);
-          if (value) newParams.set(param, value);
-        }
-
-        const newUrl = newParams.toString()
-          ? `${window.location.pathname}?${newParams.toString()}`
-          : window.location.pathname;
-
-        window.history.replaceState({}, '', newUrl);
       } else {
         // Use stored project
         setCurrentProjectState(current);
