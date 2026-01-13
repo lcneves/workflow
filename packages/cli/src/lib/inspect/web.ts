@@ -251,13 +251,6 @@ export async function launchWebUI(
       `Checking Vercel dashboard availability for team: ${teamSlug}, project: ${projectName}`
     );
 
-    // const dashboardAvailable = await checkVercelDashboardAvailable(
-    //   teamSlug,
-    //   projectName,
-    //   envVars.WORKFLOW_VERCEL_AUTH_TOKEN
-    // );
-
-    // if (dashboardAvailable) {
     const dashboardUrl = getVercelDashboardUrl(
       teamSlug,
       projectName,
@@ -282,13 +275,6 @@ export async function launchWebUI(
       logger.info(`Please open the link manually.`);
       return;
     }
-    // } else {
-    //   logger.warn(
-    //     chalk.yellow(
-    //       'Vercel dashboard is not available for this project. Falling back to local web UI.'
-    //     )
-    //   );
-    // }
   }
 
   // Fall back to local web UI

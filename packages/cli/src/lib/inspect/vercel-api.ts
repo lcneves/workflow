@@ -71,39 +71,6 @@ export async function fetchTeamInfo(
   }
 }
 
-// /**
-//  * Check if the Vercel dashboard workflows page is available
-//  */
-// export async function checkVercelDashboardAvailable(
-//   teamSlug: string,
-//   projectName: string,
-//   authToken: string
-// ): Promise<boolean> {
-//   try {
-//     const dashboardUrl = `https://vercel.com/${teamSlug}/${projectName}/ai/workflows`;
-//     logger.debug(`Checking Vercel dashboard availability: ${dashboardUrl}`);
-
-//     const response = await fetch(dashboardUrl, {
-//       method: 'HEAD',
-//       redirect: 'follow',
-//       headers: {
-//         Authorization: `Bearer ${authToken}`,
-//       },
-//     });
-
-//     // Consider 2xx and 3xx as success
-//     const isAvailable = response.status >= 200 && response.status < 400;
-//     logger.debug(
-//       `Dashboard check result: ${response.status} - ${isAvailable ? 'available' : 'not available'}`
-//     );
-
-//     return isAvailable;
-//   } catch (error) {
-//     logger.debug(`Error checking dashboard availability: ${error}`);
-//     return false;
-//   }
-// }
-
 /**
  * Get the Vercel dashboard URL for workflows
  */
