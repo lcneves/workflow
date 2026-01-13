@@ -1,18 +1,36 @@
 # @workflow/web-shared
 
-Workflow Observability tools for NextJS. See [Workflow DevKit](https://useworkflow.dev/docs/observability) for more information.
+Workflow Observability components and hooks for Next.js. See [Workflow DevKit](https://useworkflow.dev/docs/observability) for more information.
+
+## When to Use This Package
+
+There are two ways to add Workflow observability to your application:
+
+| Package | Use Case |
+|---------|----------|
+| [`@workflow/web`](../web/README.md) | **Full self-hosted UI** - A complete, ready-to-deploy Next.js application with project management, run listing, and detailed trace viewing. Best for standalone deployments or when you want the full observability experience. |
+| `@workflow/web-shared` | **Embed in your app** - Hooks and components to surface workflow data in your existing Next.js application. Best when you want to integrate observability into an existing dashboard or custom UI. |
+
+If you want a complete, standalone observability dashboard, see [`@workflow/web`](../web/README.md) which can be self-hosted with a single environment variable.
 
 ## Usage
 
-This package contains client and server code to interact with the Workflow API, as well as some pre-styled components.
-If you want to deploy a full observability experience with your NextJS app, take a look at [`@workflow/web`](../web/README.md) instead, which can be self-hosted.
+This package provides both React hooks for fetching data and pre-styled components for displaying it.
 
-You can use the API to create your own display UI, like so:
+### Fetching Data with Hooks
+
+Use the hooks to create your own custom UI:
 
 ```tsx
 import { useWorkflowRuns } from '@workflow/web-shared';
 
 export default function MyRunsList() {
+  // EnvMap contains the environment variables for your world configuration
+  const env = {
+    WORKFLOW_TARGET_WORLD: 'vercel',
+    // ... other env vars as needed
+  };
+
   const {
     data,
     error,
@@ -23,30 +41,40 @@ export default function MyRunsList() {
     reload,
     pageInfo,
   } = useWorkflowRuns(env, {
-    sortOrder,
-    workflowName: workflowNameFilter === 'all' ? undefined : workflowNameFilter,
-    status: status === 'all' ? undefined : status,
+    sortOrder: 'desc',
+    workflowName: undefined, // or filter by workflow name
+    status: undefined, // or filter by status
   });
 
-  // Shows an interactive trace viewer for the given run
-  return <div>{runs.map((run) => (
-    <div key={run.runId}>
-      {run.workflowName}
-      {run.status}
-      {run.startedAt}
-      {run.completedAt}
+  const runs = data.data ?? [];
+
+  return (
+    <div>
+      {runs.map((run) => (
+        <div key={run.runId}>
+          <span>{run.workflowName}</span>
+          <span>{run.status}</span>
+          <span>{run.startedAt}</span>
+          <span>{run.completedAt}</span>
+        </div>
+      ))}
     </div>
-  ))}</div>;
+  );
 }
 ```
 
-It also comes with a pre-styled interactive trace viewer that you can use to display the trace for a given run:
+### Pre-Styled Components
+
+Use the pre-styled trace viewer for a complete run detail experience:
 
 ```tsx
 import { RunTraceView } from '@workflow/web-shared';
 
-export default function MyRunDetailView({ env, runId }: { env: EnvMap, runId: string }) {
-  // ... your other code
+export default function MyRunDetailView({ runId }: { runId: string }) {
+  const env = {
+    WORKFLOW_TARGET_WORLD: 'vercel',
+    // ... other env vars
+  };
 
   // Shows an interactive trace viewer for the given run
   return <RunTraceView env={env} runId={runId} />;
@@ -55,24 +83,54 @@ export default function MyRunDetailView({ env, runId }: { env: EnvMap, runId: st
 
 ## Environment Variables
 
-For API calls to work, you'll need to pass the same environment variables that are used by the Workflow CLI.
-See `npx workflow inspect --help` for more information.
+For API calls to work, you need to pass the appropriate environment variables via the `EnvMap` parameter.
+See `npx workflow inspect --help` for the full list of available variables.
 
-If you're deploying this as part of your Vercel NextJS app, setting `WORKFLOW_TARGET_WORLD` to `vercel` is enough
-to infer your other project details from the Vercel environment variables.
+Common configurations:
 
-**Important:** When using the UI to inspect different worlds, all relevant environment variables should be passed via the `EnvMap` parameter to the hooks and components, rather than setting them directly on your Next.js instance via `process.env`. The server-side World caching is based on the `EnvMap` configuration, so setting environment variables directly on `process.env` may cause cached World instances to operate with incorrect environment configuration.
+```tsx
+// Local development
+const env = {
+  WORKFLOW_TARGET_WORLD: 'local',
+  WORKFLOW_LOCAL_DATA_DIR: './.workflow',
+};
+
+// Vercel (auto-infers from Vercel environment)
+const env = {
+  WORKFLOW_TARGET_WORLD: 'vercel',
+};
+
+// PostgreSQL
+const env = {
+  WORKFLOW_TARGET_WORLD: 'postgres',
+  WORKFLOW_POSTGRES_URL: process.env.DATABASE_URL,
+};
+```
+
+**Important:** When using these components to inspect different worlds, all relevant environment variables should be passed via the `EnvMap` parameter rather than setting them directly on `process.env`. The server-side World caching is based on the `EnvMap` configuration, so setting environment variables directly may cause cached World instances to operate with incorrect configuration.
 
 ## Styling
 
-In order for tailwind classes to be picked up correctly, you might need to configure your NextJS app
-to use the correct CSS processor. E.g. if you're using PostCSS with TailwindCSS, you can do the following:
+For Tailwind CSS classes to work correctly, you may need to configure your Next.js app's CSS processor. If using PostCSS with Tailwind:
 
-```tsx
-// postcss.config.mjs in your NextJS app
+```js
+// postcss.config.mjs
 const config = {
   plugins: ['@tailwindcss/postcss'],
 };
 
 export default config;
+```
+
+You may also need to add this package to your Tailwind content configuration:
+
+```js
+// tailwind.config.js
+module.exports = {
+  content: [
+    './src/**/*.{js,ts,jsx,tsx}',
+    './node_modules/@workflow/web-shared/**/*.{js,ts,jsx,tsx}',
+  ],
+  // ...
+};
 ```

@@ -7,19 +7,19 @@ import {
   getEnvVarDisplayName,
   getEnvVarDescription,
   isEnvVarSensitive,
-  type WorldDefinition,
 } from '@workflow/utils/worlds-manifest';
 import {
   AlertCircle,
   ArrowLeft,
-  Check,
   Clock,
+  Clock4,
+  Pencil,
   Plus,
   Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,7 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useProject } from '@/lib/project-context';
+import { useProjectDisplayTitle } from '@/lib/use-project-config';
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -57,18 +63,15 @@ export default function ProjectsPage() {
     currentProject?.worldId || 'local'
   );
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
-  const [projectName, setProjectName] = useState<string>(
-    currentProject?.name || ''
-  );
   const [projectDir, setProjectDir] = useState<string>(
     currentProject?.projectDir || './'
   );
   const [customEnvPairs, setCustomEnvPairs] = useState<
     Array<{ key: string; value: string }>
   >([]);
-  const [errors, setErrors] = useState<Array<{ field: string; message: string }>>(
-    []
-  );
+  const [errors, setErrors] = useState<
+    Array<{ field: string; message: string }>
+  >([]);
   const [isValidating, setIsValidating] = useState(false);
 
   // Get selected world definition
@@ -79,7 +82,6 @@ export default function ProjectsPage() {
   useEffect(() => {
     if (currentProject) {
       setSelectedWorldId(currentProject.worldId);
-      setProjectName(currentProject.name);
       setProjectDir(currentProject.projectDir);
 
       // Populate env values
@@ -112,7 +114,13 @@ export default function ProjectsPage() {
         defaults[key] = value;
       }
       setEnvValues(defaults);
+      setCustomEnvPairs([]);
+    } else if (worldId === 'custom') {
+      // For 'custom' selection, start with empty env pairs
+      setEnvValues({});
+      setCustomEnvPairs([{ key: 'WORKFLOW_TARGET_WORLD', value: '' }]);
     } else {
+      // For unknown world IDs (e.g., entered package name)
       setEnvValues({});
       setCustomEnvPairs([{ key: 'WORKFLOW_TARGET_WORLD', value: worldId }]);
     }
@@ -171,12 +179,7 @@ export default function ProjectsPage() {
       }
 
       // Create the project
-      const newProject = createProject(
-        selectedWorldId,
-        projectDir,
-        envMap,
-        projectName || undefined
-      );
+      const newProject = createProject(selectedWorldId, projectDir, envMap);
 
       // Set as current project
       setCurrentProject(newProject);
@@ -190,7 +193,8 @@ export default function ProjectsPage() {
       setErrors([
         {
           field: 'general',
-          message: error instanceof Error ? error.message : 'Failed to save project',
+          message:
+            error instanceof Error ? error.message : 'Failed to save project',
         },
       ]);
     } finally {
@@ -242,44 +246,17 @@ export default function ProjectsPage() {
               <div className="space-y-2">
                 {/* Current project */}
                 {currentProject && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
-                    <Check className="h-4 w-4 text-primary" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">
-                        {currentProject.name}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {getWorldById(currentProject.worldId)?.name ||
-                          currentProject.worldId}
-                      </div>
-                    </div>
-                    <span className="text-xs text-primary">Current</span>
-                  </div>
+                  <CurrentProjectItem project={currentProject} />
                 )}
 
                 {/* Recent projects */}
                 {recentProjects.map((project) => (
-                  <button
+                  <RecentProjectItem
                     key={project.id}
-                    type="button"
-                    onClick={() => handleSelectRecent(project)}
-                    className="w-full flex items-center gap-2 p-3 rounded-lg border hover:bg-accent transition-colors text-left"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{project.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {getWorldById(project.worldId)?.name || project.worldId}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={(e) => handleDeleteRecent(project.id, e)}
-                    >
-                      <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                    </Button>
-                  </button>
+                    project={project}
+                    onSelect={() => handleSelectRecent(project)}
+                    onDelete={(e) => handleDeleteRecent(project.id, e)}
+                  />
                 ))}
               </div>
             )}
@@ -290,22 +267,11 @@ export default function ProjectsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
+              <Pencil className="h-5 w-5" />
               {currentProject ? 'Edit Project' : 'New Project'}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Project Name */}
-            <div className="space-y-2">
-              <Label htmlFor="projectName">Project Name</Label>
-              <Input
-                id="projectName"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="My Project"
-              />
-            </div>
-
             {/* World Selection */}
             <div className="space-y-2">
               <Label htmlFor="world">World</Label>
@@ -334,7 +300,9 @@ export default function ProjectsPage() {
                         {world.name}
                       </SelectItem>
                     ))}
-                  <SelectItem value="custom">Custom (enter package name)</SelectItem>
+                  <SelectItem value="custom">
+                    Custom (enter package name)
+                  </SelectItem>
                 </SelectContent>
               </Select>
               {selectedWorld?.description && (
@@ -350,35 +318,36 @@ export default function ProjectsPage() {
                 <Label htmlFor="customWorld">Package Name</Label>
                 <Input
                   id="customWorld"
-                  value={customEnvPairs[0]?.value || ''}
+                  value={
+                    customEnvPairs.find(
+                      (p) => p.key === 'WORKFLOW_TARGET_WORLD'
+                    )?.value || ''
+                  }
                   onChange={(e) => {
                     const newWorldId = e.target.value;
-                    setSelectedWorldId(newWorldId || 'custom');
-                    if (newWorldId) {
-                      setCustomEnvPairs([
+                    // Update the WORKFLOW_TARGET_WORLD entry or add it
+                    setCustomEnvPairs((prev) => {
+                      const existing = prev.findIndex(
+                        (p) => p.key === 'WORKFLOW_TARGET_WORLD'
+                      );
+                      if (existing >= 0) {
+                        const updated = [...prev];
+                        updated[existing] = {
+                          key: 'WORKFLOW_TARGET_WORLD',
+                          value: newWorldId,
+                        };
+                        return updated;
+                      }
+                      return [
                         { key: 'WORKFLOW_TARGET_WORLD', value: newWorldId },
-                        ...customEnvPairs.slice(1),
-                      ]);
-                    }
+                        ...prev,
+                      ];
+                    });
                   }}
                   placeholder="@my-org/my-world"
                 />
               </div>
             )}
-
-            {/* Project Directory */}
-            <div className="space-y-2">
-              <Label htmlFor="projectDir">Project Directory</Label>
-              <Input
-                id="projectDir"
-                value={projectDir}
-                onChange={(e) => setProjectDir(e.target.value)}
-                placeholder="./"
-              />
-              <p className="text-xs text-muted-foreground">
-                Path to associate with this project (helps identify source folders)
-              </p>
-            </div>
 
             {/* Known world env vars */}
             {isKnownWorld && selectedWorld && (
@@ -386,7 +355,9 @@ export default function ProjectsPage() {
                 {/* Required env vars */}
                 {selectedWorld.requiredEnv.length > 0 && (
                   <div className="space-y-3">
-                    <h4 className="text-sm font-medium">Required Configuration</h4>
+                    <h4 className="text-sm font-medium">
+                      Required Configuration
+                    </h4>
                     {selectedWorld.requiredEnv.map((envVar) => (
                       <EnvVarInput
                         key={envVar}
@@ -399,26 +370,42 @@ export default function ProjectsPage() {
                   </div>
                 )}
 
-                {/* Optional env vars */}
-                {selectedWorld.optionalEnv.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-medium">Optional Configuration</h4>
-                    {selectedWorld.optionalEnv.map((envVar) => (
-                      <EnvVarInput
-                        key={envVar}
-                        envVar={envVar}
-                        value={envValues[envVar] || ''}
-                        onChange={(value) => handleEnvChange(envVar, value)}
-                        error={errors.find((e) => e.field === envVar)?.message}
+                {/* Optional env vars - include Project Directory for non-local worlds */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium">
+                    Optional Configuration
+                  </h4>
+                  {selectedWorld.optionalEnv.map((envVar) => (
+                    <EnvVarInput
+                      key={envVar}
+                      envVar={envVar}
+                      value={envValues[envVar] || ''}
+                      onChange={(value) => handleEnvChange(envVar, value)}
+                      error={errors.find((e) => e.field === envVar)?.message}
+                    />
+                  ))}
+                  {/* Project Directory - only shown for non-local worlds in optional section */}
+                  {selectedWorldId !== 'local' && (
+                    <div className="space-y-1">
+                      <Label htmlFor="projectDir">Project Directory</Label>
+                      <Input
+                        id="projectDir"
+                        value={projectDir}
+                        onChange={(e) => setProjectDir(e.target.value)}
+                        placeholder="./"
                       />
-                    ))}
-                  </div>
-                )}
+                      <p className="text-xs text-muted-foreground">
+                        Path to associate with this project (helps identify
+                        source folders)
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Custom world env vars */}
-            {!isKnownWorld && selectedWorldId !== 'custom' && (
+            {/* Custom world env vars - show for 'custom' or any unknown world */}
+            {!isKnownWorld && (
               <div className="space-y-3 pt-4 border-t">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium">Environment Variables</h4>
@@ -432,6 +419,11 @@ export default function ProjectsPage() {
                     Add
                   </Button>
                 </div>
+                {customEnvPairs.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Add environment variables required by your custom world.
+                  </p>
+                )}
                 {customEnvPairs.map((pair, index) => (
                   <div key={index} className="flex gap-2">
                     <Input
@@ -459,6 +451,20 @@ export default function ProjectsPage() {
                     </Button>
                   </div>
                 ))}
+                {/* Project Directory for custom worlds */}
+                <div className="space-y-1 pt-2">
+                  <Label htmlFor="projectDir">Project Directory</Label>
+                  <Input
+                    id="projectDir"
+                    value={projectDir}
+                    onChange={(e) => setProjectDir(e.target.value)}
+                    placeholder="./"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Path to associate with this project (helps identify source
+                    folders)
+                  </p>
+                </div>
               </div>
             )}
 
@@ -529,6 +535,86 @@ function EnvVarInput({ envVar, value, onChange, error }: EnvVarInputProps) {
         <p className="text-xs text-muted-foreground">{description}</p>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Shared project info display
+ */
+function ProjectInfo({ project }: { project: Project }) {
+  const { worldName, relativeTime, title, details } =
+    useProjectDisplayTitle(project);
+
+  return (
+    <div className="flex-1 min-w-0 space-y-0.5">
+      <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
+        {worldName}
+        {relativeTime && (
+          <>
+            {' - '}
+            <Clock4 className="h-3 w-3" />
+            {relativeTime}
+          </>
+        )}
+      </div>
+      <div className="font-medium truncate">{title}</div>
+      {details && (
+        <div className="text-xs text-muted-foreground truncate font-mono">
+          {details}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Display the current project with config summary as main title
+ */
+function CurrentProjectItem({ project }: { project: Project }) {
+  return (
+    <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+      <ProjectInfo project={project} />
+      <span className="text-xs text-primary shrink-0">Current</span>
+    </div>
+  );
+}
+
+/**
+ * Display a recent project item with config summary as main title
+ */
+function RecentProjectItem({
+  project,
+  onSelect,
+  onDelete,
+}: {
+  project: Project;
+  onSelect: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <div className="relative w-full flex items-center gap-2 p-3 rounded-lg border hover:bg-accent transition-colors text-left">
+      {/* Invisible button overlay for selection - avoids nested button a11y issue */}
+      <button
+        type="button"
+        onClick={onSelect}
+        className="absolute inset-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label="Select project"
+      />
+      <ProjectInfo project={project} />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative z-10 h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Forget this project</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

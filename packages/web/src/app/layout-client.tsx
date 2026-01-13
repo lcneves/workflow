@@ -1,13 +1,19 @@
 'use client';
 
 import { TooltipProvider } from '@radix-ui/react-tooltip';
-import { InfoIcon } from 'lucide-react';
+import { ExternalLink, InfoIcon, Moon, Sun } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ThemeProvider, useTheme } from 'next-themes';
 import { useEffect, useRef } from 'react';
 import { ConnectionStatus } from '@/components/display-utils/connection-status';
-import { SettingsDropdown } from '@/components/settings-dropdown';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
@@ -20,6 +26,36 @@ import { Logo } from '../icons/logo';
 interface LayoutClientProps {
   children: React.ReactNode;
   isSelfHosting?: boolean;
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-1 px-2">
+          <Sun className="h-4 w-4" />
+          <span className="text-muted-foreground">/</span>
+          <Moon className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setTheme('system')}>
+          System
+          {theme === 'system' && <span className="ml-auto">✓</span>}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme('light')}>
+          Light
+          {theme === 'light' && <span className="ml-auto">✓</span>}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme('dark')}>
+          Dark
+          {theme === 'dark' && <span className="ml-auto">✓</span>}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
@@ -131,9 +167,21 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
                   <Logo />
                 </h1>
               </Link>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-3">
                 <ConnectionStatus />
-                <SettingsDropdown />
+                <div className="h-6 w-px bg-border" />
+                <ThemeToggle />
+                <Button variant="ghost" size="sm" asChild>
+                  <a
+                    href="https://useworkflow.dev/docs/observability"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gap-1.5"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Docs
+                  </a>
+                </Button>
               </div>
             </div>
           </div>

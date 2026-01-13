@@ -28,8 +28,17 @@ const configParsers = {
 
 // Create a serializer for config params
 const serializeConfig = createSerializer(configParsers);
+/**
+ * Resolve a world ID to its package name for WORKFLOW_TARGET_WORLD.
+ * Note: For "local" and "vercel", we pass through directly since
+ * createWorld() handles these as special cases.
+ */
 export const resolveTargetWorld = (backend?: string) => {
   switch (backend) {
+    case 'local':
+      return 'local'; // createWorld() handles this directly
+    case 'vercel':
+      return 'vercel'; // createWorld() handles this directly
     case 'postgres':
       return '@workflow/world-postgres';
     default:

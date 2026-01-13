@@ -1,52 +1,21 @@
 'use client';
 
 import { ErrorBoundary } from '@workflow/web-shared';
+import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo } from 'react';
 import { ConfigWarningBanner } from '@/components/config-warning-banner';
 import { HooksTable } from '@/components/hooks-table';
 import { RunsTable } from '@/components/runs-table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { WorkflowsList } from '@/components/workflows-list';
-import type { WorldConfig } from '@/lib/config-world';
 import { useProject } from '@/lib/project-context';
+import { useProjectAsWorldConfig } from '@/lib/use-project-config';
 import { useHookIdState, useSidebarState, useTabState } from '@/lib/url-state';
-
-/**
- * Convert project state to the legacy WorldConfig format.
- * This maintains backward compatibility with existing components
- * while we migrate to the new project-based system.
- */
-function useProjectAsWorldConfig(): WorldConfig {
-  const { currentProject } = useProject();
-
-  return useMemo(() => {
-    if (!currentProject) {
-      return {
-        backend: 'local',
-        dataDir: './',
-      };
-    }
-
-    const env = currentProject.envMap;
-    return {
-      backend: currentProject.worldId,
-      env: env.WORKFLOW_VERCEL_ENV,
-      authToken: env.WORKFLOW_VERCEL_AUTH_TOKEN,
-      project: env.WORKFLOW_VERCEL_PROJECT,
-      team: env.WORKFLOW_VERCEL_TEAM,
-      port: env.PORT,
-      dataDir: env.WORKFLOW_LOCAL_DATA_DIR || currentProject.projectDir || './',
-      manifestPath: env.WORKFLOW_MANIFEST_PATH,
-      postgresUrl: env.WORKFLOW_POSTGRES_URL,
-    };
-  }, [currentProject]);
-}
 
 export default function Home() {
   const router = useRouter();
   const config = useProjectAsWorldConfig();
-  const { validationStatus, currentProject } = useProject();
+  const { validationStatus, currentProject, isLoading } = useProject();
   const [sidebar] = useSidebarState();
   const [hookId] = useHookIdState();
   const [tab, setTab] = useTabState();
@@ -54,7 +23,7 @@ export default function Home() {
   const selectedHookId = sidebar === 'hook' && hookId ? hookId : undefined;
 
   // Only show workflows tab for local backend
-  const isLocalBackend = config.backend === 'local' || !config.backend;
+  const isLocalBackend = !config || config.backend === 'local' || !config.backend;
 
   const handleRunClick = (runId: string, streamId?: string) => {
     if (!streamId) {
@@ -71,6 +40,15 @@ export default function Home() {
       router.push(`/run/${runId}`);
     }
   };
+
+  // Show loading state while project is being initialized from localStorage/query params
+  if (isLoading || !config) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4">

@@ -4,13 +4,12 @@ import { getWorldById } from '@workflow/utils/worlds-manifest';
 import {
   AlertCircle,
   CheckCircle,
-  InfoIcon,
+  ChevronRight,
   Loader2,
   Settings,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -21,9 +20,11 @@ import { useDataDirInfo } from '@/lib/hooks';
 
 /**
  * Connection status display with project info and navigation to project settings.
+ * The entire component is clickable to navigate to/from the projects page.
  */
 export function ConnectionStatus() {
   const router = useRouter();
+  const pathname = usePathname();
   const {
     currentProject,
     validationStatus,
@@ -31,28 +32,37 @@ export function ConnectionStatus() {
     isSelfHosting,
   } = useProject();
 
-  // In self-hosting mode, don't show the connection status
-  if (isSelfHosting) {
-    return null;
-  }
+  // Check if we're on the projects page
+  const isOnProjectsPage = pathname === '/projects';
 
   // Get world info
   const world = currentProject?.worldId
     ? getWorldById(currentProject.worldId)
     : null;
   const worldName = world?.name || currentProject?.worldId || 'Local';
-  const isLocal = currentProject?.worldId === 'local' || !currentProject?.worldId;
+  const isLocal =
+    currentProject?.worldId === 'local' || !currentProject?.worldId;
   const dataDir = currentProject?.envMap.WORKFLOW_LOCAL_DATA_DIR;
 
   // Get data dir info for local world
-  const { data: dataDirInfo } = useDataDirInfo(isLocal ? (dataDir || './') : '');
+  // IMPORTANT: All hooks must be called before any conditional returns (Rules of Hooks)
+  const { data: dataDirInfo } = useDataDirInfo(isLocal ? dataDir || './' : '');
 
   // Validate project on mount and when it changes
   useEffect(() => {
-    if (currentProject && !validationStatus.loading && !validationStatus.lastChecked) {
+    if (
+      currentProject &&
+      !validationStatus.loading &&
+      !validationStatus.lastChecked
+    ) {
       validateCurrentProject();
     }
-  }, [currentProject, validationStatus.loading, validationStatus.lastChecked, validateCurrentProject]);
+  }, [
+    currentProject,
+    validationStatus.loading,
+    validationStatus.lastChecked,
+    validateCurrentProject,
+  ]);
 
   // Revalidate on focus
   useEffect(() => {
@@ -66,6 +76,12 @@ export function ConnectionStatus() {
     return () => window.removeEventListener('focus', handleFocus);
   }, [currentProject, validateCurrentProject]);
 
+  // In self-hosting mode, don't show the connection status
+  // IMPORTANT: This return must come AFTER all hooks are called
+  if (isSelfHosting) {
+    return null;
+  }
+
   // Determine status
   const isValid = validationStatus.valid;
   const isLoading = validationStatus.loading;
@@ -73,85 +89,90 @@ export function ConnectionStatus() {
   const criticalErrors = validationStatus.errors.filter((e) => e.critical);
 
   // Build display info
-  const displayInfo = getDisplayInfo(worldName, currentProject, dataDirInfo, isLocal);
+  const displayInfo = getDisplayInfo(
+    worldName,
+    currentProject,
+    dataDirInfo,
+    isLocal
+  );
 
-  const handleNavigateToSettings = () => {
-    router.push('/projects');
+  const handleClick = () => {
+    if (isOnProjectsPage) {
+      router.push('/');
+    } else {
+      router.push('/projects');
+    }
   };
 
   return (
-    <div className="flex items-center gap-2">
-      {/* Status indicator */}
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        {isLoading ? (
-          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-        ) : isValid ? (
-          <CheckCircle className="w-4 h-4 text-green-500" />
-        ) : (
-          <AlertCircle className="w-4 h-4 text-destructive" />
-        )}
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={handleClick}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md border bg-background hover:bg-accent transition-colors cursor-pointer"
+        >
+          {/* Status indicator */}
+          <div className="flex items-center gap-1.5 text-sm">
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+            ) : isValid ? (
+              <CheckCircle className="w-4 h-4 text-green-500" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-destructive" />
+            )}
 
-        <span className="font-medium">{displayInfo.title}</span>
+            <span className="font-medium">{displayInfo.title}</span>
 
-        {displayInfo.subtitle && (
-          <span className="text-muted-foreground">({displayInfo.subtitle})</span>
-        )}
-      </div>
-
-      {/* Info tooltip */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            className="p-1 rounded hover:bg-accent transition-colors"
-          >
-            <InfoIcon className="w-4 h-4 text-muted-foreground" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-xs">
-          <div className="space-y-2">
-            <div className="font-medium">{displayInfo.title}</div>
-            {displayInfo.details.map((detail, i) => (
-              <div key={i} className="text-xs text-muted-foreground">
-                {detail}
-              </div>
-            ))}
-            {hasErrors && (
-              <div className="pt-2 border-t">
-                <div className="text-xs font-medium text-destructive">
-                  {criticalErrors.length > 0
-                    ? `${criticalErrors.length} critical error(s)`
-                    : `${validationStatus.errors.length} warning(s)`}
-                </div>
-                {validationStatus.errors.slice(0, 3).map((error, i) => (
-                  <div
-                    key={i}
-                    className={`text-xs ${error.critical ? 'text-destructive' : 'text-amber-600'}`}
-                  >
-                    • {error.message}
-                  </div>
-                ))}
-              </div>
+            {displayInfo.subtitle && (
+              <span className="text-muted-foreground">
+                ({displayInfo.subtitle})
+              </span>
             )}
           </div>
-        </TooltipContent>
-      </Tooltip>
 
-      {/* Settings button */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={handleNavigateToSettings}
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Project Settings</TooltipContent>
-      </Tooltip>
-    </div>
+          {/* Settings/chevron icon */}
+          {isOnProjectsPage ? (
+            <ChevronRight className="w-4 h-4 text-muted-foreground rotate-180" />
+          ) : (
+            <Settings className="w-4 h-4 text-muted-foreground" />
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-xs">
+        <div className="space-y-2">
+          <div className="font-medium">
+            {isOnProjectsPage ? 'Back to runs' : 'Project Settings'}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {displayInfo.title}
+            {displayInfo.subtitle && ` (${displayInfo.subtitle})`}
+          </div>
+          {displayInfo.details.map((detail, i) => (
+            <div key={i} className="text-xs text-muted-foreground">
+              {detail}
+            </div>
+          ))}
+          {hasErrors && (
+            <div className="pt-2 border-t">
+              <div className="text-xs font-medium text-destructive">
+                {criticalErrors.length > 0
+                  ? `${criticalErrors.length} critical error(s)`
+                  : `${validationStatus.errors.length} warning(s)`}
+              </div>
+              {validationStatus.errors.slice(0, 3).map((error, i) => (
+                <div
+                  key={i}
+                  className={`text-xs ${error.critical ? 'text-destructive' : 'text-amber-600'}`}
+                >
+                  • {error.message}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -193,16 +214,23 @@ function getDisplayInfo(
   }
 
   if (project.worldId === 'vercel') {
-    const subtitle = project.envMap.WORKFLOW_VERCEL_ENV || 'production';
-    if (project.envMap.WORKFLOW_VERCEL_PROJECT) {
-      details.push(`Project: ${project.envMap.WORKFLOW_VERCEL_PROJECT}`);
+    const team = project.envMap.WORKFLOW_VERCEL_TEAM;
+    const proj = project.envMap.WORKFLOW_VERCEL_PROJECT;
+    const envName = project.envMap.WORKFLOW_VERCEL_ENV || 'production';
+
+    // Build title: Vercel (team/project) or Vercel (project) or just Vercel
+    let title = 'Vercel';
+    if (team && proj) {
+      title = `Vercel (${team}/${proj})`;
+    } else if (proj) {
+      title = `Vercel (${proj})`;
     }
-    if (project.envMap.WORKFLOW_VERCEL_TEAM) {
-      details.push(`Team: ${project.envMap.WORKFLOW_VERCEL_TEAM}`);
-    }
+
+    details.push(`Environment: ${envName}`);
+
     return {
-      title: 'Vercel',
-      subtitle,
+      title,
+      subtitle: null,
       details,
     };
   }
