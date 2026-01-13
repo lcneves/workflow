@@ -1,29 +1,25 @@
 'use client';
 
 import {
-  type EnvMap,
   unwrapServerActionResult,
   WorkflowWebAPIError,
 } from '@workflow/web-shared';
 import { fetchWorkflowsManifest } from '@workflow/web-shared/server';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { worldConfigToEnvMap } from '@/lib/config';
+import type { WorldConfig } from '@/lib/config-world';
 import { adaptManifest } from '@/lib/flow-graph/manifest-adapter';
 import type { WorkflowGraphManifest } from '@/lib/flow-graph/workflow-graph-types';
 
 /**
  * Hook to fetch the workflow graph manifest from the workflow data directory
  * The manifest contains static structure information about all workflows
- *
- * World configuration is read from server-side environment variables.
- * The env object passed to server actions is empty - the server uses process.env.
  */
-export function useWorkflowGraphManifest() {
+export function useWorkflowGraphManifest(config: WorldConfig) {
   const [manifest, setManifest] = useState<WorkflowGraphManifest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const isFetchingRef = useRef(false);
-  // Empty env object - server actions read from process.env
-  const env: EnvMap = useMemo(() => ({}), []);
 
   const fetchManifest = useCallback(async () => {
     if (isFetchingRef.current) {
@@ -34,6 +30,7 @@ export function useWorkflowGraphManifest() {
     setError(null);
 
     try {
+      const env = worldConfigToEnvMap(config);
       console.log('[useWorkflowGraphManifest] Fetching with env:', env);
       const { result: rawManifest, error } = await unwrapServerActionResult(
         fetchWorkflowsManifest(env)
@@ -74,7 +71,7 @@ export function useWorkflowGraphManifest() {
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [env]);
+  }, [config]);
 
   useEffect(() => {
     fetchManifest();
