@@ -12,3 +12,4 @@ export class TestClass {
     }
 }
 TestClass.staticMethod = globalThis[Symbol.for("WORKFLOW_USE_STEP")]("step//input.js//TestClass.staticMethod");
+TestClass.classId = "class//input.js//TestClass";

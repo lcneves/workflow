@@ -7,3 +7,4 @@ export class MyService {
 }
 MyService.process = globalThis[Symbol.for("WORKFLOW_USE_STEP")]("step//input.js//MyService.process");
 MyService.transform = globalThis[Symbol.for("WORKFLOW_USE_STEP")]("step//input.js//MyService.transform");
+MyService.classId = "class//input.js//MyService";
