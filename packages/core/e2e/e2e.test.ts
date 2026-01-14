@@ -1329,4 +1329,60 @@ describe('e2e', () => {
       });
     }
   );
+
+  test(
+    'instanceMethodStepWorkflow - instance methods with "use step" directive',
+    { timeout: 60_000 },
+    async () => {
+      // This workflow tests instance methods marked with "use step".
+      // The Counter class has custom serialization so the `this` context
+      // (the Counter instance) can be serialized across the workflow/step boundary.
+      //
+      // instanceMethodStepWorkflow(5) should:
+      // 1. Create Counter(5)
+      // 2. counter.add(10) -> 5 + 10 = 15
+      // 3. counter.multiply(3) -> 5 * 3 = 15
+      // 4. counter.describe('test counter') -> { label: 'test counter', value: 5 }
+      // 5. Create Counter(100), call counter2.add(50) -> 100 + 50 = 150
+      const run = await triggerWorkflow('instanceMethodStepWorkflow', [5]);
+      const returnValue = await getWorkflowReturnValue(run.runId);
+
+      expect(returnValue).toEqual({
+        initialValue: 5,
+        added: 15, // 5 + 10
+        multiplied: 15, // 5 * 3
+        description: { label: 'test counter', value: 5 },
+        added2: 150, // 100 + 50
+      });
+
+      // Verify the run completed successfully
+      const { json: runData } = await cliInspectJson(
+        `runs ${run.runId} --withData`
+      );
+      expect(runData.status).toBe('completed');
+      expect(runData.output).toEqual({
+        initialValue: 5,
+        added: 15,
+        multiplied: 15,
+        description: { label: 'test counter', value: 5 },
+        added2: 150,
+      });
+
+      // Verify the steps were executed (should have 4 steps: add, multiply, describe, add)
+      const { json: steps } = await cliInspectJson(
+        `steps --runId ${run.runId}`
+      );
+      // Filter to only Counter instance method steps
+      const counterSteps = steps.filter(
+        (s: any) =>
+          s.stepName.includes('Counter#add') ||
+          s.stepName.includes('Counter#multiply') ||
+          s.stepName.includes('Counter#describe')
+      );
+      expect(counterSteps.length).toBe(4); // add, multiply, describe, add (from counter2)
+      expect(counterSteps.every((s: any) => s.status === 'completed')).toBe(
+        true
+      );
+    }
+  );
 });
