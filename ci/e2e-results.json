@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-01-14T22:31:00.583Z",
-  "commit": "abdca8fd526f3c83c7da7b96a0522f9552e2bd2f",
+  "lastUpdated": "2026-01-15T09:31:46.704Z",
+  "commit": "125d0a666e3bb899609c55fd6f358bc6d61463d3",
   "branch": "main",
   "type": "e2e",
   "worlds": {
@@ -14,13 +14,13 @@
       "progress": 98
     },
     "redis": {
-      "status": "passing",
+      "status": "partial",
       "total": 42,
-      "passed": 42,
-      "failed": 0,
+      "passed": 41,
+      "failed": 1,
       "skipped": 0,
       "frameworks": {},
-      "progress": 100
+      "progress": 98
     },
     "starter": {
       "status": "partial",
