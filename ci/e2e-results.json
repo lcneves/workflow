@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-01-15T17:15:19.459Z",
-  "commit": "7ff6a05cf9ffd91300b081ec1dfa9cf3cf278ed0",
+  "lastUpdated": "2026-01-15T17:26:14.725Z",
+  "commit": "ac7aa33cd2ee7e49676b10ea807f1d64bf6a8159",
   "branch": "main",
   "type": "e2e",
   "worlds": {
@@ -41,10 +41,10 @@
       "progress": 98
     },
     "local": {
-      "status": "passing",
+      "status": "partial",
       "total": 975,
-      "passed": 959,
-      "failed": 0,
+      "passed": 957,
+      "failed": 2,
       "skipped": 16,
       "frameworks": {
         "astro": {
@@ -89,8 +89,8 @@
         },
         "sveltekit": {
           "total": 78,
-          "passed": 76,
-          "failed": 0
+          "passed": 74,
+          "failed": 2
         },
         "vite": {
           "total": 78,
@@ -161,10 +161,10 @@
       "progress": 98
     },
     "vercel": {
-      "status": "partial",
+      "status": "passing",
       "total": 429,
-      "passed": 417,
-      "failed": 1,
+      "passed": 418,
+      "failed": 0,
       "skipped": 11,
       "frameworks": {
         "astro": {
