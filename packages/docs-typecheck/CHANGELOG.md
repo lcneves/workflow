@@ -1,5 +1,12 @@
 # @workflow/docs-typecheck
 
+## 0.0.1-beta.8
+
+### Patch Changes
+
+- Updated dependencies [[`f491237`](https://github.com/vercel/workflow/commit/f491237e1ed9a0054604b48ed8715dd27edf92c0)]:
+  - @workflow/ai@4.0.1-beta.49
+
 ## 0.0.1-beta.7
 
 ### Patch Changes

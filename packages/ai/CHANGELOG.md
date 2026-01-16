@@ -1,5 +1,11 @@
 # @workflow/ai
 
+## 4.0.1-beta.49
+
+### Patch Changes
+
+- [#784](https://github.com/vercel/workflow/pull/784) [`f491237`](https://github.com/vercel/workflow/commit/f491237e1ed9a0054604b48ed8715dd27edf92c0) Thanks [@VaguelySerious](https://github.com/VaguelySerious)! - Fix `collectUIMessages` option failing in workflow context
+
 ## 4.0.1-beta.48
 
 ### Patch Changes
