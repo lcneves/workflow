@@ -9,7 +9,6 @@ import type {
 import {
   type FinishReason,
   gateway,
-  generateId,
   type StepResult,
   type StopCondition,
   type ToolChoice,
@@ -204,9 +203,6 @@ export async function doStreamStep(
           if (options?.sendStart) {
             controller.enqueue({
               type: 'start',
-              // Note that if useChat is used client-side, useChat will generate a different
-              // messageId. It's hard to work around this.
-              messageId: generateId(),
             });
           }
           controller.enqueue({
