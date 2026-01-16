@@ -7,8 +7,7 @@
     "sleep-and-delays",
     "human-in-the-loop",
     "defining-tools",
-    "chat-session-modeling",
-    "message-queueing"
+    "chat-session-modeling"
   ],
   "defaultOpen": true
 }
