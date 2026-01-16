@@ -118,13 +118,22 @@ export function Chat({ initialMessages }) {
 
 </Tabs>
 
-In this pattern, the client owns conversation state, with the latest turn managed by the AI SDK's `useChat`, and past turns persisted to the backend. The current turn is either managed through the workflow by a resumable stream (see [Resumable Streams](/docs/ai/resumable-streams)), or a hook into `useChat` persists every new message to the backend, as messages come in.
-
 This is the pattern used in the [Building Durable AI Agents](/docs/ai) guide.
+
+In this pattern, the client owns conversation state, with the latest turn managed by the AI SDK's `useChat`, and past turns persisted to a user-managed database.
+
+Persisting the turn is usually done through either:
+
+- A step on the workflow that runs after `agent.stream()` and takes the message history from the agent return value (either `messages: ModelMessage[]` or `uiMessages: UIMessage[]`)
+- A hook on `useChat`in the client that calls an API to persist state (or localStorage, etc.), either on every new message, or `onFinish`
+- The resumable stream attached to the workflow (see [Resumable Streams](/docs/ai/resumable-streams))
+  - Note that user messages are not persisted to the stream by default, and need to be explicitly persisted separately
 
 ## Multi-Turn Workflows
 
 A single workflow handles the entire conversation session across multiple turns, and owns the current conversation state. The clients/API routes inject new messages via hooks. The workflow run ID serves as the session identifier.
+
+For a full example of an agent using multi-turn workflows, check out the Flight Booking App example in the [Workflow Examples](https://github.com/vercel/workflow-examples/tree/main/flight-booking-app) repository.
 
 A key challenge in multi-turn workflows is ensuring user messages appear in the correct order when replaying the stream (e.g., after a page refresh). Since the stream primarily contains AI responses, user messages must be explicitly marked in the stream so the client can reconstruct the full conversation.
 
@@ -308,6 +317,7 @@ export const chatMessageHook = defineHook({
 <Tab value="Client Hook">
 
 A custom hook wraps `useChat` to manage the multi-turn session. It handles:
+
 - Routing between the initial message endpoint and follow-up endpoint
 - Reconstructing user messages from stream markers for correct ordering on replay
 
@@ -466,6 +476,7 @@ export function useMultiTurnChat() {
 In this pattern, the workflow owns the entire conversation session. All messages are persisted in the workflow, and follow-up messages are injected via hooks. The workflow writes **user message markers** to the stream using `data-workflow` chunks, which allows the client to reconstruct the full conversation in the correct order when replaying the stream (e.g., after a page refresh).
 
 The client hook processes these markers by:
+
 1. Iterating through message parts in order
 2. When a `user-message` marker is found, flushing any accumulated assistant content and inserting the user message
 3. Deduplicating against optimistic sends from the initial message
