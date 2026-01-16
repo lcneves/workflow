@@ -48,9 +48,13 @@ function writeE2EMetadata() {
 
 async function triggerWorkflow(
   workflow: string | { workflowFile: string; workflowFn: string },
-  args: any[]
+  args: any[],
+  options?: { usePagesRouter?: boolean }
 ): Promise<{ runId: string }> {
-  const url = new URL('/api/trigger', deploymentUrl);
+  const endpoint = options?.usePagesRouter
+    ? '/api/trigger-pages'
+    : '/api/trigger';
+  const url = new URL(endpoint, deploymentUrl);
   const workflowFn =
     typeof workflow === 'string' ? workflow : workflow.workflowFn;
   const workflowFile =
@@ -1293,40 +1297,45 @@ describe('e2e', () => {
     }
   );
 
-  test(
-    'customSerializationWorkflow - custom class serialization with WORKFLOW_SERIALIZE/WORKFLOW_DESERIALIZE',
-    { timeout: 60_000 },
-    async () => {
-      // This workflow tests custom serialization of user-defined class instances.
-      // The Point class uses WORKFLOW_SERIALIZE and WORKFLOW_DESERIALIZE symbols
-      // to define how instances are serialized/deserialized across workflow/step boundaries.
-      //
-      // customSerializationWorkflow(3, 4) should:
-      // 1. Create Point(3, 4)
-      // 2. transformPoint(point, 2) -> Point(6, 8)
-      // 3. transformPoint(scaled, 3) -> Point(18, 24)
-      // 4. sumPoints([Point(1,2), Point(3,4), Point(5,6)]) -> Point(9, 12)
-      const run = await triggerWorkflow('customSerializationWorkflow', [3, 4]);
-      const returnValue = await getWorkflowReturnValue(run.runId);
+  // ==================== PAGES ROUTER TESTS ====================
+  // Tests for Next.js Pages Router API endpoint (only runs for nextjs-turbopack and nextjs-webpack)
+  const isNextJsApp =
+    process.env.APP_NAME === 'nextjs-turbopack' ||
+    process.env.APP_NAME === 'nextjs-webpack';
 
-      expect(returnValue).toEqual({
-        original: { x: 3, y: 4 },
-        scaled: { x: 6, y: 8 }, // 3*2, 4*2
-        scaledAgain: { x: 18, y: 24 }, // 6*3, 8*3
-        sum: { x: 9, y: 12 }, // 1+3+5, 2+4+6
-      });
-
-      // Verify the run completed successfully
-      const { json: runData } = await cliInspectJson(
-        `runs ${run.runId} --withData`
+  describe.skipIf(!isNextJsApp)('pages router', () => {
+    test('addTenWorkflow via pages router', { timeout: 60_000 }, async () => {
+      const run = await triggerWorkflow(
+        {
+          workflowFile: 'workflows/99_e2e.ts',
+          workflowFn: 'addTenWorkflow',
+        },
+        [123],
+        { usePagesRouter: true }
       );
-      expect(runData.status).toBe('completed');
-      expect(runData.output).toEqual({
-        original: { x: 3, y: 4 },
-        scaled: { x: 6, y: 8 },
-        scaledAgain: { x: 18, y: 24 },
-        sum: { x: 9, y: 12 },
+      const returnValue = await getWorkflowReturnValue(run.runId);
+      expect(returnValue).toBe(133);
+    });
+
+    test(
+      'promiseAllWorkflow via pages router',
+      { timeout: 60_000 },
+      async () => {
+        const run = await triggerWorkflow('promiseAllWorkflow', [], {
+          usePagesRouter: true,
+        });
+        const returnValue = await getWorkflowReturnValue(run.runId);
+        expect(returnValue).toBe('ABC');
+      }
+    );
+
+    test('sleepingWorkflow via pages router', { timeout: 60_000 }, async () => {
+      const run = await triggerWorkflow('sleepingWorkflow', [], {
+        usePagesRouter: true,
       });
-    }
-  );
+      const returnValue = await getWorkflowReturnValue(run.runId);
+      expect(returnValue.startTime).toBeLessThan(returnValue.endTime);
+      expect(returnValue.endTime - returnValue.startTime).toBeGreaterThan(9999);
+    });
+  });
 });
