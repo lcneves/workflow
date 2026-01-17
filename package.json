@@ -21,7 +21,8 @@
   "pnpm": {
     "overrides": {
       "rfc6902": "5.1.2",
-      "devalue": "5.6.0"
+      "devalue": "5.6.0",
+      "@vercel/queue": "file:vercel-queue-0.0.0-alpha.33.tgz"
     },
     "onlyBuiltDependencies": [
       "bun"
