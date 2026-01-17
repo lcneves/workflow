@@ -6758,7 +6758,7 @@ packages:
       '@opentelemetry/sdk-trace-base': '>=1.19.0 <2.0.0'
 
   '@vercel/queue@file:vercel-queue-0.0.0-alpha.33.tgz':
-    resolution: {integrity: sha512-NV7P1+svUKW6pbCzIzCHgwlHw/KwBGH52LC2PycniFBptfPFK6E5bXlwsiACXd0abiGkUYg+Kl07NrQL5qcYwQ==, tarball: file:vercel-queue-0.0.0-alpha.33.tgz}
+    resolution: {integrity: sha512-oBFVIN1WO3D6vRKi28kkluvg9VKDvf2bRtFhwjRpy7cBt7oRVsBQnx/i8i2ouMvFs1A3O7tD3F+0sgmanm3+nA==, tarball: file:vercel-queue-0.0.0-alpha.33.tgz}
     version: 0.0.0-alpha.33
     engines: {node: '>=20.0.0'}
     hasBin: true
